@@ -150,6 +150,9 @@ class _RefinementBlock(nn.Module):
 
         cat = torch.cat([coarse, edge, s0, s1], dim=1)
         delta = self.delta_conv(self.fuse(cat))   # [B, 1, H, W]
+        # Limit correction magnitude: at most ±0.1 logit units
+        # tanh keeps gradient flow; the 0.1 scale keeps corrections small
+        delta = 0.1 * torch.tanh(delta)
         return delta
 
 

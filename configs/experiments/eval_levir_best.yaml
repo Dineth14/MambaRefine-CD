@@ -1,0 +1,22 @@
+base: base.yaml
+dataset_config: datasets/levircd.yaml
+
+experiment:
+  name: eval_levir_best
+  output_root: outputs/eval_runs
+
+model:
+  variant: small
+  decoder: refinement
+  pretrained: false
+
+evaluation:
+  threshold: 0.5
+  threshold_sweep: true
+  threshold_list: [0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70]
+  use_tta: true
+  tta_augmentations: [original, hflip, vflip, rot90]
+
+# Set this to the best.pth checkpoint path before running evaluate.py
+checkpoint:
+  path: null   # e.g. outputs/best_runs/refinement_levir_best/checkpoints/best.pth

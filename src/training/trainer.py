@@ -36,6 +36,7 @@ from training.metrics          import StreamingMetrics
 from training.boundary_metrics import BoundaryMetrics
 from training.checkpoint       import save as save_ckpt, peek as peek_ckpt
 from training.logger           import log_table
+from training.ema              import EMA
 from utils.visualization       import save_prediction_grid
 
 
@@ -81,6 +82,12 @@ class Trainer:
         self.bnd_tol       = int(bm_cfg.get("tolerance", 2))
         self.dataset_name  = cfg.get("dataset", {}).get("name", "unknown")
 
+        # EMA
+        tc2 = cfg.get("training", {})
+        self.use_ema   = bool(tc2.get("use_ema", False))
+        self.ema_decay = float(tc2.get("ema_decay", 0.999))
+        self.ema: Optional[EMA] = None   # initialised in train()
+
         ck = cfg.get("checkpoint", {})
         self.monitor      = ck.get("monitor", "f1")
         self.monitor_mode = ck.get("mode", "max")
@@ -94,10 +101,11 @@ class Trainer:
 
         self.ckpt_dir   = self.output_dir / "checkpoints"
         self.sample_dir = self.output_dir / "samples"
-        self.val_csv    = self.output_dir / "validation" / "metrics.csv"
+        self.val_dir    = self.output_dir / "validation"
+        self.val_csv    = self.val_dir / "val_metrics.csv"
         self.ckpt_dir.mkdir(parents=True, exist_ok=True)
         self.sample_dir.mkdir(parents=True, exist_ok=True)
-        self.val_csv.parent.mkdir(parents=True, exist_ok=True)
+        self.val_dir.mkdir(parents=True, exist_ok=True)
 
         self.scaler = torch.amp.GradScaler(
             "cuda", enabled=self.amp and device.type == "cuda"
@@ -190,6 +198,9 @@ class Trainer:
         self.scaler.step(self.optimizer)
         self.scaler.update()
         self.optimizer.zero_grad(set_to_none=True)
+        # EMA update after every optimiser step
+        if self.ema is not None:
+            self.ema.update(self.model)
         return total.item(), bce.item(), dice.item()
 
     # ------------------------------------------------------------------
@@ -197,6 +208,10 @@ class Trainer:
     # ------------------------------------------------------------------
     @torch.no_grad()
     def _validate(self, iteration: int) -> dict:
+        # Apply EMA weights for validation if enabled
+        if self.ema is not None:
+            self.ema.apply_shadow(self.model)
+
         self.model.eval()
         pix_metrics = StreamingMetrics(threshold=self.threshold)
         bnd_metrics = BoundaryMetrics(
@@ -210,7 +225,8 @@ class Trainer:
         for batch in val_iter:
             ia = batch["image_a"].to(self.device, non_blocking=True)
             ib = batch["image_b"].to(self.device, non_blocking=True)
-            lb = batch["label"].to(self.device, non_blocking=True)
+            lbl_key = "label" if "label" in batch else "mask"
+            lb = batch[lbl_key].to(self.device, non_blocking=True)
             logits, _ = self.model(ia, ib)
             pix_metrics.update(logits, lb)
             bnd_metrics.update(logits, lb)
@@ -220,7 +236,7 @@ class Trainer:
                 val_iter.set_postfix(  # type: ignore[union-attr]
                     F1=f"{m['f1']:.3f}",
                     IoU=f"{m['iou']:.3f}",
-                    BF1=f"{m['boundary_f1']:.3f}",
+                    BF1=f"{m.get('boundary_f1', 0):.3f}",
                 )
 
             if self.save_samples and not sample_done:
@@ -229,11 +245,17 @@ class Trainer:
                                      self.sample_dir / f"iter_{iteration:07d}.png", count=n)
                 sample_done = True
 
+        # Restore live weights before resuming training
+        if self.ema is not None:
+            self.ema.restore(self.model)
+
         self.model.train()
         result = pix_metrics.compute()
         bm     = bnd_metrics.compute()
         result.update(bm)            # tolerance-aware BF1 + edge_iou override
-        result["dataset"] = self.dataset_name
+        result["dataset"]          = self.dataset_name
+        result["best_threshold"]   = self.threshold  # fixed during training
+        result["ema_enabled"]      = self.ema is not None
         return result
 
     # ------------------------------------------------------------------
@@ -243,6 +265,11 @@ class Trainer:
         resume_cfg = self.cfg.get("resume", {})
         if resume_cfg.get("enabled", False):
             self.resume(resume_cfg)
+
+        # Initialise EMA after potential resume so shadow copies loaded weights
+        if self.use_ema:
+            self.ema = EMA(self.model, decay=self.ema_decay)
+            self.logger.info(f"EMA enabled (decay={self.ema_decay})")
 
         self._current_iter = self.start_iter
         self.logger.info(
@@ -255,6 +282,7 @@ class Trainer:
             "f1", "iou", "miou", "precision", "recall", "oa",
             "boundary_f1", "edge_iou",
             "pred_positive_ratio", "gt_positive_ratio",
+            "best_threshold",
         ]
         if not self.val_csv.exists():
             with open(self.val_csv, "w", newline="") as f:
@@ -303,7 +331,8 @@ class Trainer:
 
             if (iteration + 1) % self.val_every == 0:
                 vm  = self._validate(iteration + 1)
-                log_table(self.logger, vm, title=f"── Validation @ iter {iteration+1} ──")
+                self._print_val_block(vm, iteration + 1)
+                log_table(self.logger, vm, title="")  # detailed table
 
                 if self.writer:
                     for k, v in vm.items():
@@ -333,3 +362,22 @@ class Trainer:
 
         if pbar:
             pbar.close()
+
+    # ------------------------------------------------------------------
+    # Validation summary block
+    # ------------------------------------------------------------------
+    def _print_val_block(self, vm: dict, iteration: int) -> None:
+        sep = "-" * 42
+        self.logger.info(sep)
+        self.logger.info(f"Validation Results  (iter {iteration})")
+        self.logger.info(f"  Best Threshold  : {vm.get('best_threshold', self.threshold):.2f}")
+        self.logger.info(f"  F1              : {vm.get('f1', 0.0):.4f}")
+        self.logger.info(f"  IoU (change)    : {vm.get('iou', 0.0):.4f}")
+        self.logger.info(f"  mIoU            : {vm.get('miou', 0.0):.4f}")
+        self.logger.info(f"  Precision       : {vm.get('precision', 0.0):.4f}")
+        self.logger.info(f"  Recall          : {vm.get('recall', 0.0):.4f}")
+        self.logger.info(f"  OA              : {vm.get('oa', 0.0):.4f}")
+        self.logger.info(f"  Boundary F1     : {vm.get('boundary_f1', 0.0):.4f}")
+        ema_tag = " [EMA]" if vm.get("ema_enabled") else ""
+        self.logger.info(f"  EMA             : {'on' if vm.get('ema_enabled') else 'off'}")
+        self.logger.info(sep)

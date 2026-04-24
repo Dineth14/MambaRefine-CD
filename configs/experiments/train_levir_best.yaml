@@ -1,0 +1,44 @@
+base: base.yaml
+dataset_config: datasets/levircd.yaml
+
+experiment:
+  name: refinement_levir_best
+  seed: 42
+  output_root: outputs/best_runs
+
+model:
+  variant: small          # small backbone for speed/accuracy balance
+  decoder: refinement
+  pretrained: true
+  freeze_backbone: false
+
+training:
+  max_iterations: 80000
+  batch_size: 8
+  lr: 5e-5                # lower LR for fine-tuning / longer run
+  weight_decay: 0.01
+  warmup_iterations: 2000
+  validate_every: 5000
+  gradient_clip: 1.0
+  use_ema: true
+  ema_decay: 0.999
+
+loss:
+  type: dice_focal
+  dice_weight: 1.0
+  focal_weight: 0.3
+  focal_gamma: 1.5
+
+decoder:
+  channels: 256
+  aux_weight: 0.4
+
+evaluation:
+  threshold: 0.5
+  threshold_sweep: false    # enable at test time via eval_levir_best.yaml
+  use_tta: false            # enable at test time
+
+resume:
+  enabled: false
+  checkpoint_path: null     # e.g. outputs/best_runs/refinement_levir_best/checkpoints/best.pth
+  strict: true

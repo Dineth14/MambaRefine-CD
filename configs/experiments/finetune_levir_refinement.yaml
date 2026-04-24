@@ -1,0 +1,44 @@
+base: base.yaml
+dataset_config: datasets/levircd.yaml
+
+experiment:
+  name: finetune_levir_refinement
+  seed: 42
+  output_root: outputs/finetune_runs
+
+model:
+  variant: small
+  decoder: refinement
+  pretrained: false      # weights loaded from checkpoint, not HF hub
+
+training:
+  max_iterations: 80000
+  batch_size: 8
+  lr: 5e-5               # lower LR for fine-tuning
+  weight_decay: 0.01
+  warmup_iterations: 2000
+  validate_every: 5000
+  gradient_clip: 1.0
+  use_ema: true
+  ema_decay: 0.999
+
+loss:
+  type: dice_focal
+  dice_weight: 1.0
+  focal_weight: 0.3
+  focal_gamma: 1.5
+
+decoder:
+  channels: 256
+  aux_weight: 0.4
+
+evaluation:
+  threshold: 0.5
+  threshold_sweep: false
+  use_tta: false
+
+resume:
+  enabled: true
+  # ↓ Replace with your actual checkpoint path before running
+  checkpoint_path: outputs/benchmark_runs/refinement_levir/checkpoints/best.pth
+  strict: true

@@ -3,21 +3,36 @@
 Combines StreamingMetrics (pixel-level) with BoundaryMetrics (edge-level)
 for a complete evaluation pass over a DataLoader.
 
-Usage:
-    evaluator = Evaluator(cfg, device)
+Features
+--------
+* Threshold sweep — tries a configurable list of thresholds and selects the
+  one that maximises F1.  Saves ``validation/best_threshold.json``.
+* TTA (Test-Time Augmentation) — averages logits over flips and rotation.
+* Improved validation log with clear header/footer.
+* Saves ``validation/val_metrics.csv`` and ``validation/tta_results.json``
+  when ``save_dir`` is provided.
+
+Usage
+-----
+    evaluator = Evaluator(cfg, device, save_dir=output_dir / "validation")
     results   = evaluator.evaluate(model, loader, dataset_name="LEVIR-CD")
 
-Results dict contains:
-    f1, iou, miou, precision, recall, oa,
-    boundary_f1, boundary_precision, boundary_recall, edge_iou,
-    pred_positive_ratio, gt_positive_ratio,
-    dataset, num_samples
+Config keys
+-----------
+    evaluation:
+      threshold: 0.5              # used when sweep is disabled
+      threshold_sweep: false
+      threshold_list: [0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60]
+      use_tta: false
+      tta_augmentations: [original, hflip, vflip, rot90]
 """
 from __future__ import annotations
 
+import csv
+import json
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import torch
 import torch.nn as nn
@@ -32,15 +47,34 @@ except ImportError:
 from training.metrics          import StreamingMetrics
 from training.boundary_metrics import BoundaryMetrics
 from training.logger           import log_table
+from training.tta              import apply_tta, build_tta_augmentations
+
+
+_LABELS = {
+    "f1":                  "F1",
+    "iou":                 "IoU-change",
+    "miou":                "mIoU",
+    "precision":           "Precision",
+    "recall":              "Recall",
+    "oa":                  "OA",
+    "boundary_f1":         "Boundary F1",
+    "boundary_precision":  "Bnd Precision",
+    "boundary_recall":     "Bnd Recall",
+    "edge_iou":            "Edge IoU",
+    "pred_positive_ratio": "Pred Positive Ratio",
+    "gt_positive_ratio":   "GT Positive Ratio",
+    "best_threshold":      "Best Threshold",
+}
 
 
 class Evaluator:
     """Full evaluation pass combining pixel and boundary metrics.
 
     Args:
-        cfg:    merged config dict (used to extract threshold, boundary config).
-        device: torch device.
-        logger: optional logger; if None a basic stdout logger is created.
+        cfg:      merged config dict.
+        device:   torch device.
+        logger:   optional logger.
+        save_dir: if provided, saves threshold JSON and metric CSV here.
     """
 
     def __init__(
@@ -48,11 +82,24 @@ class Evaluator:
         cfg: dict,
         device: torch.device,
         logger: Optional[logging.Logger] = None,
+        save_dir: Optional[Path] = None,
     ) -> None:
-        self.cfg    = cfg
-        self.device = device
+        self.cfg      = cfg
+        self.device   = device
+        self.save_dir = Path(save_dir) if save_dir is not None else None
 
-        self.threshold   = float(cfg.get("evaluation", {}).get("threshold", 0.5))
+        ec = cfg.get("evaluation", {})
+        self.threshold        = float(ec.get("threshold", 0.5))
+        self.do_sweep         = bool(ec.get("threshold_sweep", False))
+        self.threshold_list: List[float] = [
+            float(t) for t in ec.get(
+                "threshold_list",
+                [0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60],
+            )
+        ]
+        self.use_tta          = bool(ec.get("use_tta", False))
+        self.tta_augmentations = build_tta_augmentations(cfg)
+
         bm_cfg           = cfg.get("boundary_metrics", {})
         self.bnd_width   = int(bm_cfg.get("boundary_width", 3))
         self.bnd_tol     = int(bm_cfg.get("tolerance", 2))
@@ -69,34 +116,28 @@ class Evaluator:
                 self.logger.addHandler(h)
                 self.logger.setLevel(logging.INFO)
 
+    # ------------------------------------------------------------------
+    # Internal: collect all logits + labels from one pass
+    # ------------------------------------------------------------------
     @torch.no_grad()
-    def evaluate(
+    def _collect_logits(
         self,
         model: nn.Module,
         loader: DataLoader,
-        dataset_name: str = "unknown",
-        amp: bool = False,
-    ) -> dict:
-        """Run one full evaluation pass and return the combined metric dict.
-
-        Args:
-            model:        model in eval or train mode (set to eval internally).
-            loader:       DataLoader yielding {image_a, image_b, label/mask} batches.
-            dataset_name: string identifier added to the results dict.
-            amp:          enable automatic mixed precision.
+        amp: bool,
+        dataset_name: str,
+    ):
+        """Run one forward pass over the loader and return stacked tensors.
 
         Returns:
-            dict with all metrics + "dataset" and "num_samples" keys.
+            all_logits: [N, 1, H, W]  (on CPU to save GPU memory)
+            all_labels: [N, 1, H, W]
+            num_samples: int
         """
-        model.eval()
-        pix_metrics = StreamingMetrics(threshold=self.threshold)
-        bnd_metrics = BoundaryMetrics(
-            boundary_width = self.bnd_width,
-            tolerance      = self.bnd_tol,
-            threshold      = self.threshold,
-        ) if self.bnd_enabled else None
-
+        all_logits = []
+        all_labels = []
         num_samples = 0
+
         desc = f"Eval [{dataset_name}]"
         bar  = tqdm(loader, desc=desc, leave=False, unit="batch") if _TQDM else loader
 
@@ -107,64 +148,195 @@ class Evaluator:
             lb  = batch[lbl_key].to(self.device, non_blocking=True)
             num_samples += ia.shape[0]
 
-            with torch.amp.autocast("cuda", enabled=(amp and self.device.type == "cuda")):
-                logits, _ = model(ia, ib)
-
-            pix_metrics.update(logits, lb)
-            if bnd_metrics is not None:
-                bnd_metrics.update(logits, lb)
-
-            if _TQDM:
-                m = pix_metrics.compute()
-                bar.set_postfix(  # type: ignore[union-attr]
-                    F1=f"{m['f1']:.3f}",
-                    IoU=f"{m['iou']:.3f}",
-                    BF1=f"{m.get('boundary_f1', 0):.3f}",
+            if self.use_tta:
+                logits = apply_tta(
+                    model, ia, ib,
+                    amp=amp,
+                    augmentations=self.tta_augmentations,
                 )
+            else:
+                with torch.amp.autocast("cuda", enabled=(amp and self.device.type == "cuda")):
+                    logits, _ = model(ia, ib)
 
-        result = pix_metrics.compute()
-        if bnd_metrics is not None:
-            bm = bnd_metrics.compute()
-            # Override boundary_f1 with the more accurate tolerance-aware version
-            result.update(bm)
+            all_logits.append(logits.cpu())
+            all_labels.append(lb.cpu())
+
+        all_logits = torch.cat(all_logits, dim=0)   # [N, 1, H, W]
+        all_labels = torch.cat(all_labels, dim=0)
+        return all_logits, all_labels, num_samples
+
+    # ------------------------------------------------------------------
+    # Internal: compute metrics at one threshold from pre-collected tensors
+    # ------------------------------------------------------------------
+    def _metrics_at_threshold(
+        self,
+        all_logits: torch.Tensor,
+        all_labels: torch.Tensor,
+        threshold: float,
+        compute_boundary: bool = True,
+    ) -> dict:
+        """Evaluate pre-collected logits at a specific threshold (batch-wise)."""
+        bs = 8  # process in small batches to avoid OOM when running on CPU
+        pix = StreamingMetrics(threshold=threshold)
+        bnd = BoundaryMetrics(
+            boundary_width=self.bnd_width,
+            tolerance=self.bnd_tol,
+            threshold=threshold,
+        ) if (self.bnd_enabled and compute_boundary) else None
+
+        n = all_logits.shape[0]
+        for start in range(0, n, bs):
+            lg = all_logits[start:start + bs].to(self.device)
+            lb = all_labels[start:start + bs].to(self.device)
+            pix.update(lg, lb)
+            if bnd is not None:
+                bnd.update(lg, lb)
+
+        result = pix.compute()
+        if bnd is not None:
+            result.update(bnd.compute())
         else:
             result.setdefault("boundary_f1", 0.0)
             result.setdefault("edge_iou",    0.0)
-
-        result["dataset"]     = dataset_name
-        result["num_samples"] = num_samples
         return result
 
-    def print_table(self, results: dict, title: str = "") -> None:
-        """Print a formatted metric table using the existing logger infrastructure."""
-        _LABELS = {
-            "f1":                  "F1",
-            "iou":                 "IoU-change",
-            "miou":                "mIoU",
-            "precision":           "Precision",
-            "recall":              "Recall",
-            "oa":                  "OA",
-            "boundary_f1":         "Boundary F1",
-            "boundary_precision":  "Bnd Precision",
-            "boundary_recall":     "Bnd Recall",
-            "edge_iou":            "Edge IoU",
-            "pred_positive_ratio": "Pred Positive Ratio",
-            "gt_positive_ratio":   "GT Positive Ratio",
+    # ------------------------------------------------------------------
+    # Public evaluate
+    # ------------------------------------------------------------------
+    @torch.no_grad()
+    def evaluate(
+        self,
+        model: nn.Module,
+        loader: DataLoader,
+        dataset_name: str = "unknown",
+        amp: bool = False,
+    ) -> dict:
+        """Run evaluation (with optional threshold sweep and TTA).
+
+        Returns:
+            dict with all metrics + "dataset", "num_samples", "best_threshold".
+        """
+        model.eval()
+
+        # ── 1. Collect all logits in one pass ────────────────────────────
+        all_logits, all_labels, num_samples = self._collect_logits(
+            model, loader, amp, dataset_name
+        )
+
+        # ── 2. Threshold selection ────────────────────────────────────────
+        if self.do_sweep:
+            best_thr, best_f1, sweep_log = self._threshold_sweep(
+                all_logits, all_labels
+            )
+        else:
+            best_thr = self.threshold
+            best_f1  = None
+            sweep_log = None
+
+        # ── 3. Full metrics at best threshold (including boundary) ────────
+        result = self._metrics_at_threshold(
+            all_logits, all_labels, best_thr, compute_boundary=True
+        )
+        result["best_threshold"] = best_thr
+        result["dataset"]        = dataset_name
+        result["num_samples"]    = num_samples
+
+        # ── 4. Save outputs ───────────────────────────────────────────────
+        if self.save_dir is not None:
+            self._save_outputs(result, sweep_log, dataset_name)
+
+        return result
+
+    # ------------------------------------------------------------------
+    # Threshold sweep
+    # ------------------------------------------------------------------
+    def _threshold_sweep(self, all_logits, all_labels):
+        """Try all thresholds in threshold_list, return (best_thr, best_f1, log)."""
+        best_thr = self.threshold_list[0]
+        best_f1  = -1.0
+        sweep_log = {}
+
+        for thr in self.threshold_list:
+            m = self._metrics_at_threshold(
+                all_logits, all_labels, thr, compute_boundary=False
+            )
+            f1 = m["f1"]
+            sweep_log[f"{thr:.2f}"] = round(f1, 6)
+            if f1 > best_f1:
+                best_f1  = f1
+                best_thr = thr
+
+        self.logger.info(
+            f"  Threshold sweep → best={best_thr:.2f}  F1={best_f1:.4f}"
+        )
+        return best_thr, best_f1, sweep_log
+
+    # ------------------------------------------------------------------
+    # Save helpers
+    # ------------------------------------------------------------------
+    def _save_outputs(self, result: dict, sweep_log, dataset_name: str) -> None:
+        self.save_dir.mkdir(parents=True, exist_ok=True)
+
+        # best_threshold.json
+        thr_path = self.save_dir / "best_threshold.json"
+        thr_data = {
+            "dataset":   dataset_name,
+            "threshold": result["best_threshold"],
+            "f1":        round(result["f1"], 6),
         }
-        rows = [
-            (_LABELS.get(k, k), v)
-            for k, v in results.items()
-            if isinstance(v, (int, float)) and k not in ("num_samples",)
+        thr_path.write_text(json.dumps(thr_data, indent=2))
+
+        # val_metrics.csv  (append)
+        csv_path = self.save_dir / "val_metrics.csv"
+        write_header = not csv_path.exists()
+        numeric_keys = [
+            k for k, v in result.items()
+            if isinstance(v, float) and k != "num_samples"
         ]
-        if not rows:
-            return
+        with open(csv_path, "a", newline="") as f:
+            w = csv.writer(f)
+            if write_header:
+                w.writerow(["dataset"] + numeric_keys)
+            w.writerow([dataset_name] + [result[k] for k in numeric_keys])
+
+        # tta_results.json  (if TTA was used)
+        if self.use_tta:
+            tta_path = self.save_dir / "tta_results.json"
+            tta_data = {
+                "dataset":        dataset_name,
+                "augmentations":  self.tta_augmentations,
+                "f1":             round(result["f1"], 6),
+                "iou":            round(result.get("iou", 0.0), 6),
+                "best_threshold": result["best_threshold"],
+            }
+            if sweep_log:
+                tta_data["sweep"] = sweep_log
+            tta_path.write_text(json.dumps(tta_data, indent=2))
+
+    # ------------------------------------------------------------------
+    # Pretty-print
+    # ------------------------------------------------------------------
+    def print_table(self, results: dict, title: str = "Validation Results") -> None:
+        """Print a formatted validation results block."""
+        sep = "-" * 42
+        self.logger.info(sep)
         if title:
             self.logger.info(title)
-        w   = max(len(r[0]) for r in rows)
-        sep = f"+-{'-' * w}-+-{'-' * 8}-+"
-        self.logger.info(sep)
-        self.logger.info(f"| {'Metric':<{w}} | {'Value':>8} |")
-        self.logger.info(sep)
-        for name, val in rows:
-            self.logger.info(f"| {name:<{w}} | {val:>8.4f} |")
+
+        priority_keys = [
+            "best_threshold", "f1", "iou", "miou",
+            "precision", "recall", "oa",
+            "boundary_f1", "edge_iou",
+        ]
+        shown = set()
+        for k in priority_keys:
+            if k in results and isinstance(results[k], (int, float)):
+                label = _LABELS.get(k, k)
+                self.logger.info(f"  {label:<22}: {results[k]:.4f}")
+                shown.add(k)
+        for k, v in results.items():
+            if k not in shown and isinstance(v, (int, float)) and k != "num_samples":
+                label = _LABELS.get(k, k)
+                self.logger.info(f"  {label:<22}: {v:.4f}")
+
         self.logger.info(sep)

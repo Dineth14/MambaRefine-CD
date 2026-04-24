@@ -25,6 +25,9 @@ training:
   validate_every: 5000
   log_every: 20
   gradient_clip: 1.0
+  # EMA — off by default, enable per experiment
+  use_ema: false
+  ema_decay: 0.999
 
 validation:
   batch_size: 8
@@ -33,18 +36,30 @@ validation:
 
 model:
   backbone: mambavision
-  variant: tiny            # tiny | tiny2 | small | base | large
+  variant: tiny2            # tiny | tiny2 | small | base | large
   decoder: baseline        # baseline | adaptive_rf | refinement | global_local
   pretrained: true
   freeze_backbone: false
 
 loss:
+  type: bce_dice         # bce_dice | dice_focal
   bce_weight: 1.0
   dice_weight: 1.0
+  focal_weight: 0.3      # used when type: dice_focal
+  focal_gamma: 1.5       # used when type: dice_focal
 
 decoder:
   channels: 256
   dilation_rates: [1, 2, 4, 8]
+
+evaluation:
+  threshold: 0.5
+  # Threshold sweep — tries threshold_list, picks best F1 (use at test time)
+  threshold_sweep: false
+  threshold_list: [0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60]
+  # Test-Time Augmentation (use at test / benchmark time)
+  use_tta: false
+  tta_augmentations: [original, hflip, vflip, rot90]
 
 checkpoint:
   monitor: f1
