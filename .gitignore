@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.so
+
+# PyTorch
+*.pth.tar
+*.pth
+
+# Outputs (not committed — too large)
+outputs/
+outputs/benchmark_runs/
+outputs/eval_runs/
+outputs/dataset_manifests/
+
+# Keep outputs skeleton
+!outputs/.gitkeep
+
+# Datasets
+Datasets/
+
+# Logs
+*.log
+logs/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# VS Code / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+venv/
+env/

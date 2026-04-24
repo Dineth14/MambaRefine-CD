@@ -1,0 +1,16 @@
+base: base.yaml
+
+experiment:
+  name: refinement_decoder
+
+model:
+  variant: small
+  decoder: refinement
+
+decoder:
+  channels: 256
+
+resume:
+  enabled: false
+  checkpoint_path: null
+  strict: true

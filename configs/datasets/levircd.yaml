@@ -1,0 +1,36 @@
+dataset:
+  name: LEVIR-CD
+  root: /storage2/ChangeDetection/MV/Datasets/LEVIRCD
+  train_split: train
+  val_split: val
+  test_split: test
+  image_size: 256
+  val_ratio: 0.2
+  augment: true
+  num_workers: 8
+  binary: true
+  image_a_dir_candidates: ["A", "imageA", "t1", "A_256"]
+  image_b_dir_candidates: ["B", "imageB", "t2", "B_256"]
+  label_dir_candidates: ["label", "labels", "mask", "OUT"]
+
+metrics:
+  core:
+    - f1
+    - iou
+    - miou
+    - precision
+    - recall
+    - oa
+  extra:
+    - pred_positive_ratio
+    - gt_positive_ratio
+    - boundary_f1
+    - edge_iou
+
+evaluation:
+  threshold: 0.5
+
+boundary_metrics:
+  enabled: true
+  boundary_width: 3
+  tolerance: 2

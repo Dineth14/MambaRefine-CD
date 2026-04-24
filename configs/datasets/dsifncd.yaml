@@ -1,0 +1,37 @@
+dataset:
+  name: DSIFN-CD
+  root: /storage2/ChangeDetection/MV/Datasets/DSIFN-CD
+  train_split: train
+  val_split: val
+  test_split: test
+  image_size: 256
+  val_ratio: 0.2
+  augment: true
+  num_workers: 8
+  binary: true
+  # DSIFN-CD: sub-folders may be trainset/testset or t1/t2/GT
+  image_a_dir_candidates: ["t1", "T1", "A", "imageA", "before", "img1"]
+  image_b_dir_candidates: ["t2", "T2", "B", "imageB", "after",  "img2"]
+  label_dir_candidates: ["GT", "label", "labels", "mask", "OUT", "change_map"]
+
+metrics:
+  core:
+    - f1
+    - iou
+    - miou
+    - precision
+    - recall
+    - oa
+  extra:
+    - pred_positive_ratio
+    - gt_positive_ratio
+    - boundary_f1
+    - edge_iou
+
+evaluation:
+  threshold: 0.5
+
+boundary_metrics:
+  enabled: true
+  boundary_width: 3
+  tolerance: 2

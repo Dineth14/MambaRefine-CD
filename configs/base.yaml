@@ -1,0 +1,56 @@
+experiment:
+  name: base
+  seed: 42
+  output_root: outputs
+
+dataset:
+  root: /storage2/ChangeDetection/MV/Datasets/LEVIRCD
+  image_size: 256
+  val_ratio: 0.2
+  augment: true
+  num_workers: 8
+
+hardware:
+  device: cuda
+  mixed_precision: true
+
+training:
+  max_iterations: 50000
+  batch_size: 8
+  lr: 1e-4
+  weight_decay: 0.01
+  optimizer: AdamW
+  scheduler: cosine
+  warmup_iterations: 3000
+  validate_every: 5000
+  log_every: 20
+  gradient_clip: 1.0
+
+validation:
+  batch_size: 8
+  save_samples: true
+  sample_count: 16
+
+model:
+  backbone: mambavision
+  variant: tiny            # tiny | tiny2 | small | base | large
+  decoder: baseline        # baseline | adaptive_rf | refinement | global_local
+  pretrained: true
+  freeze_backbone: false
+
+loss:
+  bce_weight: 1.0
+  dice_weight: 1.0
+
+decoder:
+  channels: 256
+  dilation_rates: [1, 2, 4, 8]
+
+checkpoint:
+  monitor: f1
+  mode: max
+
+resume:
+  enabled: false
+  checkpoint_path: null    # relative paths resolved from repo root
+  strict: true

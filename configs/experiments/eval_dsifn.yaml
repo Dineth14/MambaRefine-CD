@@ -1,0 +1,29 @@
+dataset_config: ../datasets/dsifncd.yaml
+
+experiment:
+  name: eval_dsifn
+  output_root: outputs/eval_runs
+
+model:
+  backbone: mambavision
+  variant: small
+  decoder: refinement
+  pretrained: false
+
+evaluation:
+  threshold: 0.5
+  split: test
+  save_predictions: true
+  output_dir: outputs/eval_runs/dsifn
+
+checkpoint:
+  path: null   # set to trained checkpoint path
+
+hardware:
+  device: cuda
+  mixed_precision: true
+
+boundary_metrics:
+  enabled: true
+  boundary_width: 3
+  tolerance: 2
