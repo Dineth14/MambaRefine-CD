@@ -136,3 +136,60 @@ Training log example:
 +---------------+----------+
   ✓ New best f1=0.8920 saved.
 ```
+
+---
+
+## Training Validation Checker
+
+After one or more runs, verify training integrity with:
+
+```bash
+python scripts/check_training_validation.py
+```
+
+The checker scans every `run_*` directory under `RUN_ROOT` (default: `outputs/`)
+and verifies:
+
+1. `config.yaml` exists
+2. `logs/train.log` exists
+3. `validation/val_metrics.csv` exists
+4. `checkpoints/best.pth` exists
+5. Validation happened at every expected interval
+6. No all-background collapse occurred
+7. `best_metrics.json` F1 matches the CSV maximum (if present)
+
+### Expected validation intervals
+
+Read directly from the run's `config.yaml`:
+
+```yaml
+training:
+  max_iterations: 50000
+  validate_every: 5000
+# → expects validation at: 5000, 10000, 15000, …, 50000
+```
+
+### Status codes
+
+| Status | Meaning |
+|--------|---------|
+| ✓ **PASS** | All artefacts present, all intervals recorded, no collapse |
+| ⚠ **WARN** | Optional files missing; incomplete run (training in progress); collapse detected at some iter |
+| ✗ **FAIL** | `config.yaml`, `val_metrics.csv`, or `best.pth` absent; validation never ran |
+
+### Output files
+
+```
+results/training_validation_checks/
+  check_summary.csv      ← one row per run, machine-readable
+  check_summary.md       ← Markdown table + legend
+  check_details.json     ← full structured detail per run
+```
+
+### Targeting a specific output subfolder
+
+Edit the top of the script:
+
+```python
+RUN_ROOT = "outputs/benchmark_runs"   # or any subtree
+```

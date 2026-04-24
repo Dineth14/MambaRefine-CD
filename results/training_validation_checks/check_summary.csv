@@ -1,0 +1,5 @@
+run,status,has_config,has_train_log,has_val_csv,has_checkpoint,max_iter,val_every,expected_iters_count,recorded_iters_count,missing_iters_count,missing_iters,collapse_iters_count,collapse_iters,best_f1,best_iter,optional_cols_missing,warnings,failures
+run_20260101_fail_no_csv,FAIL,True,True,False,True,,,0,0,0,—,0,—,,,,,validation/val_metrics.csv missing
+run_20260101_pass,PASS,True,True,True,True,15000,5000,3,3,0,—,0,—,0.919,15000,,,
+run_20260101_warn_collapse,WARN,True,True,True,True,15000,5000,3,3,0,—,1,5000,0.91,15000,,COLLAPSE WARNING at iterations: [5000],
+run_20260101_warn_incomplete,WARN,True,True,True,True,15000,5000,3,1,2,"10000, 15000",0,—,0.85,5000,,"Training appears incomplete (last recorded iter=5000). Missing: [10000, 15000]",
