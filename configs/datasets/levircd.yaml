@@ -1,8 +1,9 @@
 dataset:
   name: LEVIR-CD
   root: /storage2/ChangeDetection/MV/Datasets/LEVIRCD
+  # No val/ split in LEVIRCD — uses val_ratio to split from train
   train_split: train
-  val_split: val
+  val_split: null
   test_split: test
   image_size: 256
   val_ratio: 0.2

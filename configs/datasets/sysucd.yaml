@@ -1,5 +1,6 @@
 dataset:
   name: SYSU-CD
+  # NOTE: SYSU-CD.zip was corrupted (0 bytes). Re-download before training.
   root: /storage2/ChangeDetection/MV/Datasets/SYSU-CD
   train_split: train
   val_split: val

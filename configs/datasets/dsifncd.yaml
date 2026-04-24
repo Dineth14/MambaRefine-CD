@@ -1,18 +1,19 @@
 dataset:
   name: DSIFN-CD
-  root: /storage2/ChangeDetection/MV/Datasets/DSIFN-CD
-  train_split: train
-  val_split: val
-  test_split: test
+  # Extracted flat layout: DSIFN-CD/DSIFN/{t1,t2,mask}/
+  root: /storage2/ChangeDetection/MV/Datasets/DSIFN-CD/DSIFN
+  # Flat dataset — no train/val/test sub-dirs; val_ratio used to split
+  train_split: null
+  val_split: null
+  test_split: null
   image_size: 256
   val_ratio: 0.2
   augment: true
   num_workers: 8
   binary: true
-  # DSIFN-CD: sub-folders may be trainset/testset or t1/t2/GT
   image_a_dir_candidates: ["t1", "T1", "A", "imageA", "before", "img1"]
   image_b_dir_candidates: ["t2", "T2", "B", "imageB", "after",  "img2"]
-  label_dir_candidates: ["GT", "label", "labels", "mask", "OUT", "change_map"]
+  label_dir_candidates: ["mask", "GT", "label", "labels", "OUT", "change_map"]
 
 metrics:
   core:

@@ -11,7 +11,7 @@ dataset:
   binary: true
   image_a_dir_candidates: ["A", "imageA", "t1", "before", "A_256"]
   image_b_dir_candidates: ["B", "imageB", "t2", "after",  "B_256"]
-  label_dir_candidates: ["label", "labels", "mask", "OUT", "change_mask"]
+  label_dir_candidates: ["OUT", "label", "labels", "mask", "change_mask"]
 
 metrics:
   core:
