@@ -21,9 +21,12 @@ from pathlib import Path
 from typing import List
 
 # ── Ensure MambaVisionCD is importable ───────────────────────────────────────
-_REPO_ROOT = Path(__file__).resolve().parents[4]   # mercon_cd_clean/
-_OLD_REPO   = _REPO_ROOT.parent / "MambaVisionCD"  # sibling repo
-for _p in [str(_REPO_ROOT / "src"), str(_OLD_REPO)]:
+_REPO_ROOT = Path(__file__).resolve().parents[3]   # MambaRefine-CD/
+_MV_SRC    = _REPO_ROOT.parent / "src"             # /storage2/ChangeDetection/MV/src (has mvcd)
+_OLD_REPO  = _REPO_ROOT.parent / "MambaVisionCD"   # sibling repo
+for _p in [str(_MV_SRC), str(_OLD_REPO)]:
+    if _p not in sys.path:
+        sys.path.append(_p)  # append so MambaRefine-CD/src/ keeps priority
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
