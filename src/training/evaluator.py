@@ -51,11 +51,14 @@ from training.tta              import apply_tta, build_tta_augmentations
 
 
 _LABELS = {
-    "f1":                  "F1",
-    "iou":                 "IoU-change",
+    "mf1":                 "mF1",
+    "f1_1":                "F1_1 change",
+    "f1_0":                "F1_0 no-change",
     "miou":                "mIoU",
-    "precision":           "Precision",
-    "recall":              "Recall",
+    "iou_1":               "IoU_1 change",
+    "iou_0":               "IoU_0 no-change",
+    "precision_1":         "Precision_1",
+    "recall_1":            "Recall_1",
     "oa":                  "OA",
     "boundary_f1":         "Boundary F1",
     "boundary_precision":  "Bnd Precision",
@@ -64,6 +67,11 @@ _LABELS = {
     "pred_positive_ratio": "Pred Positive Ratio",
     "gt_positive_ratio":   "GT Positive Ratio",
     "best_threshold":      "Best Threshold",
+    # backward-compat aliases
+    "f1":                  "F1_1 change",
+    "iou":                 "IoU_1 change",
+    "precision":           "Precision_1",
+    "recall":              "Recall_1",
 }
 
 
@@ -97,6 +105,10 @@ class Evaluator:
                 [0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60],
             )
         ]
+        # Metric used to select the best threshold: "mF1" | "F1_1" | "IoU_1"
+        self.threshold_select_metric: str = str(
+            ec.get("threshold_select_metric", "mF1")
+        )
         self.use_tta          = bool(ec.get("use_tta", False))
         self.tta_augmentations = build_tta_augmentations(cfg)
 
@@ -251,25 +263,67 @@ class Evaluator:
     # Threshold sweep
     # ------------------------------------------------------------------
     def _threshold_sweep(self, all_logits, all_labels):
-        """Try all thresholds in threshold_list, return (best_thr, best_f1, log)."""
-        best_thr = self.threshold_list[0]
-        best_f1  = -1.0
-        sweep_log = {}
+        """Try all thresholds in threshold_list.
+
+        Selects the best threshold by ``self.threshold_select_metric``
+        (one of: "mF1", "F1_1", "IoU_1").  Also records the best
+        threshold for the other two metrics and saves
+        ``best_thresholds.json`` when ``save_dir`` is set.
+
+        Returns:
+            (best_thr, best_score, sweep_log)
+        """
+        _metric_key_map = {
+            "mF1":  "mf1",
+            "F1_1": "f1_1",
+            "IoU_1": "iou_1",
+        }
+        primary_key = _metric_key_map.get(self.threshold_select_metric, "mf1")
+
+        best_by: dict = {"mf1": (-1.0, None), "f1_1": (-1.0, None), "iou_1": (-1.0, None)}
+        sweep_log: dict = {}
 
         for thr in self.threshold_list:
             m = self._metrics_at_threshold(
                 all_logits, all_labels, thr, compute_boundary=False
             )
-            f1 = m["f1"]
-            sweep_log[f"{thr:.2f}"] = round(f1, 6)
-            if f1 > best_f1:
-                best_f1  = f1
-                best_thr = thr
+            mf1_val  = float(m.get("mf1",  m.get("f1", 0.0)))
+            f1_1_val = float(m.get("f1_1", m.get("f1", 0.0)))
+            iou_1_val = float(m.get("iou_1", m.get("iou", 0.0)))
+            sweep_log[f"{thr:.2f}"] = {
+                "mf1":  round(mf1_val, 6),
+                "f1_1": round(f1_1_val, 6),
+                "iou_1": round(iou_1_val, 6),
+            }
+            for mk, val in [("mf1", mf1_val), ("f1_1", f1_1_val), ("iou_1", iou_1_val)]:
+                if val > best_by[mk][0]:
+                    best_by[mk] = (val, thr)
+
+        best_thr   = best_by[primary_key][1]
+        best_score = best_by[primary_key][0]
 
         self.logger.info(
-            f"  Threshold sweep → best={best_thr:.2f}  F1={best_f1:.4f}"
+            f"  Threshold sweep → best={best_thr:.2f}  "
+            f"{self.threshold_select_metric}={best_score:.4f}"
         )
-        return best_thr, best_f1, sweep_log
+
+        # Save best_thresholds.json if save_dir is configured
+        if self.save_dir is not None:
+            self.save_dir.mkdir(parents=True, exist_ok=True)
+            thr_data = {
+                "select_metric": self.threshold_select_metric,
+                "best_thresholds": {
+                    "mF1":  {"threshold": best_by["mf1"][1],  "value": round(best_by["mf1"][0],  6)},
+                    "F1_1": {"threshold": best_by["f1_1"][1], "value": round(best_by["f1_1"][0], 6)},
+                    "IoU_1": {"threshold": best_by["iou_1"][1], "value": round(best_by["iou_1"][0], 6)},
+                },
+                "sweep": sweep_log,
+            }
+            (self.save_dir / "best_thresholds.json").write_text(
+                json.dumps(thr_data, indent=2)
+            )
+
+        return best_thr, best_score, sweep_log
 
     # ------------------------------------------------------------------
     # Save helpers
@@ -277,14 +331,19 @@ class Evaluator:
     def _save_outputs(self, result: dict, sweep_log, dataset_name: str) -> None:
         self.save_dir.mkdir(parents=True, exist_ok=True)
 
-        # best_threshold.json
-        thr_path = self.save_dir / "best_threshold.json"
-        thr_data = {
-            "dataset":   dataset_name,
-            "threshold": result["best_threshold"],
-            "f1":        round(result["f1"], 6),
-        }
-        thr_path.write_text(json.dumps(thr_data, indent=2))
+        # best_thresholds.json (written by _threshold_sweep when sweep is on;
+        # write a simple single-threshold version when sweep is off)
+        if not self.do_sweep:
+            thr_data = {
+                "select_metric": self.threshold_select_metric,
+                "best_thresholds": {
+                    "mF1":  {"threshold": result["best_threshold"], "value": round(result.get("mf1", result.get("f1", 0.0)), 6)},
+                    "F1_1": {"threshold": result["best_threshold"], "value": round(result.get("f1_1", result.get("f1", 0.0)), 6)},
+                    "IoU_1": {"threshold": result["best_threshold"], "value": round(result.get("iou_1", result.get("iou", 0.0)), 6)},
+                },
+            }
+            thr_path = self.save_dir / "best_thresholds.json"
+            thr_path.write_text(json.dumps(thr_data, indent=2))
 
         # val_metrics.csv  (append)
         csv_path = self.save_dir / "val_metrics.csv"
@@ -305,8 +364,9 @@ class Evaluator:
             tta_data = {
                 "dataset":        dataset_name,
                 "augmentations":  self.tta_augmentations,
-                "f1":             round(result["f1"], 6),
-                "iou":            round(result.get("iou", 0.0), 6),
+                "mf1":            round(result.get("mf1", result.get("f1", 0.0)), 6),
+                "f1_1":           round(result.get("f1_1", result.get("f1", 0.0)), 6),
+                "iou_1":          round(result.get("iou_1", result.get("iou", 0.0)), 6),
                 "best_threshold": result["best_threshold"],
             }
             if sweep_log:
@@ -316,27 +376,38 @@ class Evaluator:
     # ------------------------------------------------------------------
     # Pretty-print
     # ------------------------------------------------------------------
-    def print_table(self, results: dict, title: str = "Validation Results") -> None:
+    def print_table(self, results: dict, title: str = "EVALUATION RESULTS") -> None:
         """Print a formatted validation results block."""
-        sep = "-" * 42
+        sep = "=" * 40
         self.logger.info(sep)
-        if title:
-            self.logger.info(title)
+        self.logger.info(title)
+        self.logger.info(sep)
 
-        priority_keys = [
-            "best_threshold", "f1", "iou", "miou",
-            "precision", "recall", "oa",
-            "boundary_f1", "edge_iou",
+        # Ordered display list — canonical new keys preferred, fallback to aliases
+        def _v(key: str, alias: str | None = None) -> float | None:
+            if key in results and isinstance(results[key], (int, float)):
+                return results[key]
+            if alias and alias in results and isinstance(results[alias], (int, float)):
+                return results[alias]
+            return None
+
+        rows = [
+            ("mF1",                  _v("mf1")),
+            ("F1_1 change",          _v("f1_1", "f1")),
+            ("F1_0 no-change",       _v("f1_0")),
+            ("mIoU",                 _v("miou")),
+            ("IoU_1 change",         _v("iou_1", "iou")),
+            ("IoU_0 no-change",      _v("iou_0")),
+            ("Precision_1",          _v("precision_1", "precision")),
+            ("Recall_1",             _v("recall_1", "recall")),
+            ("OA",                   _v("oa")),
+            ("Boundary F1",          _v("boundary_f1")),
+            ("Edge IoU",             _v("edge_iou")),
+            ("Pred Positive Ratio",  _v("pred_positive_ratio")),
+            ("GT Positive Ratio",    _v("gt_positive_ratio")),
         ]
-        shown = set()
-        for k in priority_keys:
-            if k in results and isinstance(results[k], (int, float)):
-                label = _LABELS.get(k, k)
-                self.logger.info(f"  {label:<22}: {results[k]:.4f}")
-                shown.add(k)
-        for k, v in results.items():
-            if k not in shown and isinstance(v, (int, float)) and k != "num_samples":
-                label = _LABELS.get(k, k)
-                self.logger.info(f"  {label:<22}: {v:.4f}")
+        for label, val in rows:
+            if val is not None:
+                self.logger.info(f"{label:<22}: {val:.4f}")
 
         self.logger.info(sep)

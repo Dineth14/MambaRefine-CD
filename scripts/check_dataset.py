@@ -1,10 +1,10 @@
 """Dataset integrity checker and manifest generator.
 
-Checks all four dataset configs and saves manifests to:
+Checks all datasets from configs/global_config.yaml and saves manifests to:
     outputs/dataset_manifests/<dataset_name>_manifest.json
 
-No CLI arguments needed. Edit DATASET_CONFIG_PATHS below to change which
-configs to check.
+No CLI arguments needed. Edit datasets_catalog in global_config.yaml to change
+which datasets are checked.
 
 Run:
     conda activate mamba_new
@@ -20,17 +20,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from utils.config_loader import load_config
+from utils.config import load_config
 
-# ── Configure which dataset configs to check ─────────────────────────────────
-DATASET_CONFIG_PATHS = [
-    "configs/datasets/levircd.yaml",
-    "configs/datasets/whucd.yaml",
-    "configs/datasets/sysucd.yaml",
-    "configs/datasets/dsifncd.yaml",
-]
 OUTPUT_DIR = ROOT / "outputs" / "dataset_manifests"
-# ─────────────────────────────────────────────────────────────────────────────
 
 _EXTS = {".png", ".jpg", ".tif", ".tiff", ".jpeg"}
 _SPLIT_ALIASES = {
@@ -159,19 +151,10 @@ def check_dataset(ds_cfg: dict) -> dict:
 def main() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     all_ok = True
+    cfg = load_config()
+    datasets_catalog = cfg.get("datasets_catalog", {})
 
-    for cfg_path in DATASET_CONFIG_PATHS:
-        full_path = ROOT / cfg_path
-        if not full_path.exists():
-            print(f"  [SKIP] Config not found: {full_path}")
-            continue
-
-        try:
-            cfg    = load_config(full_path)
-            ds_cfg = cfg.get("dataset", cfg)   # allow flat or nested
-        except Exception as e:
-            print(f"  [ERR ] Failed to load {full_path}: {e}")
-            continue
+    for _, ds_cfg in datasets_catalog.items():
 
         manifest = check_dataset(ds_cfg)
         name     = manifest["dataset_name"]
@@ -202,7 +185,7 @@ def main() -> None:
     if all_ok:
         print("All datasets found.")
     else:
-        print("Some dataset roots are missing. Update 'root' in the dataset configs.")
+        print("Some dataset roots are missing. Update 'datasets_catalog' in global_config.yaml.")
     print(f"Manifests saved to: {OUTPUT_DIR}")
 
 

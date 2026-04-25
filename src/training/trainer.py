@@ -40,6 +40,79 @@ from training.ema              import EMA
 from utils.visualization       import save_prediction_grid
 
 
+# ---------------------------------------------------------------------------
+# NaN diagnostic helpers
+# ---------------------------------------------------------------------------
+
+def _tstats(t: Optional[torch.Tensor]) -> dict:
+    """Return {min, max, std, has_nan, has_inf} for a tensor, or empty dict."""
+    if t is None:
+        return {}
+    with torch.no_grad():
+        ft = t.detach().float()
+        return {
+            "min":     float(ft.min()),
+            "max":     float(ft.max()),
+            "std":     float(ft.std()),
+            "has_nan": bool(torch.isnan(ft).any()),
+            "has_inf": bool(torch.isinf(ft).any()),
+        }
+
+
+class _NanDiagWriter:
+    """Writes per-iteration NaN diagnostic rows to <log_dir>/nan_debug.csv."""
+
+    COLS = [
+        "iteration",
+        "f1_min", "f1_max", "f1_std",
+        "f2_min", "f2_max", "f2_std",
+        "d_min",  "d_max",  "d_std",
+        "rg_min", "rg_max", "rg_mean",
+        "bg_min", "bg_max", "bg_mean",
+        "logit_min", "logit_max", "logit_std",
+        "loss",
+    ]
+
+    def __init__(self, log_dir: Path) -> None:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        self.path = log_dir / "nan_debug.csv"
+        if not self.path.exists():
+            with open(self.path, "w", newline="") as f:
+                csv.writer(f).writerow(self.COLS)
+
+    def write(
+        self,
+        iteration: int,
+        debug_info: dict,
+        logits: Optional[torch.Tensor],
+        loss_val: float,
+    ) -> None:
+        s = debug_info   # keys: f1, f2, D, region_gate, boundary_gate
+        f1s    = _tstats(s.get("f1"))
+        f2s    = _tstats(s.get("f2"))
+        ds     = _tstats(s.get("D"))
+        rgs    = _tstats(s.get("region_gate"))
+        bgs    = _tstats(s.get("boundary_gate"))
+        lgts   = _tstats(logits)
+        row = [
+            iteration,
+            f1s.get("min", ""), f1s.get("max", ""), f1s.get("std", ""),
+            f2s.get("min", ""), f2s.get("max", ""), f2s.get("std", ""),
+            ds.get("min",  ""), ds.get("max",  ""), ds.get("std",  ""),
+            rgs.get("min", ""), rgs.get("max", ""), "",   # mean computed below
+            bgs.get("min", ""), bgs.get("max", ""), "",
+            lgts.get("min",""), lgts.get("max",""), lgts.get("std",""),
+            loss_val,
+        ]
+        # Fill mean for gates
+        if s.get("region_gate") is not None:
+            row[12] = float(s["region_gate"].detach().float().mean())
+        if s.get("boundary_gate") is not None:
+            row[15] = float(s["boundary_gate"].detach().float().mean())
+        with open(self.path, "a", newline="") as f:
+            csv.writer(f).writerow(row)
+
+
 class Trainer:
     """Iteration-based trainer."""
 
@@ -82,6 +155,11 @@ class Trainer:
         self.bnd_tol       = int(bm_cfg.get("tolerance", 2))
         self.dataset_name  = cfg.get("dataset", {}).get("name", "unknown")
 
+        # NaN detection / diagnostics
+        self.skip_nan_steps   = bool(tc.get("skip_nan_steps", True))
+        self.nan_diag_every   = int(tc.get("nan_diag_every", 50))
+        self._nan_skipped     = 0
+
         # EMA
         tc2 = cfg.get("training", {})
         self.use_ema   = bool(tc2.get("use_ema", False))
@@ -103,9 +181,13 @@ class Trainer:
         self.sample_dir = self.output_dir / "samples"
         self.val_dir    = self.output_dir / "validation"
         self.val_csv    = self.val_dir / "val_metrics.csv"
+        self.log_dir    = self.output_dir / "logs"
         self.ckpt_dir.mkdir(parents=True, exist_ok=True)
         self.sample_dir.mkdir(parents=True, exist_ok=True)
         self.val_dir.mkdir(parents=True, exist_ok=True)
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+
+        self.nan_diag = _NanDiagWriter(self.log_dir)
 
         self.scaler = torch.amp.GradScaler(
             "cuda", enabled=self.amp and device.type == "cuda"
@@ -184,12 +266,54 @@ class Trainer:
         ib = batch["image_b"].to(self.device, non_blocking=True)
         lb = batch["label"].to(self.device, non_blocking=True)
 
+        # Collect D-RBI debug tensors every nan_diag_every iterations
+        iteration   = getattr(self, "_current_iter", 0)
+        do_diag     = (iteration % self.nan_diag_every == 0)
+        debug_info: dict = {}
+
+        if do_diag:
+            debug_info["f1"] = ia   # raw image; real F1 would need hooks
+            debug_info["f2"] = ib
+
         with torch.amp.autocast("cuda", enabled=self.amp and self.device.type == "cuda"):
             logits, aux = self.model(ia, ib)
+            # Clamp logits before loss to prevent BCE/Dice from receiving inf values.
+            logits = torch.clamp(logits, -20.0, 20.0)
             total, bce, dice = self.loss_fn(logits, lb)
             if aux is not None:
+                aux = torch.clamp(aux, -20.0, 20.0)
                 aux_total, _, _ = self.loss_fn(aux, lb)
                 total = total + self.aux_weight * aux_total
+
+        # ------ Fail-fast NaN/Inf detection --------------------------------
+        loss_val = total.item()
+        nan_detected = (
+            not torch.isfinite(total)
+            or not torch.isfinite(logits).all()
+        )
+        if nan_detected:
+            tensor_checks = {
+                "ia":     ia,
+                "ib":     ib,
+                "logits": logits,
+                "loss":   total,
+            }
+            for name, t in tensor_checks.items():
+                if not torch.isfinite(t).all():
+                    self.logger.warning(
+                        f"[NaN/Inf @ iter {iteration}] tensor='{name}' "
+                        f"min={float(t.float().min()):.4f} "
+                        f"max={float(t.float().max()):.4f}"
+                    )
+            self.nan_diag.write(iteration, debug_info, logits, float("nan"))
+            self._nan_skipped += 1
+            if self.skip_nan_steps:
+                self.optimizer.zero_grad(set_to_none=True)
+                self.logger.warning(
+                    f"[NaN] Skipping optimizer step (skip #{self._nan_skipped})"
+                )
+                return float("nan"), float("nan"), float("nan")
+        # ------ End NaN detection ------------------------------------------
 
         self.scaler.scale(total).backward()
         self.scaler.unscale_(self.optimizer)
@@ -198,10 +322,15 @@ class Trainer:
         self.scaler.step(self.optimizer)
         self.scaler.update()
         self.optimizer.zero_grad(set_to_none=True)
-        # EMA update after every optimiser step
+
         if self.ema is not None:
             self.ema.update(self.model)
-        return total.item(), bce.item(), dice.item()
+
+        # Periodic diagnostics (only on healthy steps)
+        if do_diag and not nan_detected:
+            self.nan_diag.write(iteration, debug_info, logits, loss_val)
+
+        return loss_val, bce.item(), dice.item()
 
     # ------------------------------------------------------------------
     # Validation
@@ -277,6 +406,18 @@ class Trainer:
             f"val_every={self.val_every} | amp={self.amp}"
         )
 
+        # ── Dataset statistics ────────────────────────────────────────────────
+        try:
+            from data.dataset_builder import log_dataset_stats, save_dataset_manifest
+            dc = self.cfg.get("dataset", {})
+            train_ds = self.train_loader.dataset
+            val_ds   = self.val_loader.dataset
+            stats = log_dataset_stats(train_ds, val_ds, None, self.logger, dc)
+            manifest_path = self.output_dir / "dataset_manifests" / "levircd_manifest.json"
+            save_dataset_manifest(stats, dc, manifest_path)
+        except Exception as _e:
+            self.logger.warning(f"Dataset stats logging skipped: {_e}")
+
         csv_cols = [
             "iteration", "dataset",
             "f1", "iou", "miou", "precision", "recall", "oa",
@@ -312,9 +453,12 @@ class Trainer:
 
             if (iteration + 1) % self.log_every == 0:
                 lr  = self.optimizer.param_groups[0]["lr"]
+                # Display nan/inf as "NaN" instead of crashing format string
+                def _fmt(v):
+                    return f"{v:.4f}" if isinstance(v, float) and not (v != v) else "NaN"
                 msg = (
                     f"[{iteration+1}/{self.max_iter}] "
-                    f"loss={loss:.4f} bce={bce:.4f} dice={dice:.4f} lr={lr:.2e}"
+                    f"loss={_fmt(loss)} bce={_fmt(bce)} dice={_fmt(dice)} lr={lr:.2e}"
                 )
                 if pbar:
                     pbar.set_description(msg)
@@ -336,7 +480,12 @@ class Trainer:
 
                 if self.writer:
                     for k, v in vm.items():
-                        self.writer.add_scalar(f"val/{k}", v, iteration)
+                        if isinstance(v, bool):
+                            self.writer.add_scalar(f"val/{k}", float(v), iteration)
+                        elif isinstance(v, (int, float)):
+                            self.writer.add_scalar(f"val/{k}", v, iteration)
+                        elif torch.is_tensor(v) and v.numel() == 1:
+                            self.writer.add_scalar(f"val/{k}", float(v.item()), iteration)
 
                 with open(self.val_csv, "a", newline="") as f:
                     row = [iteration + 1, vm.get("dataset", self.dataset_name)]

@@ -8,7 +8,7 @@ experiment:
 
 model:
   backbone: mambavision
-  variant: small
+  variant: tiny2           # tiny | tiny2 | small | base | large
   decoder: refinement
   pretrained: true
   freeze_backbone: false

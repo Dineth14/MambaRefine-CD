@@ -6,7 +6,7 @@ experiment:
   output_root: outputs/eval_runs
 
 model:
-  variant: small
+  variant: base           # tiny | tiny2 | small | base | large
   decoder: refinement
   pretrained: false
 

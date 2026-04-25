@@ -98,23 +98,45 @@ Run `python scripts/check_dataset.py` to verify detection works for your layout.
 
 ## Metrics
 
-### Core Metrics
+### Metric Definitions
 
-From binary confusion matrix (TP, FP, FN, TN):
+All metrics are derived from the binary confusion matrix (TP, FP, FN, TN)
+where class 1 = change, class 0 = no-change.
 
-$$\text{Precision} = \frac{TP}{TP + FP}$$
+#### Change class (class 1)
 
-$$\text{Recall} = \frac{TP}{TP + FN}$$
+$$\text{Precision}_1 = \frac{TP}{TP + FP}$$
 
-$$\text{F1} = \frac{2 \cdot \text{Precision} \cdot \text{Recall}}{\text{Precision} + \text{Recall}}$$
+$$\text{Recall}_1 = \frac{TP}{TP + FN}$$
 
-$$\text{IoU}_\text{change} = \frac{TP}{TP + FP + FN}$$
+$$\text{F1}_1 = \frac{2 \cdot \text{Precision}_1 \cdot \text{Recall}_1}{\text{Precision}_1 + \text{Recall}_1}$$
 
-$$\text{IoU}_\text{nochange} = \frac{TN}{TN + FP + FN}$$
+$$\text{IoU}_1 = \frac{TP}{TP + FP + FN}$$
 
-$$\text{mIoU} = \frac{\text{IoU}_\text{change} + \text{IoU}_\text{nochange}}{2}$$
+#### No-change class (class 0)
+Using symmetry (TP₀=TN, FP₀=FN, FN₀=FP):
+
+$$\text{Precision}_0 = \frac{TN}{TN + FN}$$
+
+$$\text{Recall}_0 = \frac{TN}{TN + FP}$$
+
+$$\text{F1}_0 = \frac{2 \cdot \text{Precision}_0 \cdot \text{Recall}_0}{\text{Precision}_0 + \text{Recall}_0}$$
+
+$$\text{IoU}_0 = \frac{TN}{TN + FN + FP}$$
+
+#### Mean metrics (literature-style)
+
+$$\text{mF1} = \frac{F1_0 + F1_1}{2}$$
+
+$$\text{mIoU} = \frac{IoU_0 + IoU_1}{2}$$
 
 $$\text{OA} = \frac{TP + TN}{TP + TN + FP + FN}$$
+
+> **Why mF1 and not just F1₁?**
+> Papers such as ChangeFormer, BIT, and SNUNet report `mF1 = mean(F1_0, F1_1)`.
+> Since ~95% of pixels are no-change (F1₀ ≈ 0.99), mF1 ≈ 0.91 while F1₁ ≈ 0.81
+> for the same model.  When comparing to the literature use `mF1`; for practical
+> change-detection performance use `F1₁` and `IoU₁`.
 
 ### Ratio Metrics
 
@@ -157,12 +179,19 @@ boundary_metrics:
 
 ## Threshold
 
-All metrics are computed at a configurable threshold applied to `sigmoid(logits)`:
+All metrics are computed at a threshold applied to `sigmoid(logits)`.
+The threshold sweep selects the best threshold by a configurable metric:
 
 ```yaml
 evaluation:
   threshold: 0.5
+  threshold_sweep: true
+  threshold_list: [0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60]
+  threshold_select_metric: "mF1"   # options: mF1 | F1_1 | IoU_1
 ```
+
+`best_thresholds.json` is saved alongside eval outputs and contains the
+optimal threshold for each of the three selection metrics.
 
 ---
 
@@ -268,12 +297,16 @@ After `benchmark_all.py`, tables are saved to:
 
 ```
 outputs/benchmark_runs/summary/
-  benchmark_results.csv           ← all metrics, all datasets
+  benchmark_results.csv           ← all 13 metrics, all datasets
   benchmark_results.md            ← Markdown table
+  literature_comparison.csv       ← Model, Dataset, mF1, mIoU, OA
+  practical_change_metrics.csv    ← Model, Dataset, F1_1, IoU_1, Prec_1, Rec_1, BndF1, EdgeIoU
   latex_tables/
-    core_table.tex                ← F1, IoU, mIoU, Prec, Recall, OA
+    core_table.tex                ← mF1, F1_1, mIoU, IoU_1, Prec_1, Rec_1, OA
     boundary_table.tex            ← BndF1, EdgeIoU, PredRatio, GTRatio
-    generalization_table.tex      ← cross-dataset F1, Mean, Std
+    literature_comparison.tex     ← mF1, mIoU, OA (for paper comparison tables)
+    change_class_comparison.tex   ← F1_1, IoU_1, Prec_1, Rec_1, BndF1, EdgeIoU
+    generalization_table.tex      ← cross-dataset mF1, Mean, Std
   generalization_summary.json
   generalization_summary.md
 ```

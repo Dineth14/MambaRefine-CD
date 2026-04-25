@@ -4,7 +4,7 @@ experiment:
   name: refinement_decoder
 
 model:
-  variant: small
+  variant: small          # tiny | tiny2 | small | base | large
   decoder: refinement
 
 decoder:

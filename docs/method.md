@@ -105,3 +105,116 @@ $$G = \sigma\bigl(\text{Conv}([T_{\text{local}}\ \|\ T_{\text{global}}])\bigr)$$
 $$\text{Output} = G \cdot T_{\text{local}} + (1 - G) \cdot T_{\text{global}}$$
 
 The global branch injects a global-average-pooled context vector at the deepest stage to provide scene-level priors.
+
+---
+
+## 5. Differential Region–Boundary Interaction (D-RBI)
+
+### Motivation
+
+Standard abs-diff fusion loses sign information and conflates region change
+(large, coherent area differences) with boundary change (thin, high-frequency
+edges). D-RBI decomposes the difference into two complementary signals via
+soft-gating.
+
+### Input Concatenation
+
+For a pair of encoder features $F_1, F_2 \in \mathbb{R}^{B \times C \times H \times W}$:
+
+$$\mathbf{X} = \bigl[F_1 \;\|\; F_2 \;\|\; |F_2 - F_1| \;\|\; F_1 \odot F_2\bigr] \in \mathbb{R}^{B \times 4C \times H \times W}$$
+
+Ablation switches `use_absdiff` and `use_product` can drop the last two terms,
+reducing the input to $2C$.
+
+### Bottleneck Compression
+
+$$D = \phi(\mathbf{X}) = \text{GELU}(\text{GN}(\text{DW-Conv}(\text{Conv}_{1\times1}^{4C \to C_\text{out}}(\mathbf{X}))))$$
+
+where DW-Conv is an optional depthwise $3\times3$ (`use_depthwise=True`).
+$D \in \mathbb{R}^{B \times C_\text{out} \times H \times W}$.
+
+### Region Gate
+
+A lightweight bottleneck MLP $\psi_r$ (two $1\times1$ convolutions with GELU):
+
+$$G_r = \gamma_r^\text{min} + (\gamma_r^\text{max} - \gamma_r^\text{min}) \cdot \sigma(\psi_r(D))$$
+
+$$R = G_r \odot D$$
+
+Bounded gates $(\gamma_r^\text{min} = 0.2,\ \gamma_r^\text{max} = 1.0)$ prevent saturation and ensure a minimum pass-through.
+
+### Boundary Gate
+
+A fixed Sobel filter (no learned parameters) extracts spatial gradients from $D$:
+
+$$|\nabla D| = \sqrt{(k_x * D)^2 + (k_y * D)^2 + \varepsilon}$$
+
+The boundary gate is conditioned on this gradient magnitude:
+
+$$G_b = \gamma_b^\text{min} + (\gamma_b^\text{max} - \gamma_b^\text{min}) \cdot \sigma(\psi_b(|\nabla D|))$$
+
+$$B = G_b \odot D$$
+
+Defaults: $\gamma_b^\text{min} = 0.0,\ \gamma_b^\text{max} = 0.7$ — the boundary stream is
+more selective than the region stream, only activating near true edges.
+
+### Output
+
+Each D-RBI module returns `{"diff": D, "region": R, "boundary": B}`.  At inference
+the decoder uses $R$ for the coarse ARF-FPN prediction and $B$ for the residual
+boundary correction.
+
+---
+
+## 6. D-RBI + Adaptive RF Decoder (Full Pipeline)
+
+The two-stage pipeline when `difference.enabled: true`:
+
+### Stage 1 — Coarse ARF-FPN (region features)
+
+$$\{R_i\}_{i=0}^3 = \{\text{D-RBI}_i(F_1^i, F_2^i)\text{["region"]}\}$$
+
+$$T_i = \text{ARF}_i(W_i^{\text{proj}}(R_i))$$
+
+$$P_c = \text{Upsample}(\text{CoarseHead}(\text{FPN}(\{T_i\})))$$
+
+### Stage 2 — Boundary Residual Correction
+
+The finest-scale boundary feature is upsampled to $H \times W$:
+
+$$B_0^\uparrow = \text{Bilinear}(B_0, (H, W))$$
+
+The Sobel edge of the coarse sigmoid probability:
+
+$$E = \|\nabla \sigma(P_c)\|_2$$
+
+Residual correction:
+
+$$\Delta = \text{BoundaryRefineHead}([B_0^\uparrow \;\|\; P_c \;\|\; E])$$
+
+$$P_f = P_c + \delta \cdot \tanh(\Delta)$$
+
+where $\delta = 0.1$ (`decoder.residual_scale`). $\tanh$ bounds the correction
+to $(-\delta, +\delta)$ logits, preventing large deviations from the coarse
+prediction.
+
+The `BoundaryRefineHead` final convolution is zero-initialised, so at
+epoch 0: $P_f = P_c$ (pure identity). Training gradually adds corrections.
+
+### Loss
+
+$$\mathcal{L} = \mathcal{L}(P_f, y) + \lambda \cdot \mathcal{L}(P_c, y), \qquad \lambda = 0.4$$
+
+---
+
+## 7. Ablation Switches
+
+| Switch | Default | Effect when disabled |
+|---|---|---|
+| `difference.enabled` | `true` | Falls back to abs-diff + sum decoder (old baseline) |
+| `difference.use_absdiff` | `true` | Drops $|F_2 - F_1|$ from input concat |
+| `difference.use_product` | `true` | Drops $F_1 \odot F_2$ from input concat |
+| `difference.use_region_gate` | `true` | Region output = $D$ (no gate) |
+| `difference.use_boundary_gate` | `true` | Boundary output = $D$ (no Sobel gate) |
+| `decoder.use_boundary_residual` | `true` | Uses only coarse head; no $\Delta$ correction |
+

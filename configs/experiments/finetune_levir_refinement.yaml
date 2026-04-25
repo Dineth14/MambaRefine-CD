@@ -7,7 +7,7 @@ experiment:
   output_root: outputs/finetune_runs
 
 model:
-  variant: small
+  variant: tiny2           # tiny | tiny2 | small | base | large
   decoder: refinement
   pretrained: false      # weights loaded from checkpoint, not HF hub
 

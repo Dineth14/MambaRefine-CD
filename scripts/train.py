@@ -1,6 +1,6 @@
 """Training entry point.
 
-To switch experiments, change CONFIG_PATH below.
+Configuration is loaded only from configs/global_config.yaml.
 No CLI arguments needed.
 
 Usage:
@@ -23,7 +23,7 @@ sys.path.insert(0, str(ROOT / "src"))
 import torch
 from torch.utils.tensorboard import SummaryWriter
 
-from utils.config_loader  import load_config
+from utils.config         import GLOBAL_CONFIG_PATH, load_config
 from utils.seed           import set_seed
 from data.factory         import build_dataloaders
 from models.cd_model      import build_model
@@ -31,10 +31,7 @@ from training.losses      import build_loss
 from training.trainer     import Trainer
 from training.logger      import get_logger
 from training.checkpoint  import find_latest, peek as peek_ckpt
-
-# ── Change this to switch experiments ────────────────────────────────────────
-CONFIG_PATH = "configs/refinement_decoder.yaml"
-# ─────────────────────────────────────────────────────────────────────────────
+from training.final_eval  import run_final_test_evaluation
 
 
 def _cosine_schedule(optimizer, max_iter: int, warmup: int, eta_min: float = 1e-5):
@@ -47,41 +44,41 @@ def _cosine_schedule(optimizer, max_iter: int, warmup: int, eta_min: float = 1e-
 
 
 def main() -> None:
-    cfg = load_config(ROOT / CONFIG_PATH)
-    exp = cfg["experiment"]
-    tc  = cfg["training"]
-    hw  = cfg.get("hardware", {})
+    cfg = load_config()
+    exp = cfg.experiment
+    tc  = cfg.training
+    hw  = cfg.hardware
 
-    set_seed(int(exp.get("seed", 42)))
+    set_seed(int(exp.seed))
 
     # ── Output directory ──────────────────────────────────────────────────────
     ts       = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_name = f"run_{ts}_{exp['name']}"
-    out_dir  = ROOT / exp.get("output_root", "outputs") / run_name
+    run_name = f"run_{ts}_{exp.name}"
+    out_dir  = ROOT / exp.output_root / run_name
     out_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy(ROOT / CONFIG_PATH, out_dir / "config.yaml")
+    shutil.copy(GLOBAL_CONFIG_PATH, out_dir / "config.yaml")
 
     # ── Logger ────────────────────────────────────────────────────────────────
-    logger = get_logger(exp["name"], out_dir / "logs")
-    logger.info(f"Experiment : {exp['name']}")
+    logger = get_logger(exp.name, out_dir / "logs")
+    logger.info(f"Experiment : {exp.name}")
     logger.info(f"Output dir : {out_dir}")
 
     # ── Resume pre-processing ─────────────────────────────────────────────────
-    resume_cfg = cfg.get("resume", {})
-    if resume_cfg.get("enabled", False):
-        raw = resume_cfg.get("checkpoint_path")
+    resume_cfg = cfg.resume
+    if resume_cfg.enabled:
+        raw = resume_cfg.checkpoint_path
         if not raw:
-            found = find_latest(ROOT / exp.get("output_root", "outputs"))
+            found = find_latest(ROOT / exp.output_root)
             if found is None:
                 raise FileNotFoundError("resume.checkpoint_path is null and no run_*/best.pth found.")
             raw = str(found)
             logger.info(f"Auto-found checkpoint: {raw}")
-            cfg["resume"]["checkpoint_path"] = raw
+            cfg.resume.checkpoint_path = raw
         # Resolve relative path
         p = Path(raw)
         if not p.is_absolute():
             p = (ROOT / p).resolve()
-            cfg["resume"]["checkpoint_path"] = str(p)
+            cfg.resume.checkpoint_path = str(p)
         meta = peek_ckpt(p)
         resume_info = {
             "source": str(p),
@@ -92,8 +89,10 @@ def main() -> None:
         logger.info(f"Resuming from iter {meta.get('iteration', 0)}, best={meta.get('best_metric', 0):.4f}")
 
     # ── Device ────────────────────────────────────────────────────────────────
-    device_str = hw.get("device", "cuda")
+    device_str = hw.device
     device     = torch.device(device_str if torch.cuda.is_available() else "cpu")
+    if device.type == "cuda" and device.index is not None:
+        torch.cuda.set_device(device.index)
     logger.info(f"Device : {device}")
 
     # ── Data ──────────────────────────────────────────────────────────────────
@@ -104,7 +103,7 @@ def main() -> None:
     model = build_model(cfg).to(device)
     total_p     = sum(p.numel() for p in model.parameters())
     trainable_p = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    variant     = cfg.get("model", {}).get("variant", "unknown")
+    variant     = cfg.model.variant
     logger.info(f"Variant          : {variant}")
     logger.info(f"Total params     : {total_p / 1e6:.2f}M")
     logger.info(f"Trainable params : {trainable_p / 1e6:.2f}M")
@@ -115,20 +114,20 @@ def main() -> None:
         "encoder_channels": model.encoder.channels,
     }, indent=2))
 
-    if bool(cfg.get("model", {}).get("freeze_backbone", False)):
+    if bool(cfg.model.freeze_backbone):
         for p in model.encoder.parameters():
             p.requires_grad_(False)
         logger.info("Backbone frozen.")
 
     # ── Optimizer + Scheduler ─────────────────────────────────────────────────
-    lr        = float(tc.get("lr", tc.get("learning_rate", 1e-4)))
-    wd        = float(tc.get("weight_decay", 0.01))
-    opt_name  = tc.get("optimizer", "AdamW")
+    lr        = float(tc.lr)
+    wd        = float(tc.weight_decay)
+    opt_name  = tc.optimizer
     optimizer = getattr(torch.optim, opt_name)(
         filter(lambda p: p.requires_grad, model.parameters()), lr=lr, weight_decay=wd
     )
-    max_iter = int(tc["max_iterations"])
-    warmup   = int(tc.get("warmup_iterations", 3000))
+    max_iter = int(tc.max_iterations)
+    warmup   = int(tc.warmup_iterations)
     scheduler = _cosine_schedule(optimizer, max_iter, warmup)
 
     # ── Loss ──────────────────────────────────────────────────────────────────
@@ -147,6 +146,17 @@ def main() -> None:
     )
     trainer.train()
     writer.close()
+
+    # ── Post-training: automatic test evaluation ──────────────────────────────
+    run_final_test_evaluation(
+        cfg        = cfg,
+        model      = model,
+        output_dir = out_dir,
+        device     = device,
+        ema        = trainer.ema,
+        logger     = logger,
+    )
+
     logger.info("Done.")
 
 

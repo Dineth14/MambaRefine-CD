@@ -11,7 +11,7 @@ dataset:
   num_workers: 8
 
 hardware:
-  device: cuda
+  device: cuda:1
   mixed_precision: true
 
 training:
@@ -36,8 +36,8 @@ validation:
 
 model:
   backbone: mambavision
-  variant: tiny2            # tiny | tiny2 | small | base | large
-  decoder: baseline        # baseline | adaptive_rf | refinement | global_local
+  variant: base          # tiny | tiny2 | small | base | large
+  decoder: refinement        # baseline | adaptive_rf | refinement | global_local
   pretrained: true
   freeze_backbone: false
 

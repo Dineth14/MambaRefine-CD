@@ -1,6 +1,6 @@
 """Benchmark all datasets with a single script.
 
-Reads configs/benchmark_suite.yaml, evaluates each checkpoint on its
+Reads configs/global_config.yaml, evaluates each checkpoint on its
 matching dataset, then generates:
 
   outputs/benchmark_runs/summary/
@@ -33,7 +33,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 import torch
 
-from utils.config_loader            import load_config
+from utils.config                   import load_config
 from utils.seed                     import set_seed
 from data.dataset_builder           import build_test_loader
 from models.cd_model                import build_model
@@ -44,14 +44,36 @@ from training.generalization_metrics import (
     save_generalization_report,
 )
 
-# ── Benchmark suite config ─────────────────────────────────────────────────
-SUITE_PATH = "configs/benchmark_suite.yaml"
-# ─────────────────────────────────────────────────────────────────────────────
-
 _METRIC_KEYS = [
-    "f1", "iou", "miou", "precision", "recall", "oa",
+    "mf1", "f1_0", "f1_1", "miou", "iou_0", "iou_1",
+    "precision_1", "recall_1", "oa",
     "boundary_f1", "edge_iou", "pred_positive_ratio", "gt_positive_ratio",
 ]
+
+# Aliases: result dict may use old key names; this resolves to canonical value
+_KEY_ALIAS = {
+    "mf1":         ("mf1",),
+    "f1_0":        ("f1_0",),
+    "f1_1":        ("f1_1", "f1"),
+    "miou":        ("miou",),
+    "iou_0":       ("iou_0",),
+    "iou_1":       ("iou_1", "iou"),
+    "precision_1": ("precision_1", "precision"),
+    "recall_1":    ("recall_1",    "recall"),
+    "oa":          ("oa",),
+    "boundary_f1":         ("boundary_f1",),
+    "edge_iou":            ("edge_iou",),
+    "pred_positive_ratio": ("pred_positive_ratio",),
+    "gt_positive_ratio":   ("gt_positive_ratio",),
+}
+
+
+def _resolve(res: dict, key: str) -> str:
+    """Get value from result dict, trying canonical key then aliases."""
+    for k in _KEY_ALIAS.get(key, (key,)):
+        if k in res and isinstance(res[k], (int, float)):
+            return res[k]
+    return ""
 
 
 # ── LaTeX helpers ─────────────────────────────────────────────────────────────
@@ -89,36 +111,34 @@ def _fmt(v, decimals: int = 4) -> str:
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    suite_path = ROOT / SUITE_PATH
-    if not suite_path.exists():
-        raise FileNotFoundError(f"Benchmark suite config not found: {suite_path}")
+    cfg = load_config()
+    suite = cfg.benchmark
+    set_seed(int(cfg.experiment.seed))
 
-    suite = load_config(suite_path)["benchmark"]
-    set_seed(42)
-
-    model_name  = suite.get("model_name", "model")
-    out_dir     = ROOT / suite.get("output_dir", "outputs/benchmark_runs/summary")
+    model_name  = suite.model_name
+    out_dir     = ROOT / suite.output_dir
     latex_dir   = out_dir / "latex_tables"
-    main_ds     = suite.get("main_dataset", "LEVIR-CD")
-    eval_split  = suite.get("eval_split", "test")
+    main_ds     = suite.main_dataset
+    eval_split  = suite.eval_split
 
     out_dir.mkdir(parents=True, exist_ok=True)
     latex_dir.mkdir(parents=True, exist_ok=True)
 
     device = torch.device(
-        suite.get("hardware", {}).get("device", "cuda")
-        if torch.cuda.is_available() else "cpu"
+        cfg.hardware.device if torch.cuda.is_available() else "cpu"
     )
-    amp = bool(suite.get("hardware", {}).get("mixed_precision", True))
+    if device.type == "cuda" and device.index is not None:
+        torch.cuda.set_device(device.index)
+    amp = bool(cfg.hardware.mixed_precision)
 
-    checkpoints   = suite.get("checkpoints", {})
-    ds_cfg_paths  = suite.get("dataset_configs", {})
-    datasets_run  = suite.get("datasets", list(checkpoints.keys()))
+    checkpoints   = suite.checkpoints
+    datasets_run  = list(suite.datasets)
+    ds_catalog    = cfg.datasets_catalog
 
     # Build a lightweight eval-only cfg for Evaluator
     eval_base_cfg = {
-        "evaluation":      suite.get("evaluation", {"threshold": 0.5}),
-        "boundary_metrics": suite.get("boundary_metrics", {"enabled": True}),
+        "evaluation":      cfg.evaluation.to_dict(),
+        "boundary_metrics": cfg.boundary_metrics.to_dict(),
     }
 
     all_results: dict = {}
@@ -133,7 +153,7 @@ def main() -> None:
                 break
 
         if ckpt_path is None:
-            print(f"  [SKIP] {ds_name}: no checkpoint configured (set in benchmark_suite.yaml)")
+            print(f"  [SKIP] {ds_name}: no checkpoint configured (set in global_config.yaml -> benchmark.checkpoints)")
             continue
         ckpt_path = Path(ckpt_path)
         if not ckpt_path.is_absolute():
@@ -142,26 +162,24 @@ def main() -> None:
             print(f"  [SKIP] {ds_name}: checkpoint not found: {ckpt_path}")
             continue
 
-        # Find matching dataset config
-        ds_cfg_path = None
-        for key, path in ds_cfg_paths.items():
-            if key.lower() in ds_name.lower() or ds_name.lower().startswith(key.lower()):
-                ds_cfg_path = path
+        ds_cfg = None
+        for key, value in ds_catalog.items():
+            catalog_name = str(value.get("name", key))
+            if key.lower() in ds_name.lower() or ds_name.lower().startswith(key.lower()) or catalog_name.lower() == ds_name.lower():
+                ds_cfg = value
                 break
-        if ds_cfg_path is None:
-            print(f"  [SKIP] {ds_name}: no dataset_config configured")
+        if ds_cfg is None:
+            print(f"  [SKIP] {ds_name}: no dataset configured in global_config.yaml")
             continue
 
         print(f"  [{ds_name}] Loading dataset and model ...")
-        ds_full_cfg = load_config(ROOT / ds_cfg_path)
-
-        # Build merged cfg for this dataset
-        model_cfg = {"model": suite["model"], "hardware": suite.get("hardware", {}), **eval_base_cfg}
-        loader_cfg = {**ds_full_cfg, **model_cfg, "training": {"batch_size": 8}}
+        loader_cfg = cfg.to_dict()
+        loader_cfg["dataset"] = dict(ds_cfg)
+        loader_cfg["evaluation"]["split"] = eval_split
 
         loader = build_test_loader(loader_cfg)
 
-        model = build_model({**ds_full_cfg, **model_cfg}).to(device)
+        model = build_model(cfg).to(device)
         ckpt_info = peek_ckpt(ckpt_path)
         model.load_state_dict(ckpt_info["model"], strict=True)
         model.eval()
@@ -174,7 +192,7 @@ def main() -> None:
         print()
 
     if not all_results:
-        print("No datasets were evaluated. Check checkpoint paths in benchmark_suite.yaml.")
+        print("No datasets were evaluated. Check benchmark.checkpoints in global_config.yaml.")
         return
 
     # ── Save benchmark_results.csv ────────────────────────────────────────────
@@ -185,7 +203,7 @@ def main() -> None:
         for ds, res in all_results.items():
             w.writerow(
                 [ds, model_name]
-                + [_fmt(res.get(k, ""), 4) for k in _METRIC_KEYS]
+                + [_fmt(_resolve(res, k), 4) for k in _METRIC_KEYS]
             )
     print(f"Saved CSV        → {csv_path}")
 
@@ -201,23 +219,54 @@ def main() -> None:
         "| " + " | ".join(["---"] * len(header)) + " |",
     ]
     for ds, res in all_results.items():
-        row = [ds] + [_fmt(res.get(k, ""), 4) for k in _METRIC_KEYS]
+        row = [ds] + [_fmt(_resolve(res, k), 4) for k in _METRIC_KEYS]
         lines.append("| " + " | ".join(row) + " |")
     with open(md_path, "w") as f:
         f.write("\n".join(lines) + "\n")
     print(f"Saved Markdown   → {md_path}")
 
+    # ── Save literature_comparison.csv ────────────────────────────────────────
+    lit_csv_path = out_dir / "literature_comparison.csv"
+    with open(lit_csv_path, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["Model", "Dataset", "mF1", "mIoU", "OA"])
+        for ds, res in all_results.items():
+            w.writerow([
+                model_name, ds,
+                _fmt(_resolve(res, "mf1"),  4),
+                _fmt(_resolve(res, "miou"), 4),
+                _fmt(_resolve(res, "oa"),   4),
+            ])
+    print(f"Saved lit CSV    → {lit_csv_path}")
+
+    # ── Save practical_change_metrics.csv ─────────────────────────────────────
+    prac_csv_path = out_dir / "practical_change_metrics.csv"
+    with open(prac_csv_path, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["Model", "Dataset", "F1_1", "IoU_1", "Precision_1", "Recall_1", "Boundary_F1", "Edge_IoU"])
+        for ds, res in all_results.items():
+            w.writerow([
+                model_name, ds,
+                _fmt(_resolve(res, "f1_1"),        4),
+                _fmt(_resolve(res, "iou_1"),       4),
+                _fmt(_resolve(res, "precision_1"), 4),
+                _fmt(_resolve(res, "recall_1"),    4),
+                _fmt(_resolve(res, "boundary_f1"), 4),
+                _fmt(_resolve(res, "edge_iou"),    4),
+            ])
+    print(f"Saved prac CSV   → {prac_csv_path}")
+
     # ── LaTeX tables ──────────────────────────────────────────────────────────
-    # 1. Core benchmark table
-    core_keys  = ["f1", "iou", "miou", "precision", "recall", "oa"]
+    # 1. Core benchmark table — literature-style mean metrics
+    core_keys  = ["mf1", "f1_1", "miou", "iou_1", "precision_1", "recall_1", "oa"]
     core_rows  = [
-        [ds] + [_fmt(all_results[ds].get(k, ""), 4) for k in core_keys]
+        [ds] + [_fmt(_resolve(all_results[ds], k), 4) for k in core_keys]
         for ds in all_results
     ]
     core_tex   = _latex_table(
         caption = f"Core Change Detection Results — {model_name}",
         label   = "tab:core_results",
-        header  = ["Dataset", "F1", "IoU", "mIoU", "Prec", "Recall", "OA"],
+        header  = ["Dataset", "mF1", "F1\\_1", "mIoU", "IoU\\_1", "Prec\\_1", "Rec\\_1", "OA"],
         rows    = core_rows,
     )
     tex_path   = latex_dir / "core_table.tex"
@@ -227,7 +276,7 @@ def main() -> None:
     # 2. Boundary table
     bnd_keys  = ["boundary_f1", "edge_iou", "pred_positive_ratio", "gt_positive_ratio"]
     bnd_rows  = [
-        [ds] + [_fmt(all_results[ds].get(k, ""), 4) for k in bnd_keys]
+        [ds] + [_fmt(_resolve(all_results[ds], k), 4) for k in bnd_keys]
         for ds in all_results
     ]
     bnd_tex   = _latex_table(
@@ -239,22 +288,50 @@ def main() -> None:
     (latex_dir / "boundary_table.tex").write_text(bnd_tex)
     print(f"Saved LaTeX bnd  → {latex_dir / 'boundary_table.tex'}")
 
+    # 3. Literature comparison LaTeX table (mean metrics, for paper comparison)
+    lit_keys  = ["mf1", "miou", "oa"]
+    lit_rows  = [
+        [ds] + [_fmt(_resolve(all_results[ds], k), 4) for k in lit_keys]
+        for ds in all_results
+    ]
+    lit_tex   = _latex_table(
+        caption = f"Literature Comparison — Mean Metrics — {model_name}",
+        label   = "tab:literature_comparison",
+        header  = ["Dataset", "mF1", "mIoU", "OA"],
+        rows    = lit_rows,
+    )
+    (latex_dir / "literature_comparison.tex").write_text(lit_tex)
+    print(f"Saved LaTeX lit  → {latex_dir / 'literature_comparison.tex'}")
+
+    # 4. Change-class detailed table
+    cc_keys  = ["f1_1", "iou_1", "precision_1", "recall_1", "boundary_f1", "edge_iou"]
+    cc_rows  = [
+        [ds] + [_fmt(_resolve(all_results[ds], k), 4) for k in cc_keys]
+        for ds in all_results
+    ]
+    cc_tex   = _latex_table(
+        caption = f"Change-Class Metrics (Class 1) — {model_name}",
+        label   = "tab:change_class_comparison",
+        header  = ["Dataset", "F1\\_1", "IoU\\_1", "Prec\\_1", "Rec\\_1", "Bnd F1", "Edge IoU"],
+        rows    = cc_rows,
+    )
+    (latex_dir / "change_class_comparison.tex").write_text(cc_tex)
+    print(f"Saved LaTeX cc   → {latex_dir / 'change_class_comparison.tex'}")
+
     # ── Generalization metrics ────────────────────────────────────────────────
     gen_stats = compute_generalization(all_results, main_dataset=main_ds)
     save_generalization_report(gen_stats, all_results, out_dir)
 
-    # 3. Generalization LaTeX table
-    ds_list = gen_stats.get("datasets", [])
-    f1_vals = [_fmt(all_results[ds].get("f1", ""), 4) for ds in ds_list]
-    mean_f1 = _fmt(gen_stats.get("mean", {}).get("f1", ""), 4)
-    std_f1  = _fmt(gen_stats.get("std",  {}).get("f1", ""), 4)
-    gen_header = [model_name] + ds_list + ["Mean F1", "Std F1"]
-    gen_row    = [model_name] + f1_vals + [mean_f1, std_f1]
-    gen_tex    = _latex_table(
+    # 5. Generalization LaTeX table
+    ds_list  = gen_stats.get("datasets", [])
+    mf1_vals = [_fmt(_resolve(all_results[ds], "mf1"), 4) for ds in ds_list]
+    mean_mf1 = _fmt(gen_stats.get("mean", {}).get("mf1") or gen_stats.get("mean", {}).get("f1", ""), 4)
+    std_mf1  = _fmt(gen_stats.get("std",  {}).get("mf1") or gen_stats.get("std",  {}).get("f1", ""), 4)
+    gen_tex  = _latex_table(
         caption = "Generalization Across Datasets",
         label   = "tab:generalization",
-        header  = ["Model"] + ds_list + ["Mean F1", "Std F1"],
-        rows    = [gen_row],
+        header  = ["Model"] + ds_list + ["Mean mF1", "Std mF1"],
+        rows    = [[model_name] + mf1_vals + [mean_mf1, std_mf1]],
     )
     (latex_dir / "generalization_table.tex").write_text(gen_tex)
     print(f"Saved LaTeX gen  → {latex_dir / 'generalization_table.tex'}")

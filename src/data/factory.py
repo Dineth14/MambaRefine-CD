@@ -1,8 +1,7 @@
 """Dataset and DataLoader factory.
 
-Delegates to ``data.dataset_builder`` for multi-dataset support.
-Falls back to LEVIR-CD if no ``dataset.name`` is specified (backward
-compatibility with existing single-dataset configs).
+Delegates to ``data.dataset_builder`` for multi-dataset support using the
+single global configuration object.
 """
 from __future__ import annotations
 

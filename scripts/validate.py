@@ -1,11 +1,7 @@
 """Standalone validation / inference script.
 
-Runs a full validation pass on a saved checkpoint and prints a metric table.
-
-Usage:
-    python scripts/validate.py \
-        --config configs/refinement_decoder.yaml \
-        --checkpoint outputs/run_XXXX/checkpoints/best.pth
+Runs a full validation pass from configs/global_config.yaml.
+No CLI arguments.
 """
 from __future__ import annotations
 
@@ -15,11 +11,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-import argparse
 import torch
 
-from utils.config_loader import load_config
+from utils.config import load_config
 from data.factory        import build_dataloaders
+from data.dataset_builder import build_test_loader
 from models.cd_model     import build_model
 from training.metrics    import StreamingMetrics
 from training.logger     import get_logger, log_table
@@ -27,22 +23,18 @@ from training.checkpoint import peek as peek_ckpt
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--config",     required=True)
-    ap.add_argument("--checkpoint", required=True)
-    ap.add_argument("--split",      default="val", choices=["val", "test"])
-    args = ap.parse_args()
-
-    cfg    = load_config(ROOT / args.config)
+    cfg    = load_config()
     logger = get_logger("validate", ROOT / "outputs" / "validate_logs")
 
-    device_str = cfg.get("hardware", {}).get("device", "cuda")
+    device_str = cfg.hardware.device
     device     = torch.device(device_str if torch.cuda.is_available() else "cpu")
+    if device.type == "cuda" and device.index is not None:
+        torch.cuda.set_device(device.index)
 
-    _, val_loader = build_dataloaders(cfg)
+    train_loader, val_loader = build_dataloaders(cfg)
     model = build_model(cfg).to(device)
 
-    ckpt_path = Path(args.checkpoint)
+    ckpt_path = Path(cfg.checkpoint.path)
     if not ckpt_path.is_absolute():
         ckpt_path = (ROOT / ckpt_path).resolve()
 
@@ -53,17 +45,20 @@ def main() -> None:
 
     model.eval()
     metrics = StreamingMetrics()
+    split = str(cfg.validation.split)
+    loader = build_test_loader(cfg) if split == "test" else val_loader
     with torch.no_grad():
         try:
             from tqdm import tqdm
-            loader = tqdm(val_loader, desc=f"Validate ({args.split})")
+            loader = tqdm(loader, desc=f"Validate ({split})")
         except ImportError:
-            loader = val_loader
+            pass
 
         for batch in loader:
             ia = batch["image_a"].to(device)
             ib = batch["image_b"].to(device)
-            lb = batch["label"].to(device)
+            lbl_key = "label" if "label" in batch else "mask"
+            lb = batch[lbl_key].to(device)
             logits, _ = model(ia, ib)
             metrics.update(logits, lb)
 

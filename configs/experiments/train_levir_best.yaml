@@ -7,7 +7,7 @@ experiment:
   output_root: outputs/best_runs
 
 model:
-  variant: small          # small backbone for speed/accuracy balance
+  variant: base           # tiny | tiny2 | small | base | large
   decoder: refinement
   pretrained: true
   freeze_backbone: false

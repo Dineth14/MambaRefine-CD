@@ -1,0 +1,238 @@
+experiment:
+  name: refine_mamba_cd
+  output_root: outputs
+  seed: 42
+
+hardware:
+  device: cuda
+  gpu_ids: [1]
+  mixed_precision: true
+
+model:
+  mode: "dual"                    
+  backbone: mambavision
+  variant: base      # tiny | tiny2 | small | base | large
+  decoder: adaptive_rf
+  pretrained: true
+  return_features: false
+  freeze_backbone: false
+
+# Differential Region–Boundary Interaction (D-RBI) fusion.
+# Set enabled: false to fall back to the old abs-diff + sum decoder path.
+difference:
+  enabled: true
+  type: region_boundary
+  out_channels: 256
+  use_depthwise: true
+  gate_hidden_ratio: 0.25
+  pre_norm: true            # GroupNorm F1,F2 before diff/product (prevents magnitude explosion)
+  use_absdiff: true
+  use_product: false        # disabled by default -- re-enable after stable training
+  product_scale: 0.25      # scale for product term when use_product=true
+  use_region_gate: true
+  use_boundary_gate: true
+  region_gate_min: 0.2
+  region_gate_max: 0.8     # was 1.0 -- tighter bound prevents gradient explosion
+  boundary_gate_min: 0.0
+  boundary_gate_max: 0.4   # was 0.7 -- conservative for stable boundary stream
+  return_debug: false
+
+decoder:
+  type: adaptive_rf
+  channels: 256
+  dilation_rates: [1, 2, 4, 8]
+  use_boundary_residual: true
+  residual_scale: 0.05     # was 0.1 -- smaller initial correction prevents early NaN
+  use_depthwise: true
+  aux_weight: 0.4
+
+training:
+  max_iterations: 50000
+  batch_size: 4
+  lr: 5e-5               # was 1e-4 -- lower lr for NaN-safe startup
+  optimizer: adamw
+  scheduler: cosine
+  warmup_iterations: 2500
+  validate_every: 5000
+  log_every: 20
+  gradient_clip: 0.5     # was 1.0 -- tighter clip prevents early gradient explosion
+  weight_decay: 0.01
+  skip_nan_steps: true   # skip optimizer step on NaN loss, log and continue
+  nan_diag_every: 50     # write diagnostic row to logs/nan_debug.csv every N iters
+
+resume:
+  enabled: false
+  checkpoint_path: null
+  strict: true
+
+dataset:
+  name: LEVIR-CD
+  root: /storage2/ChangeDetection/MV/Datasets/LEVIRCD
+  image_size: 256
+  num_workers: 4
+  val_ratio: 0.2
+  augment: true
+  binary: true
+  split: train
+  train_split: train
+  val_split: null
+  test_split: test
+  # ── Tile pipeline ──────────────────────────────────────────────────────────
+  # train_mode: "tile"  → LEVIRCDTileDataset with stride-based indexing
+  # train_mode: "image" → original LEVIRCDDataset (random crop per image)
+  train_mode: "tile"
+  val_mode: "existing"    # keep official val tiles (20% of train, tiled)
+  test_mode: "existing"   # keep official test tiles
+  tile_size: 256
+  train_stride: 128       # overlap tiling → more train tiles
+  val_stride: 256         # non-overlapping tiles for val
+  test_stride: 256        # non-overlapping tiles for test
+  min_change_pixels: 1
+  include_empty_ratio: 0.25   # fraction of no-change tiles to keep
+  use_tile_cache: true
+  tile_cache_dir: "outputs/dataset_indices"
+  boundary_aware_sampling: true
+  balance_change_tiles: true
+  target_change_tile_ratio: 0.5
+  image_a_dir_candidates: [A, imageA, t1, A_256]
+  image_b_dir_candidates: [B, imageB, t2, B_256]
+  label_dir_candidates: [label, labels, mask, OUT]
+
+validation:
+  batch_size: 8
+  save_samples: true
+  sample_count: 16
+  split: val
+
+evaluation:
+  split: test
+  threshold: 0.5
+  threshold_sweep: true
+  threshold_list: [0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60]
+  threshold_select_metric: "mF1"   # options: mF1 | F1_1 | IoU_1
+  use_tta: false
+  tta_augmentations: [original, hflip, vflip, rot90]
+  save_predictions: false
+
+loss:
+  type: dice_focal
+  dice_weight: 1.0
+  focal_weight: 0.3
+  focal_gamma: 1.5
+  bce_weight: 1.0
+
+ema:
+  enabled: true
+  decay: 0.999
+  store_on_cpu: true
+
+checkpoint:
+  path: null
+  monitor: f1
+  mode: max
+  save_best_only: true
+
+boundary_metrics:
+  enabled: true
+  boundary_width: 3
+  tolerance: 2
+
+debug:
+  enabled: false
+  memory_debug: false
+  name: tiny_memory_debug
+  output_root: outputs/memory_debug
+  steps: 3
+  batch_size: 8
+  image_size: 256
+  use_amp: true
+  profile_torch_ops: true
+  profile_one_step_only: true
+  compare_modes:
+    - baseline_forward_only
+    - train_forward_loss_backward
+    - train_with_return_features_false
+    - train_with_return_features_true
+    - train_with_ema_disabled
+    - train_with_ema_enabled
+    - train_with_tta_disabled
+    - eval_no_grad
+    - eval_with_tta
+    - decoder_baseline
+    - decoder_refinement
+    - decoder_adaptive_rf
+  save_memory_summary: true
+
+datasets_catalog:
+  levir:
+    name: LEVIR-CD
+    root: /storage2/ChangeDetection/MV/Datasets/LEVIRCD
+    image_size: 256
+    num_workers: 8
+    val_ratio: 0.2
+    augment: true
+    binary: true
+    train_split: train
+    val_split: null
+    test_split: test
+    image_a_dir_candidates: [A, imageA, t1, A_256]
+    image_b_dir_candidates: [B, imageB, t2, B_256]
+    label_dir_candidates: [label, labels, mask, OUT]
+  whu:
+    name: WHU-CD
+    root: /storage2/ChangeDetection/MV/Datasets/WHU-CD
+    image_size: 256
+    num_workers: 8
+    val_ratio: 0.2
+    augment: true
+    binary: true
+    train_split: train
+    val_split: val
+    test_split: test
+    image_a_dir_candidates: [A, imageA, t1, before, A_256]
+    image_b_dir_candidates: [B, imageB, t2, after, B_256]
+    label_dir_candidates: [OUT, label, labels, mask, change_mask]
+  sysu:
+    name: SYSU-CD
+    root: /storage2/ChangeDetection/MV/Datasets/SYSU-CD
+    image_size: 256
+    num_workers: 8
+    val_ratio: 0.2
+    augment: true
+    binary: true
+    train_split: train
+    val_split: val
+    test_split: test
+    image_a_dir_candidates: [A, t1, time1, imageA, T1, img1]
+    image_b_dir_candidates: [B, t2, time2, imageB, T2, img2]
+    label_dir_candidates: [label, mask, OUT, GT, labels, change_map]
+  dsifn:
+    name: DSIFN-CD
+    root: /storage2/ChangeDetection/MV/Datasets/DSIFN-CD/DSIFN
+    image_size: 256
+    num_workers: 8
+    val_ratio: 0.2
+    augment: true
+    binary: true
+    train_split: null
+    val_split: null
+    test_split: null
+    image_a_dir_candidates: [t1, T1, A, imageA, before, img1]
+    image_b_dir_candidates: [t2, T2, B, imageB, after, img2]
+    label_dir_candidates: [mask, GT, label, labels, OUT, change_map]
+
+post_training:
+  run_test_eval: true     # automatically evaluate on test split after training
+  export_best_model: true # copy best.pth → best_model_final.pth in run dir
+
+benchmark:
+  model_name: refine_mamba_cd
+  output_dir: outputs/benchmark_runs/summary
+  datasets: [LEVIR-CD, WHU-CD, SYSU-CD, DSIFN-CD]
+  eval_split: test
+  main_dataset: LEVIR-CD
+  checkpoints:
+    levir: null
+    whu: null
+    sysu: null
+    dsifn: null
