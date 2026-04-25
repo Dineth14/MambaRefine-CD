@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 380">
+  <defs>
+    <marker id="arr" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0,0 8,3 0,6" fill="#64748b"/>
+    </marker>
+    <marker id="arr-b" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0,0 8,3 0,6" fill="#0284c7"/>
+    </marker>
+    <marker id="arr-p" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0,0 8,3 0,6" fill="#db2777"/>
+    </marker>
+    <marker id="arr-g" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0,0 8,3 0,6" fill="#059669"/>
+    </marker>
+  </defs>
+
+  <rect width="820" height="380" fill="#f8fafc"/>
+
+  <text x="410" y="26" text-anchor="middle" font-family="system-ui" font-size="13" font-weight="600" fill="#0f172a">Adaptive RF Decoder + Boundary Residual Refinement</text>
+
+  <!-- ===== UPPER PATH: ARF-FPN ===== -->
+
+  <!-- Region features input -->
+  <rect x="18" y="52" width="126" height="80" rx="7" fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="81" y="72" text-anchor="middle" font-family="system-ui" font-size="11" font-weight="600" fill="#166534">Region Features</text>
+  <text x="81" y="90" text-anchor="middle" font-family="system-ui" font-size="10" fill="#166534">R&#x2081;, R&#x2082;, R&#x2083;, R&#x2084;</text>
+  <text x="81" y="108" text-anchor="middle" font-family="system-ui" font-size="10" fill="#166534">multi-scale</text>
+  <text x="81" y="122" text-anchor="middle" font-family="system-ui" font-size="10" fill="#166534">from D-RBI</text>
+
+  <line x1="144" y1="92" x2="170" y2="92" stroke="#16a34a" stroke-width="1.5" marker-end="url(#arr-g)"/>
+
+  <!-- ARF-FPN block -->
+  <rect x="173" y="48" width="190" height="88" rx="7" fill="#f0fdf4" stroke="#059669" stroke-width="2"/>
+  <text x="268" y="70" text-anchor="middle" font-family="system-ui" font-size="12" font-weight="700" fill="#065f46">ARF-FPN</text>
+  <text x="268" y="87" text-anchor="middle" font-family="system-ui" font-size="10" fill="#047857">Softmax-gated dilation mix</text>
+
+  <!-- Dilation rates inside ARF box -->
+  <rect x="185" y="96" width="36" height="22" rx="3" fill="#bbf7d0" stroke="#16a34a" stroke-width="1"/>
+  <text x="203" y="111" text-anchor="middle" font-family="system-ui" font-size="9" fill="#166534">d=1</text>
+  <rect x="226" y="96" width="36" height="22" rx="3" fill="#bbf7d0" stroke="#16a34a" stroke-width="1"/>
+  <text x="244" y="111" text-anchor="middle" font-family="system-ui" font-size="9" fill="#166534">d=2</text>
+  <rect x="267" y="96" width="36" height="22" rx="3" fill="#bbf7d0" stroke="#16a34a" stroke-width="1"/>
+  <text x="285" y="111" text-anchor="middle" font-family="system-ui" font-size="9" fill="#166534">d=4</text>
+  <rect x="308" y="96" width="42" height="22" rx="3" fill="#bbf7d0" stroke="#16a34a" stroke-width="1"/>
+  <text x="329" y="111" text-anchor="middle" font-family="system-ui" font-size="9" fill="#166534">d=8</text>
+
+  <line x1="363" y1="92" x2="390" y2="92" stroke="#059669" stroke-width="1.5" marker-end="url(#arr-g)"/>
+
+  <!-- Coarse prediction P_c -->
+  <rect x="393" y="62" width="104" height="58" rx="7" fill="#e0f2fe" stroke="#0284c7" stroke-width="2"/>
+  <text x="445" y="85" text-anchor="middle" font-family="system-ui" font-size="13" font-weight="700" fill="#075985">P&#x1D9C;</text>
+  <text x="445" y="103" text-anchor="middle" font-family="system-ui" font-size="10" fill="#0369a1">coarse logit map</text>
+
+  <!-- ===== LOWER PATH: BOUNDARY REFINEMENT ===== -->
+
+  <!-- Boundary features input -->
+  <rect x="18" y="196" width="126" height="80" rx="7" fill="#fce7f3" stroke="#db2777" stroke-width="1.5"/>
+  <text x="81" y="216" text-anchor="middle" font-family="system-ui" font-size="11" font-weight="600" fill="#9d174d">Boundary Features</text>
+  <text x="81" y="234" text-anchor="middle" font-family="system-ui" font-size="10" fill="#9d174d">B&#x2081;, B&#x2082;, B&#x2083;, B&#x2084;</text>
+  <text x="81" y="252" text-anchor="middle" font-family="system-ui" font-size="10" fill="#9d174d">gradient-conditioned</text>
+  <text x="81" y="268" text-anchor="middle" font-family="system-ui" font-size="10" fill="#9d174d">from D-RBI</text>
+
+  <!-- P_c feed-down arrow -->
+  <line x1="445" y1="120" x2="445" y2="155" stroke="#0284c7" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <line x1="445" y1="155" x2="390" y2="238" stroke="#0284c7" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arr-b)"/>
+
+  <!-- nabla P_c label -->
+  <text x="462" y="180" font-family="system-ui" font-size="10" fill="#0369a1">P&#x1D9C;, &#x2207;P&#x1D9C;</text>
+
+  <!-- Boundary B input arrow -->
+  <line x1="144" y1="236" x2="170" y2="236" stroke="#db2777" stroke-width="1.5" marker-end="url(#arr-p)"/>
+
+  <!-- H_b block -->
+  <rect x="173" y="196" width="210" height="80" rx="7" fill="#fff1f2" stroke="#db2777" stroke-width="2"/>
+  <text x="278" y="220" text-anchor="middle" font-family="system-ui" font-size="12" font-weight="700" fill="#9d174d">H&#x1D47; Boundary Module</text>
+  <text x="278" y="238" text-anchor="middle" font-family="system-ui" font-size="10" fill="#be185d">inputs: {B&#x2097;}, P&#x1D9C;, &#x2207;P&#x1D9C;</text>
+  <text x="278" y="255" text-anchor="middle" font-family="system-ui" font-size="10" fill="#be185d">zero-init final conv</text>
+  <text x="278" y="269" text-anchor="middle" font-family="system-ui" font-size="10" fill="#be185d">(P&#x1D66; = P&#x1D9C; at init)</text>
+
+  <line x1="383" y1="236" x2="393" y2="236" stroke="#db2777" stroke-width="1.5" marker-end="url(#arr-p)"/>
+
+  <!-- 0.1 tanh block -->
+  <rect x="396" y="208" width="118" height="56" rx="7" fill="#fff1f2" stroke="#db2777" stroke-width="1.5"/>
+  <text x="455" y="230" text-anchor="middle" font-family="system-ui" font-size="11" font-weight="600" fill="#9d174d">&#x03B1; &#x00B7; tanh( z )</text>
+  <text x="455" y="248" text-anchor="middle" font-family="system-ui" font-size="10" fill="#be185d">&#x03B1; = 0.1, bounded correction</text>
+  <text x="455" y="262" text-anchor="middle" font-family="system-ui" font-size="10" fill="#be185d">residual only</text>
+
+  <!-- ===== ADDITION NODE ===== -->
+  <!-- P_c going right -->
+  <line x1="497" y1="91" x2="586" y2="160" stroke="#0284c7" stroke-width="1.5" marker-end="url(#arr-b)"/>
+  <!-- residual going right -->
+  <line x1="514" y1="236" x2="586" y2="180" stroke="#db2777" stroke-width="1.5" marker-end="url(#arr-p)"/>
+
+  <!-- Addition circle -->
+  <circle cx="604" cy="170" r="22" fill="#f8fafc" stroke="#475569" stroke-width="2"/>
+  <text x="604" y="175" text-anchor="middle" font-family="system-ui" font-size="18" fill="#334155">+</text>
+
+  <line x1="626" y1="170" x2="658" y2="170" stroke="#059669" stroke-width="2" marker-end="url(#arr-g)"/>
+
+  <!-- P_f output -->
+  <rect x="661" y="140" width="140" height="60" rx="7" fill="#bbf7d0" stroke="#059669" stroke-width="2.5"/>
+  <text x="731" y="164" text-anchor="middle" font-family="system-ui" font-size="14" font-weight="700" fill="#065f46">P&#x1D66;</text>
+  <text x="731" y="182" text-anchor="middle" font-family="system-ui" font-size="10" fill="#065f46">refined change logits</text>
+
+  <line x1="731" y1="200" x2="731" y2="226" stroke="#059669" stroke-width="2" marker-end="url(#arr-g)"/>
+
+  <!-- Final sigmoid + binary map -->
+  <rect x="661" y="228" width="140" height="46" rx="7" fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="731" y="248" text-anchor="middle" font-family="system-ui" font-size="12" font-weight="600" fill="#166534">&#x03C3;(P&#x1D66;) &#x2192; &#x0176;</text>
+  <text x="731" y="264" text-anchor="middle" font-family="system-ui" font-size="10" fill="#166534">change probability map</text>
+
+  <!-- Key formula at bottom -->
+  <rect x="18" y="310" width="786" height="56" rx="8" fill="#f0fdf4" stroke="#86efac" stroke-width="1.2"/>
+  <text x="410" y="330" text-anchor="middle" font-family="system-ui" font-size="11" font-weight="600" fill="#065f46">Boundary Residual Correction</text>
+  <text x="410" y="350" text-anchor="middle" font-family="system-ui" font-size="11" fill="#166534">P&#x1D66; = P&#x1D9C; + &#x03B1; &#x00B7; tanh( H&#x1D47;( {B&#x2097;}, P&#x1D9C;, &#x2207;P&#x1D9C; ) )    Zero-init ensures P&#x1D66; = P&#x1D9C; at training start. Residual is additive and bounded.</text>
+</svg>

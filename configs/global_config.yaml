@@ -1,40 +1,55 @@
+# Single runtime config template.
+#
+# All train / eval / validate / benchmark scripts read this file only.
+# Legacy per-experiment YAMLs are no longer part of the runtime path.
+#
+# Active-dataset workflow:
+# 1. Set dataset.name to LEVIR-CD, WHU-CD, SYSU-CD, or DSIFN-CD.
+# 2. The matching base preset is pulled from datasets_catalog below.
+# 3. Only keep top-level dataset overrides that you actually want for this run.
+#
+# Fast switch examples:
+#   LEVIR tile training: dataset.name = LEVIR-CD and keep the LEVIR-only tile overrides.
+#   WHU training:        dataset.name = WHU-CD and comment out the LEVIR-only tile overrides.
+#   DSIFN training:      dataset.name = DSIFN-CD and comment out the LEVIR-only tile overrides.
+
 experiment:
-  name: refine_mamba_cd
-  output_root: outputs
+  name: DSIFN_experiment 
+  output_root: outputs/dsifn_experiment
   seed: 42
 
 hardware:
   device: cuda
-  gpu_ids: [1]
+  gpu_ids: [0]
   mixed_precision: true
 
 model:
-  mode: "dual"                    
+  mode: "dual"
   backbone: mambavision
-  variant: base      # tiny | tiny2 | small | base | large
+  variant: base        # tiny | tiny2 | small | base | large
   decoder: adaptive_rf
   pretrained: true
   return_features: false
   freeze_backbone: false
 
-# Differential Region–Boundary Interaction (D-RBI) fusion.
-# Set enabled: false to fall back to the old abs-diff + sum decoder path.
+# Differential Region-Boundary Interaction (D-RBI) fusion.
+# Set enabled: false to fall back to the legacy abs-diff + sum path.
 difference:
   enabled: true
   type: region_boundary
   out_channels: 256
   use_depthwise: true
   gate_hidden_ratio: 0.25
-  pre_norm: true            # GroupNorm F1,F2 before diff/product (prevents magnitude explosion)
+  pre_norm: true
   use_absdiff: true
-  use_product: false        # disabled by default -- re-enable after stable training
-  product_scale: 0.25      # scale for product term when use_product=true
+  use_product: false
+  product_scale: 0.25
   use_region_gate: true
   use_boundary_gate: true
   region_gate_min: 0.2
-  region_gate_max: 0.8     # was 1.0 -- tighter bound prevents gradient explosion
+  region_gate_max: 0.8
   boundary_gate_min: 0.0
-  boundary_gate_max: 0.4   # was 0.7 -- conservative for stable boundary stream
+  boundary_gate_max: 0.4
   return_debug: false
 
 decoder:
@@ -42,23 +57,23 @@ decoder:
   channels: 256
   dilation_rates: [1, 2, 4, 8]
   use_boundary_residual: true
-  residual_scale: 0.05     # was 0.1 -- smaller initial correction prevents early NaN
+  residual_scale: 0.05
   use_depthwise: true
   aux_weight: 0.4
 
 training:
   max_iterations: 50000
-  batch_size: 4
-  lr: 5e-5               # was 1e-4 -- lower lr for NaN-safe startup
+  batch_size: 8
+  lr: 5e-5
   optimizer: adamw
   scheduler: cosine
   warmup_iterations: 2500
   validate_every: 5000
   log_every: 20
-  gradient_clip: 0.5     # was 1.0 -- tighter clip prevents early gradient explosion
+  gradient_clip: 0.5
   weight_decay: 0.01
-  skip_nan_steps: true   # skip optimizer step on NaN loss, log and continue
-  nan_diag_every: 50     # write diagnostic row to logs/nan_debug.csv every N iters
+  skip_nan_steps: true
+  nan_diag_every: 50
 
 resume:
   enabled: false
@@ -66,37 +81,41 @@ resume:
   strict: true
 
 dataset:
-  name: LEVIR-CD
-  root: /storage2/ChangeDetection/MV/Datasets/LEVIRCD
+  # Active dataset selector. Base values are resolved from datasets_catalog.
+  # Supported names: LEVIR-CD | WHU-CD | SYSU-CD | DSIFN-CD
+  name: DSIFN-CD
+
+  # Common per-run overrides for the active dataset.
   image_size: 256
   num_workers: 4
   val_ratio: 0.2
   augment: true
   binary: true
   split: train
-  train_split: train
-  val_split: null
-  test_split: test
-  # ── Tile pipeline ──────────────────────────────────────────────────────────
-  # train_mode: "tile"  → LEVIRCDTileDataset with stride-based indexing
-  # train_mode: "image" → original LEVIRCDDataset (random crop per image)
-  train_mode: "tile"
-  val_mode: "existing"    # keep official val tiles (20% of train, tiled)
-  test_mode: "existing"   # keep official test tiles
-  tile_size: 256
-  train_stride: 128       # overlap tiling → more train tiles
-  val_stride: 256         # non-overlapping tiles for val
-  test_stride: 256        # non-overlapping tiles for test
-  min_change_pixels: 1
-  include_empty_ratio: 0.25   # fraction of no-change tiles to keep
-  use_tile_cache: true
-  tile_cache_dir: "outputs/dataset_indices"
-  boundary_aware_sampling: true
-  balance_change_tiles: true
-  target_change_tile_ratio: 0.5
-  image_a_dir_candidates: [A, imageA, t1, A_256]
-  image_b_dir_candidates: [B, imageB, t2, B_256]
-  label_dir_candidates: [label, labels, mask, OUT]
+
+  # Uncomment only if your local dataset path differs from datasets_catalog.
+  # root: /storage2/ChangeDetection/MV/Datasets/LEVIRCD
+
+  # LEVIR-only routing overrides.
+  # Keep these for LEVIR experiments.
+  # Comment them out for WHU / SYSU / DSIFN to keep the active block clean.
+  # train_mode: "tile"  -> LEVIRCDTileDataset with stride-based indexing
+  # train_mode: "image" -> original LEVIRCDDataset with random crop per image
+  
+  #train_mode: "tile"
+  #val_mode: "existing"
+  #test_mode: "existing"
+  #tile_size: 256
+  #train_stride: 128
+  #val_stride: 256
+  #test_stride: 256
+  #min_change_pixels: 1
+  #include_empty_ratio: 0.25
+  #use_tile_cache: true
+  #tile_cache_dir: "outputs/dataset_indices"
+  #boundary_aware_sampling: true
+  #balance_change_tiles: true
+  #target_change_tile_ratio: 0.5
 
 validation:
   batch_size: 8
@@ -163,6 +182,9 @@ debug:
     - decoder_adaptive_rf
   save_memory_summary: true
 
+# Canonical machine-local dataset presets.
+# Training resolves the active top-level dataset block against this catalog.
+# Benchmark and dataset-check scripts also read this section directly.
 datasets_catalog:
   levir:
     name: LEVIR-CD
@@ -178,6 +200,7 @@ datasets_catalog:
     image_a_dir_candidates: [A, imageA, t1, A_256]
     image_b_dir_candidates: [B, imageB, t2, B_256]
     label_dir_candidates: [label, labels, mask, OUT]
+
   whu:
     name: WHU-CD
     root: /storage2/ChangeDetection/MV/Datasets/WHU-CD
@@ -192,6 +215,7 @@ datasets_catalog:
     image_a_dir_candidates: [A, imageA, t1, before, A_256]
     image_b_dir_candidates: [B, imageB, t2, after, B_256]
     label_dir_candidates: [OUT, label, labels, mask, change_mask]
+
   sysu:
     name: SYSU-CD
     root: /storage2/ChangeDetection/MV/Datasets/SYSU-CD
@@ -206,6 +230,7 @@ datasets_catalog:
     image_a_dir_candidates: [A, t1, time1, imageA, T1, img1]
     image_b_dir_candidates: [B, t2, time2, imageB, T2, img2]
     label_dir_candidates: [label, mask, OUT, GT, labels, change_map]
+
   dsifn:
     name: DSIFN-CD
     root: /storage2/ChangeDetection/MV/Datasets/DSIFN-CD/DSIFN
@@ -222,11 +247,11 @@ datasets_catalog:
     label_dir_candidates: [mask, GT, label, labels, OUT, change_map]
 
 post_training:
-  run_test_eval: true     # automatically evaluate on test split after training
-  export_best_model: true # copy best.pth → best_model_final.pth in run dir
+  run_test_eval: true
+  export_best_model: true
 
 benchmark:
-  model_name: refine_mamba_cd
+  model_name: levir_rf_tile
   output_dir: outputs/benchmark_runs/summary
   datasets: [LEVIR-CD, WHU-CD, SYSU-CD, DSIFN-CD]
   eval_split: test

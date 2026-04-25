@@ -1,462 +1,511 @@
-# MERCon-CD: MambaVision Change Detection with D-RBI
+# MambaRefine-CD: Differential Region–Boundary Interaction for Remote Sensing Change Detection
 
-**MERCon 2026 — Conference on Machine Intelligence & Remote Sensing**
-
-A clean, research-grade codebase for bi-temporal change detection on LEVIR-CD using the
-MambaVision transformer backbone and a novel **Differential Region–Boundary Interaction (D-RBI)**
-fusion module with **Adaptive RF Decoder** featuring boundary residual correction.
+A research codebase for bi-temporal remote-sensing change detection using a shared **MambaVision** encoder, **Differential Region–Boundary Interaction (D-RBI)**, and an **Adaptive Receptive Field (ARF) refinement decoder**.
 
 ---
 
-## Problem
+## Links
 
-Detecting land-cover changes between two satellite images is a fundamental Remote Sensing task.
-Key challenges are:
-
-- **Thin boundaries** — narrow changed structures (roads, buildings) require high spatial resolution
-- **Scale variation** — changed objects appear at many scales
-- **False positives** — illumination/seasonal shifts create spurious responses
+- **Paper:** [Coming soon]
+- **Project page:** [Coming soon]
+- **Pretrained checkpoints:** [Coming soon]
+- **Benchmark results:** [Coming soon]
 
 ---
 
-## Key Contributions
+## Related Projects
 
-### 1. Differential Region–Boundary Interaction (D-RBI)
-
-Replaces the naive abs-diff fusion with a learned decomposition into two complementary streams:
-
-- **Region stream** — Bounded sigmoid gate $G_r$ emphasises large coherent changed areas
-- **Boundary stream** — Sobel-gradient-conditioned gate $G_b$ emphasises thin high-frequency edges
-
-$$D = \phi([F_1 \| F_2 \| |F_2-F_1| \| F_1 \odot F_2])$$
-$$R = G_r \odot D, \qquad B = G_b \odot D$$
-
-The Sobel filter is fixed (zero parameters) — only the gate MLPs $\psi_r, \psi_b$ are learned.
-
-### 2. Adaptive RF Decoder with Boundary Residual Correction
-
-Two-stage pipeline:
-
-1. **Coarse prediction** — Adaptive RF-FPN over region features $\{R_i\}$:
-   $P_c = \text{ARF-FPN}(\{R_i\})$
-2. **Residual correction** — Boundary feature + Sobel edge of $P_c$ drive a small correction:
-   $P_f = P_c + \delta \cdot \tanh(\Delta(B_0, P_c, E))$,  $\delta = 0.1$
-
-Zero-initialised final conv ensures $P_f = P_c$ at init — correction is purely additive.
-
-### 3. Stable RF Module
-
-Softmax-gated adaptive dilation avoids collapse to all-background predictions,
-giving stable training without GroupNorm workarounds.
-
-> **Note on Temporal Mamba mode**: An experimental Temporal Mamba feature fusion mode
-> was attempted but disabled due to NaN instability from the Mamba SSM selective scan
-> kernel running in float16 AMP with $T=2$ sequences. The D-RBI module is fully
-> convolutional and runs stably under AMP.
+- [MambaVision](https://github.com/NVlabs/MambaVision) — the backbone used in this work
+- Additional change detection / remote sensing repositories may be listed here in a future update.
 
 ---
 
-## Setup
+## Network Architecture
+
+<!-- Replace with exported high-resolution architecture figure once available -->
+![MambaRefine-CD Architecture](./website/assets/diagrams/06_full_architecture.svg)
+
+MambaRefine-CD consists of four main components:
+
+1. **Shared MambaVision encoder** — a single hierarchical backbone processes both temporal images and extracts four-scale feature pyramids.
+2. **D-RBI (Differential Region–Boundary Interaction)** — per-scale modules fuse the bitemporal features into structured difference representations, then decompose them into region and boundary streams via learned, bounded gates.
+3. **Adaptive RF decoder (ARF-FPN)** — aggregates region-stream features across scales using softmax-gated dilation rates, producing a coarse change prediction `P_c`.
+4. **Boundary residual refinement** — a lightweight boundary head takes the boundary stream features and `P_c` as context, and adds a bounded residual correction to produce the final refined prediction `P_f`.
+
+---
+
+## Results
+
+> Results will be updated once training on each benchmark is complete. Placeholder tables are provided below.
+
+<!-- Replace with final qualitative figure -->
+![Qualitative Results](./website/assets/qualitative/qualitative_overview_placeholder.png)
+
+### LEVIR-CD
+
+| Model | mF1 | F1_1 | mIoU | IoU_1 | OA | Boundary F1 |
+|---|---|---|---|---|---|---|
+| Baseline | TBD | TBD | TBD | TBD | TBD | TBD |
+| Adaptive RF | TBD | TBD | TBD | TBD | TBD | TBD |
+| **MambaRefine-CD** | **TBD** | **TBD** | **TBD** | **TBD** | **TBD** | **TBD** |
+
+### WHU-CD
+
+| Model | mF1 | F1_1 | mIoU | IoU_1 | OA | Boundary F1 |
+|---|---|---|---|---|---|---|
+| Baseline | TBD | TBD | TBD | TBD | TBD | TBD |
+| Adaptive RF | TBD | TBD | TBD | TBD | TBD | TBD |
+| **MambaRefine-CD** | **TBD** | **TBD** | **TBD** | **TBD** | **TBD** | **TBD** |
+
+### DSIFN-CD
+
+| Model | mF1 | F1_1 | mIoU | IoU_1 | OA | Boundary F1 |
+|---|---|---|---|---|---|---|
+| Baseline | TBD | TBD | TBD | TBD | TBD | TBD |
+| Adaptive RF | TBD | TBD | TBD | TBD | TBD | TBD |
+| **MambaRefine-CD** | **TBD** | **TBD** | **TBD** | **TBD** | **TBD** | **TBD** |
+
+> We report both **literature-style metrics** (mF1, mIoU, OA) and **change-focused metrics** (F1_1, IoU_1, Boundary F1) for a more complete evaluation. Note that mF1 averages over the easy no-change class and can overstate model quality; F1_1 and Boundary F1 are more discriminating.
+
+---
+
+## Usage
+
+### Requirements
+
+- Python 3.10+
+- PyTorch >= 2.0
+- torchvision >= 0.15
+- timm >= 0.9
+- mamba-ssm >= 1.0
+- causal-conv1d >= 1.0
+- albumentations, einops, scipy, tensorboard
+
+See `requirements.txt` for the full list.
+
+### Environment setup
 
 ```bash
 conda activate mamba_new
-cd MambaRefine-CD
 pip install -r requirements.txt
 ```
 
-Pre-trained MambaVision weights are loaded automatically on first use.
+### Installation
+
+```bash
+git clone <repo_url_placeholder>
+cd MambaRefine-CD
+```
 
 ---
 
-## Configuration
+## Quick Start
 
-One runtime config file controls everything:
+All settings are controlled from a single configuration file:
 
-```text
+```
 configs/global_config.yaml
 ```
 
-Run training with:
+Training outputs (checkpoints, logs, validation samples, TensorBoard events) are saved under:
+
+```
+outputs/<run_name>/
+```
+
+**Train:**
 
 ```bash
 python scripts/train.py
 ```
 
-Run model efficiency profiling:
-
-```bash
-python scripts/model_efficiency.py
-```
-
-### Enabling / disabling D-RBI
-
-```yaml
-difference:
-  enabled: true   # set false to fall back to abs-diff + sum decoder path
-```
-
-### Ablation switches
-
-```yaml
-difference:
-  use_absdiff: true       # include |F2-F1| in input concat
-  use_product: true       # include F1⊙F2 in input concat
-  use_region_gate: true   # apply learnable region gate G_r
-  use_boundary_gate: true # apply Sobel-conditioned gate G_b
-
-decoder:
-  use_boundary_residual: true  # apply Δ boundary correction
-  residual_scale: 0.1          # tanh clamp scale δ
-```
-
-### Change GPU
-
-```yaml
-hardware:
-  device: cuda
-  gpu_ids: [1]
-```
-
-### Change model variant
-
-```yaml
-model:
-  variant: base   # tiny | tiny2 | small | base | large
-```
-
-### Change decoder
-
-```yaml
-model:
-  decoder: adaptive_rf   # baseline | adaptive_rf | refinement | global_local
-```
-
-### Change batch size and iterations
-
-```yaml
-training:
-  batch_size: 8
-  max_iterations: 50000
-  validate_every: 5000
-```
-
-### Change dataset
-
-Edit `dataset.root` and optionally `dataset.name`. Reusable dataset definitions for
-LEVIR-CD, WHU-CD, SYSU-CD, and DSIFN-CD are kept inside the same file under
-`datasets_catalog:`.
-
----
-
-## Switching Model Variant
-
-| Variant | Model | Channels | ~Params |
-|---|---|---|---|
-| `tiny` | mamba_vision_T | [80, 160, 320, 640] | 32M |
-| `small` | mamba_vision_S | [96, 192, 384, 768] | 50M |
-| `base` | mamba_vision_B | [128, 256, 512, 1024] | 97M |
-| `large` | mamba_vision_L | [196, 392, 784, 1568] | 212M |
-
----
-
-## Enabling Resume
-
-```yaml
-resume:
-  enabled: true
-  checkpoint_path: outputs/run_XXXXXX_refine_mamba_cd/checkpoints/best.pth
-
-```yaml
-model:
-  decoder: refinement   # baseline | adaptive_rf | refinement | global_local
-```
-
-### Change batch size and iterations
-
-```yaml
-training:
-  batch_size: 8
-  max_iterations: 50000
-  validate_every: 5000
-```
-
-### Change dataset
-
-Edit the active `dataset:` block, or switch `dataset.name` and `dataset.root`.
-Reusable dataset definitions for LEVIR-CD, WHU-CD, SYSU-CD, and DSIFN-CD are
-kept inside the same file under `datasets_catalog:`.
-
-### Example
-
-```yaml
-experiment:
-  name: refine_mamba_cd
-  output_root: outputs
-  seed: 42
-
-hardware:
-  device: cuda
-  gpu_ids: [0]
-  mixed_precision: true
-
-model:
-  backbone: mambavision
-  variant: tiny
-  decoder: refinement
-  pretrained: true
-
-training:
-  batch_size: 8
-  max_iterations: 50000
-  validate_every: 5000
-```
-
----
-
-## Switching Model Variant
-
-Edit `model.variant` in `configs/global_config.yaml`:
-
-```yaml
-model:
-  variant: small   # tiny | tiny2 | small | base | large
-```
-
-| Variant | Model | Channels | ~Params |
-|---|---|---|---|
-| `tiny` | mamba_vision_T | [80, 160, 320, 640] | 32M |
-| `small` | mamba_vision_S | [96, 192, 384, 768] | 50M |
-| `base` | mamba_vision_B | [128, 256, 512, 1024] | 97M |
-| `large` | mamba_vision_L | [196, 392, 784, 1568] | 212M |
-
-To use a specific GPU (e.g. GPU 1):
-
-```yaml
-hardware:
-  device: cuda
-  gpu_ids: [1]
-```
-
----
-
-## Enabling Resume
-
-```yaml
-resume:
-  enabled: true
-  checkpoint_path: outputs/run_XXXXXX_refine_mamba_cd/checkpoints/best.pth
-  strict: true
-```
-
-Set `checkpoint_path: null` to auto-find the latest checkpoint under `outputs/`.
-
----
-
-## Validation
-
-```bash
-python scripts/validate.py
-```
-
-Set the checkpoint and split in `configs/global_config.yaml`:
-
-```yaml
-checkpoint:
-  path: outputs/run_XXX/checkpoints/best.pth
-
-validation:
-  split: val   # val | test
-```
-
----
-
-## Compare Runs
-
-```bash
-python scripts/compare_runs.py outputs/run_A outputs/run_B outputs/run_C
-```
-
----
-
-## Multi-Dataset Benchmark Support
-
-MambaRefine-CD supports training and evaluation on **4 benchmark datasets**:
-
-| Dataset | Purpose | Metrics |
-|---------|---------|---------|
-| LEVIR-CD | Main benchmark | F1, IoU, mIoU, Prec, Recall, OA, BndF1, EdgeIoU |
-| WHU-CD | Boundary-sensitive | F1, IoU, mIoU + **boundary emphasis** |
-| SYSU-CD | Generalization | F1, IoU, mIoU |
-| DSIFN-CD | Generalization | F1, IoU, mIoU |
-
-### Dataset paths (edit to match your storage)
-All dataset paths now live in `configs/global_config.yaml` under `dataset:`
-and `datasets_catalog:`.
-
-### Train on each dataset
-Change the active dataset section in `configs/global_config.yaml`:
-
-```yaml
-dataset:
-  name: WHU-CD
-  root: /storage2/ChangeDetection/MV/Datasets/WHU-CD
-```
-
-### Evaluate a single dataset
-Set `checkpoint.path` and `evaluation.split` in `configs/global_config.yaml`, then:
+**Evaluate on test split:**
 
 ```bash
 python scripts/evaluate.py
 ```
 
-### Run full benchmark (all datasets)
-After training all four, fill `benchmark.checkpoints` in `configs/global_config.yaml`, then:
+**Benchmark all configured datasets:**
 
 ```bash
 python scripts/benchmark_all.py
 ```
 
-Outputs saved to `outputs/benchmark_runs/summary/`:
-- `benchmark_results.csv` — all metrics for all datasets
-- `benchmark_results.md` — Markdown table
-- `latex_tables/core_table.tex` — paper-ready LaTeX
-- `latex_tables/boundary_table.tex`
-- `latex_tables/generalization_table.tex`
-- `generalization_summary.json/.md`
+---
 
-### Check dataset integrity
-```bash
-python scripts/check_dataset.py
+## Model Overview
+
+### Motivation
+
+In bitemporal change detection, the naive approach forms a per-pixel absolute difference:
+
 ```
-Saves manifests to `outputs/dataset_manifests/`.
+D_naive = |F2 - F1|
+```
 
-### Boundary Metrics
-Tolerance-aware Boundary F1 and Edge IoU are implemented in
-`src/training/boundary_metrics.py`. Configure via:
+This suffers from three well-known problems: it cannot distinguish real change from illumination or seasonal shift; it blurs boundary signals in smooth interior regions; and standard FPN decoders apply a fixed receptive field that cannot simultaneously capture small objects and large areas.
+
+MambaRefine-CD addresses all three with a structured, learnable alternative.
+
+### D-RBI formulation
+
+For scale `l`, the D-RBI module computes:
+
+```
+Z_l  = concat(F1_l, F2_l, |F2_l - F1_l|, F1_l * F2_l)
+D_l  = phi_l(Z_l)                         # learned bottleneck compression
+
+G_r  = g_min_r + (g_max_r - g_min_r) * sigmoid(clamp(psi_r(D_l), -8, 8))
+G_b  = g_min_b + (g_max_b - g_min_b) * sigmoid(psi_b(clamp(Sobel(D_l), 0, 10)))
+
+R_l  = G_r * D_l                          # region stream
+B_l  = G_b * D_l                          # boundary stream
+```
+
+- `G_r` is conditioned on interior feature magnitude; its output is bounded to `[0.2, 0.8]` to prevent any spatial location from being fully suppressed.
+- `G_b` is conditioned on the Sobel edge magnitude of `D_l`; it activates most strongly at change boundaries.
+- GroupNorm is applied to `F1_l` and `F2_l` before concatenation for numerical stability under fp16 AMP.
+
+### Decoder formulation
+
+```
+P_c = H_c({R_l})                           # ARF-FPN coarse prediction (softmax-gated dilations)
+P_f = P_c + 0.05 * tanh(H_b({B_l}, P_c, Grad(P_c)))   # boundary residual refinement
+Y   = sigmoid(P_f)                         # final change probability map
+```
+
+- ARF-FPN uses dilation rates `d = {1, 2, 4, 8}` with per-location softmax weighting; small objects use tight context, large areas use wide context.
+- The boundary head `H_b` is initialized with a zero-weight final convolution so that `P_f = P_c` at the start of training, providing a stable curriculum.
+- The `tanh` bounds the residual correction; the small residual scale prevents the boundary head from overwriting the coarse prediction in early epochs.
+
+### Why MambaVision?
+
+- Efficient hierarchical backbone with four feature scales at strides 4, 8, 16, 32.
+- Selective state-space operations (Mamba SSM) provide long-range context without quadratic attention cost.
+- Deep stages encode semantic region evidence; shallow stages preserve high-frequency boundary signal — exactly the structure D-RBI exploits.
+- Shared-weight design means no doubling of parameters for the two input images.
+
+---
+
+## Training
+
+All training is iteration-based. Validation runs every `training.validate_every` iterations and the best checkpoint is saved automatically. Training can be resumed from any checkpoint.
+
+### LEVIR-CD
+
+Edit `configs/global_config.yaml`:
+
 ```yaml
-boundary_metrics:
-  enabled:        true
-  boundary_width: 3
-  tolerance:      2
+dataset:
+  name: LEVIR-CD
+  root: /path/to/LEVIR-CD
 ```
 
-See [docs/BENCHMARK_PROTOCOL.md](docs/BENCHMARK_PROTOCOL.md) for full metric formulas, dataset layouts, and paper table generation.
+Then run:
+
+```bash
+python scripts/train.py
+```
+
+### WHU-CD
+
+```yaml
+dataset:
+  name: WHU-CD
+  root: /path/to/WHU-CD
+```
+
+```bash
+python scripts/train.py
+```
+
+### DSIFN-CD
+
+```yaml
+dataset:
+  name: DSIFN-CD
+  root: /path/to/DSIFN-CD
+```
+
+```bash
+python scripts/train.py
+```
+
+### Resume training
+
+```yaml
+resume:
+  enabled: true
+  checkpoint_path: outputs/run_xxx/checkpoints/best.pth
+```
 
 ---
 
-## Updated Metrics
+## Evaluation
 
-After this update, validation logs report:
+### Evaluate on LEVIR-CD
 
-```
-+---------------------+----------+
-| Metric              |    Value |
-+---------------------+----------+
-| F1                  |   0.9182 |
-| IoU-change          |   0.8487 |
-| mIoU                |   0.9210 |
-| Precision           |   0.9291 |
-| Recall              |   0.9076 |
-| OA                  |   0.9923 |
-| Boundary F1         |   0.1919 |
-| Edge IoU            |   0.1054 |
-| Pred Positive Ratio |   0.0481 |
-| GT Positive Ratio   |   0.0473 |
-+---------------------+----------+
+Set dataset and checkpoint in `configs/global_config.yaml`, then:
+
+```bash
+python scripts/evaluate.py
 ```
 
-Note: `iou` = change-class IoU; `miou` = mean of both class IoUs.
+Options in the config:
+
+```yaml
+evaluation:
+  split: test
+  threshold: 0.5
+  threshold_sweep: true         # sweep over multiple thresholds and pick best
+  threshold_select_metric: F1_1
+  use_tta: false                # enable test-time augmentation if needed
+```
+
+### WHU-CD / DSIFN-CD
+
+Same procedure — update `dataset.name`, `dataset.root`, and the checkpoint path.
+
+### Benchmark all datasets
+
+```bash
+python scripts/benchmark_all.py
+```
+
+Outputs:
+
+```
+outputs/benchmark_results.csv
+outputs/benchmark_results.md
+outputs/benchmark_results_latex.tex
+outputs/benchmark_summary.json
+```
 
 ---
 
-## Updated Folder Structure
+## Dataset Preparation
+
+MambaRefine-CD expects datasets in the following directory structure:
+
+```
+dataset_root/
+├── train/
+│   ├── A/         # pre-change images
+│   ├── B/         # post-change images
+│   └── label/     # binary change masks (0 = no change, 255 = change)
+├── val/
+│   ├── A/
+│   ├── B/
+│   └── label/
+└── test/
+    ├── A/
+    ├── B/
+    └── label/
+```
+
+The dataset loader supports flexible directory naming via `image_a_dir_candidates` and `image_b_dir_candidates` in the config.
+
+### LEVIR-CD
+
+- Primary benchmark for building change detection in high-resolution aerial imagery.
+- 637 image pairs at 1024×1024 px (0.5 m/px GSD).
+- Training uses a tile-based pipeline with stride-128 overlapping crops; evaluation uses non-overlapping 256×256 tiles.
+- Official split: 448 train / 64 val / 128 test pairs.
+
+### WHU-CD
+
+- Dense urban building change detection from airborne imagery.
+- Single large image pair (32207×15354 px, 0.2 m/px) covering 20.5 km².
+- Tiled into 256×256 patches for training and evaluation.
+- Boundary-sensitive benchmark: annotates fine-grained building footprints.
+
+### DSIFN-CD
+
+- Multi-scene dataset covering six Chinese cities.
+- 3940 image pairs at 512×512 px across urban, road, and vegetation change types.
+- Useful for generalization evaluation across heterogeneous scenes.
+
+**Notes:**
+- Training always uses the tile-based pipeline; evaluation keeps the official val/test structure.
+- Tile cache files are saved to `outputs/dataset_indices/` and reused across runs.
+- A dataset leakage check is run at startup to confirm val/test tiles do not overlap with training tiles.
+- Set `include_empty_ratio` in the config to control how many no-change tiles are sampled during training.
+
+---
+
+## Configuration Reference
+
+All runtime settings are controlled by `configs/global_config.yaml`. For dataset switching and multiple LEVIR variants, see `configs/CONFIG_SWITCHING_GUIDE.md`. Key options:
+
+**Hardware:**
+```yaml
+hardware:
+  gpu_ids: [0]        # GPU to use
+  mixed_precision: true
+```
+
+**Model variant:**
+```yaml
+model:
+  variant: tiny2      # tiny | tiny2 | small | base | large
+  decoder: adaptive_rf
+```
+
+**Dataset:**
+```yaml
+dataset:
+  name: LEVIR-CD
+  root: /path/to/dataset
+```
+
+**Enable/disable D-RBI:**
+```yaml
+difference:
+  enabled: true
+  use_region_gate: true
+  use_boundary_gate: true
+```
+
+**Training schedule:**
+```yaml
+training:
+  batch_size: 8
+  max_iterations: 50000
+  lr: 5e-5
+  validate_every: 5000
+  gradient_clip: 0.5
+```
+
+**Resume:**
+```yaml
+resume:
+  enabled: true
+  checkpoint_path: outputs/run_xxx/checkpoints/best.pth
+```
+
+---
+
+## Output Structure
+
+Each training run creates a timestamped directory:
+
+```
+outputs/run_<date>_<time>_<name>/
+├── config.yaml                 # full config snapshot
+├── logs/
+│   ├── train.log
+│   └── nan_debug.csv           # NaN diagnostic log (if any)
+├── tensorboard/                # TensorBoard event files
+├── checkpoints/
+│   └── best.pth                # best checkpoint by validation metric
+├── validation/
+│   └── val_metrics.csv         # per-iteration validation history
+└── test_results/
+    ├── test_metrics.json
+    └── samples/predictions.png
+```
+
+---
+
+## Evaluation Metrics
+
+MambaRefine-CD reports three families of metrics:
+
+**Literature-style (averaged over both classes):**
+- `mF1` — mean F1 score over change and no-change classes
+- `mIoU` — mean IoU over both classes
+- `OA` — overall pixel accuracy
+
+**Change-focused (change class only):**
+- `F1_1` — F1 of the change class; more discriminating than mF1
+- `IoU_1` — IoU of the change class
+- `Precision_1`, `Recall_1` — precision and recall for the change class
+
+**Boundary-focused:**
+- `Boundary F1` — F1 evaluated at change boundaries
+- `Edge IoU` — IoU restricted to a narrow band around annotation edges
+
+> mF1 is commonly reported in the change detection literature but can overstate performance because the no-change class dominates (typically > 90% of pixels). We report both mF1 and change-class / boundary metrics for a more complete comparison.
+
+---
+
+## Project Structure
 
 ```
 MambaRefine-CD/
 ├── configs/
-│   └── global_config.yaml
-├── src/
-│   ├── data/
-│   │   ├── levircd.py
-│   │   ├── whucd.py           ← NEW
-│   │   ├── sysucd.py          ← NEW
-│   │   ├── dsifncd.py         ← NEW
-│   │   ├── dataset_builder.py ← NEW
-│   │   ├── transforms.py      ← NEW
-│   │   └── factory.py
-│   └── training/
-│       ├── metrics.py          (updated: iou, miou, gt_positive_ratio)
-│       ├── boundary_metrics.py ← NEW
-│       ├── evaluator.py        ← NEW
-│       ├── generalization_metrics.py ← NEW
-│       └── trainer.py          (updated: BoundaryMetrics, extended CSV)
+│   ├── global_config.yaml          # single runtime config template
+│   └── CONFIG_SWITCHING_GUIDE.md   # how to switch LEVIR / WHU / DSIFN cleanly
 ├── scripts/
-│   ├── train.py
-│   ├── validate.py
-│   ├── evaluate.py     ← NEW
-│   ├── benchmark_all.py ← NEW
-│   ├── check_dataset.py ← NEW
-│   └── compare_runs.py
-└── docs/
-    ├── BENCHMARK_PROTOCOL.md ← NEW
-    ├── method.md
-    └── experiments.md
-```
-├── configs/
-│   ├── base.yaml                  # shared defaults
-│   ├── adaptive_rf.yaml
-│   ├── refinement_decoder.yaml    ← MERCon paper
-│   └── multiscale_stable.yaml
+│   ├── train.py                    # training entry point
+│   ├── evaluate.py                 # evaluation entry point
+│   ├── benchmark_all.py            # multi-dataset benchmarking
+│   ├── validate.py                 # standalone validation
+│   └── model_efficiency.py         # FLOPs / params profiling
 ├── src/
 │   ├── models/
-│   │   ├── backbone/
-│   │   │   └── mambavision_builder.py
+│   │   ├── backbone/               # MambaVision encoder wrapper
+│   │   ├── modules/
+│   │   │   └── differential_region_boundary.py   # D-RBI module
 │   │   ├── decoders/
-│   │   │   ├── baseline_decoder.py
-│   │   │   ├── adaptive_rf_decoder.py
-│   │   │   ├── refinement_decoder.py  ← NEW
-│   │   │   └── global_local_decoder.py
-│   │   └── cd_model.py
+│   │   │   ├── adaptive_rf_decoder.py             # ARF-FPN + boundary head
+│   │   │   └── baseline_decoder.py
+│   │   └── cd_model.py             # full model assembly
 │   ├── training/
-│   │   ├── trainer.py
-│   │   ├── losses.py
-│   │   ├── metrics.py
+│   │   ├── config.py
+│   │   ├── metrics.py              # StreamingMetrics, boundary metrics
 │   │   ├── checkpoint.py
 │   │   └── logger.py
-│   ├── data/
-│   │   ├── levircd.py
-│   │   └── factory.py
-│   └── utils/
-│       ├── config_loader.py
-│       ├── seed.py
-│       └── visualization.py
-├── scripts/
-│   ├── train.py
-│   ├── validate.py
-│   └── compare_runs.py
-└── outputs/
-    └── run_<date>_<name>/
-        ├── config.yaml
-        ├── model_info.json
-        ├── logs/train.log
-        ├── tensorboard/
-        ├── checkpoints/best.pth
-        ├── validation/metrics.csv
-        └── samples/
+│   ├── data/                       # dataset loaders
+│   └── utils/                      # visualization helpers
+├── website/                        # GitHub Pages project website
+│   ├── index.html
+│   ├── styles.css
+│   ├── script.js
+│   └── assets/
+│       └── diagrams/               # SVG architecture diagrams
+├── outputs/                        # training runs (git-ignored)
+├── requirements.txt
+└── README.md
 ```
 
 ---
 
-## Output Per Run
+## Project Website
 
-Every run automatically produces:
+A standalone research website is located in `website/` and can be deployed via GitHub Pages (Settings → Pages → source: `main`, folder: `/website`).
 
-| File | Description |
-|---|---|
-| `config.yaml` | Exact config used |
-| `model_info.json` | Variant, param counts, channel sizes |
-| `logs/train.log` | Full training log |
-| `tensorboard/` | TensorBoard scalars |
-| `checkpoints/best.pth` | Best checkpoint |
-| `validation/metrics.csv` | Per-validation-step metrics |
-| `samples/iter_*.png` | Prediction grids |
+To preview locally:
+
+```bash
+cd website
+python -m http.server 8000
+# Open http://localhost:8000
+```
+
+---
+
+## License
+
+Code is released for research purposes. See `LICENSE` for details. (Update this section with the finalized license before public release.)
+
+---
+
+## Citation
+
+If you find this work useful, please cite:
+
+```bibtex
+@article{mambarefinecd2026,
+  title     = {MambaRefine-CD: Differential Region--Boundary Interaction with Adaptive Receptive Field Refinement for Remote Sensing Change Detection},
+  author    = {Author list to be added},
+  journal   = {To be added},
+  year      = {2026}
+}
+```
+
+---
+
+## Acknowledgements
+
+We thank the developers of [MambaVision](https://github.com/NVlabs/MambaVision), [timm](https://github.com/huggingface/pytorch-image-models), and [mamba-ssm](https://github.com/state-spaces/mamba) for their open-source contributions, which this work builds upon.

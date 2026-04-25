@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 520">
+  <defs>
+    <marker id="arr" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0,0 8,3 0,6" fill="#64748b"/>
+    </marker>
+    <marker id="arr-g" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0,0 8,3 0,6" fill="#16a34a"/>
+    </marker>
+    <marker id="arr-p" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0,0 8,3 0,6" fill="#db2777"/>
+    </marker>
+  </defs>
+
+  <rect width="560" height="520" fill="#f8fafc"/>
+
+  <text x="280" y="26" text-anchor="middle" font-family="system-ui" font-size="13" font-weight="600" fill="#0f172a">D-RBI Module (per encoder scale l)</text>
+
+  <!-- ===== INPUTS ===== -->
+  <rect x="68" y="50" width="104" height="38" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="120" y="74" text-anchor="middle" font-family="system-ui" font-size="12" fill="#1e40af">F&#x2081;&#x2097; (time 1)</text>
+
+  <rect x="388" y="50" width="104" height="38" rx="6" fill="#e0f2fe" stroke="#0284c7" stroke-width="1.5"/>
+  <text x="440" y="74" text-anchor="middle" font-family="system-ui" font-size="12" fill="#075985">F&#x2082;&#x2097; (time 2)</text>
+
+  <!-- GroupNorm boxes -->
+  <line x1="120" y1="88" x2="120" y2="110" stroke="#64748b" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="440" y1="88" x2="440" y2="110" stroke="#64748b" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <rect x="68" y="112" width="104" height="32" rx="5" fill="#f0f9ff" stroke="#7dd3fc" stroke-width="1.2"/>
+  <text x="120" y="132" text-anchor="middle" font-family="system-ui" font-size="11" fill="#0369a1">GroupNorm</text>
+
+  <rect x="388" y="112" width="104" height="32" rx="5" fill="#f0f9ff" stroke="#7dd3fc" stroke-width="1.2"/>
+  <text x="440" y="132" text-anchor="middle" font-family="system-ui" font-size="11" fill="#0369a1">GroupNorm</text>
+
+  <!-- Note: prevents overflow -->
+  <text x="280" y="130" text-anchor="middle" font-family="system-ui" font-size="9" fill="#64748b">prevents fp16 overflow</text>
+
+  <!-- Converging arrows to concat -->
+  <line x1="120" y1="144" x2="200" y2="168" stroke="#64748b" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="440" y1="144" x2="360" y2="168" stroke="#64748b" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- |F2 - F1| path -->
+  <line x1="172" y1="128" x2="230" y2="152" stroke="#64748b" stroke-width="1" stroke-dasharray="3,3"/>
+  <line x1="388" y1="128" x2="330" y2="152" stroke="#64748b" stroke-width="1" stroke-dasharray="3,3"/>
+
+  <!-- 4-part concat block -->
+  <rect x="140" y="170" width="280" height="52" rx="7" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.5"/>
+  <text x="280" y="191" text-anchor="middle" font-family="system-ui" font-size="11" font-weight="600" fill="#4c1d95">Concatenate 4 cues</text>
+  <text x="280" y="209" text-anchor="middle" font-family="system-ui" font-size="10" fill="#5b21b6">[ F&#x2081;, F&#x2082;, |F&#x2082;&#x2212;F&#x2081;|, F&#x2081;&#x2299;F&#x2082; ]</text>
+
+  <!-- Arrow to phi -->
+  <line x1="280" y1="222" x2="280" y2="244" stroke="#64748b" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- phi compression -->
+  <rect x="164" y="246" width="232" height="52" rx="7" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/>
+  <text x="280" y="267" text-anchor="middle" font-family="system-ui" font-size="12" font-weight="700" fill="#4c1d95">&#x03C6; Bottleneck</text>
+  <text x="280" y="285" text-anchor="middle" font-family="system-ui" font-size="10" fill="#5b21b6">DWConv 3&#xD7;3 + PWConv 1&#xD7;1 &#x2192; D&#x2097;</text>
+
+  <!-- Arrow down from phi, then split -->
+  <line x1="280" y1="298" x2="280" y2="328" stroke="#64748b" stroke-width="1.5"/>
+  <line x1="280" y1="328" x2="148" y2="328" stroke="#64748b" stroke-width="1.5"/>
+  <line x1="280" y1="328" x2="412" y2="328" stroke="#64748b" stroke-width="1.5"/>
+  <line x1="148" y1="328" x2="148" y2="350" stroke="#16a34a" stroke-width="1.5" marker-end="url(#arr-g)"/>
+  <line x1="412" y1="328" x2="412" y2="350" stroke="#db2777" stroke-width="1.5" marker-end="url(#arr-p)"/>
+
+  <!-- Region gate branch (left) -->
+  <rect x="70" y="352" width="156" height="50" rx="6" fill="#fef9c3" stroke="#d97706" stroke-width="1.5"/>
+  <text x="148" y="372" text-anchor="middle" font-family="system-ui" font-size="11" font-weight="600" fill="#78350f">Region Gate G&#x1D63;</text>
+  <text x="148" y="389" text-anchor="middle" font-family="system-ui" font-size="10" fill="#92400e">&#x03C3;( clamp(&#x03C8;&#x1D63;(D&#x2097;), -8,8) )</text>
+
+  <!-- Boundary gate branch (right) -->
+  <rect x="334" y="352" width="156" height="50" rx="6" fill="#fce7f3" stroke="#db2777" stroke-width="1.5"/>
+  <text x="412" y="372" text-anchor="middle" font-family="system-ui" font-size="11" font-weight="600" fill="#9d174d">Boundary Gate G&#x1D47;</text>
+  <text x="412" y="389" text-anchor="middle" font-family="system-ui" font-size="10" fill="#be185d">&#x03C3;( &#x03C8;&#x1D47;( &#x2207;D&#x2097; ) )</text>
+
+  <!-- Hadamard arrows -->
+  <line x1="148" y1="402" x2="148" y2="424" stroke="#16a34a" stroke-width="1.5" marker-end="url(#arr-g)"/>
+  <line x1="412" y1="402" x2="412" y2="424" stroke="#db2777" stroke-width="1.5" marker-end="url(#arr-p)"/>
+
+  <!-- Hadamard op label -->
+  <text x="148" y="420" text-anchor="middle" font-family="system-ui" font-size="10" fill="#166534">&#x2299; D&#x2097;</text>
+  <text x="412" y="420" text-anchor="middle" font-family="system-ui" font-size="10" fill="#9d174d">&#x2299; D&#x2097;</text>
+
+  <!-- Output blocks -->
+  <rect x="70" y="435" width="156" height="44" rx="6" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/>
+  <text x="148" y="454" text-anchor="middle" font-family="system-ui" font-size="12" font-weight="700" fill="#166534">R&#x2097; (Region)</text>
+  <text x="148" y="470" text-anchor="middle" font-family="system-ui" font-size="10" fill="#166534">to ARF decoder</text>
+
+  <rect x="334" y="435" width="156" height="44" rx="6" fill="#fce7f3" stroke="#db2777" stroke-width="2"/>
+  <text x="412" y="454" text-anchor="middle" font-family="system-ui" font-size="12" font-weight="700" fill="#9d174d">B&#x2097; (Boundary)</text>
+  <text x="412" y="470" text-anchor="middle" font-family="system-ui" font-size="10" fill="#9d174d">to residual stage</text>
+
+  <!-- Side label: applied per scale -->
+  <text x="530" y="260" text-anchor="middle" font-family="system-ui" font-size="10" fill="#475569" transform="rotate(90,530,260)">applied at l = 1, 2, 3, 4</text>
+</svg>

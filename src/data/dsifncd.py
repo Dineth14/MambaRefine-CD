@@ -64,6 +64,21 @@ def _list_images(d: Path) -> List[str]:
     return sorted(p.name for p in d.iterdir() if p.suffix.lower() in _EXTS)
 
 
+def _build_file_lookup(d: Path) -> dict[str, Path]:
+    """Map both exact filenames and filename stems to file paths.
+
+    DSIFN layouts sometimes store RGB images as .jpg while masks use .png/.tif.
+    Matching by stem keeps paired samples aligned even when extensions differ.
+    """
+    lookup: dict[str, Path] = {}
+    for p in d.iterdir():
+        if p.suffix.lower() not in _EXTS:
+            continue
+        lookup[p.name] = p
+        lookup.setdefault(p.stem, p)
+    return lookup
+
+
 def _read_split_file(f: Path) -> List[str]:
     with open(f) as fh:
         return [ln.strip() for ln in fh if ln.strip()]
@@ -141,6 +156,9 @@ class DSIFNCDDataset(Dataset):
 
         self.tiles     = None if split == "train" else self._build_tiles()
         self.transform = build_train_transforms(image_size) if self.do_augment else None
+        self.a_lookup  = _build_file_lookup(self.a_dir)    # type: ignore[arg-type]
+        self.b_lookup  = _build_file_lookup(self.b_dir)    # type: ignore[arg-type]
+        self.l_lookup  = _build_file_lookup(self.lbl_dir)  # type: ignore[arg-type]
 
     def _check_dirs(self, parent: Path) -> None:
         for attr, label in [("a_dir", "A/t1"), ("b_dir", "B/t2"), ("lbl_dir", "GT/label")]:
@@ -153,7 +171,7 @@ class DSIFNCDDataset(Dataset):
         s, tiles, seen = self.size, [], set()
         for name in self.names:
             try:
-                W, H = Image.open(self.a_dir / name).size  # type: ignore
+                W, H = Image.open(self._resolve_path(self.a_lookup, name, "image_a")).size
             except Exception:
                 continue
             rows = list(range(0, H - s + 1, s)) + ([H - s] if H % s else [])
@@ -169,13 +187,23 @@ class DSIFNCDDataset(Dataset):
     def __len__(self) -> int:
         return len(self.names) if self.split == "train" else len(self.tiles)  # type: ignore
 
+    def _resolve_path(self, lookup: dict[str, Path], name: str, kind: str) -> Path:
+        path = lookup.get(name)
+        if path is None:
+            path = lookup.get(Path(name).stem)
+        if path is None:
+            raise FileNotFoundError(
+                f"DSIFNCDDataset [{self.split}]: could not resolve {kind} for sample '{name}'."
+            )
+        return path
+
     def __getitem__(self, idx: int) -> dict:
         s = self.size
         if self.split == "train":
             name   = self.names[idx]
-            a_full = np.array(Image.open(self.a_dir / name).convert("RGB"))  # type: ignore
-            b_full = np.array(Image.open(self.b_dir / name).convert("RGB"))  # type: ignore
-            l_full = np.array(Image.open(self.lbl_dir / name).convert("L"))  # type: ignore
+            a_full = np.array(Image.open(self._resolve_path(self.a_lookup, name, "image_a")).convert("RGB"))
+            b_full = np.array(Image.open(self._resolve_path(self.b_lookup, name, "image_b")).convert("RGB"))
+            l_full = np.array(Image.open(self._resolve_path(self.l_lookup, name, "label")).convert("L"))
             H, W   = a_full.shape[:2]
             if H < s or W < s:
                 ph, pw = max(0, s - H), max(0, s - W)
@@ -190,9 +218,9 @@ class DSIFNCDDataset(Dataset):
             lbl   = l_full[r:r+s, c:c+s]
         else:
             name, r, c = self.tiles[idx]  # type: ignore
-            img_a = np.array(Image.open(self.a_dir / name).convert("RGB"))[r:r+s, c:c+s]  # type: ignore
-            img_b = np.array(Image.open(self.b_dir / name).convert("RGB"))[r:r+s, c:c+s]  # type: ignore
-            lbl   = np.array(Image.open(self.lbl_dir / name).convert("L"))[r:r+s, c:c+s]  # type: ignore
+            img_a = np.array(Image.open(self._resolve_path(self.a_lookup, name, "image_a")).convert("RGB"))[r:r+s, c:c+s]
+            img_b = np.array(Image.open(self._resolve_path(self.b_lookup, name, "image_b")).convert("RGB"))[r:r+s, c:c+s]
+            lbl   = np.array(Image.open(self._resolve_path(self.l_lookup, name, "label")).convert("L"))[r:r+s, c:c+s]
 
         # DSIFN GT may be {0, 255} or {0, 1} — handle both
         lbl_bin = (lbl > 127).astype(np.uint8)

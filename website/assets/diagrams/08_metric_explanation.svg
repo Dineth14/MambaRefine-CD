@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 380">
+  <rect width="780" height="380" fill="#f8fafc"/>
+
+  <!-- Title -->
+  <text x="390" y="26" text-anchor="middle" font-family="system-ui" font-size="13" font-weight="600" fill="#0f172a">Evaluation Metrics for Change Detection</text>
+
+  <!-- ===== LEFT: Confusion matrix grid ===== -->
+  <text x="160" y="52" text-anchor="middle" font-family="system-ui" font-size="11" font-weight="600" fill="#334155">Confusion Matrix</text>
+
+  <!-- Grid headers -->
+  <text x="222" y="74" text-anchor="middle" font-family="system-ui" font-size="10" fill="#475569">Pred: Change</text>
+  <text x="320" y="74" text-anchor="middle" font-family="system-ui" font-size="10" fill="#475569">Pred: No-change</text>
+  <text x="110" y="100" text-anchor="end" font-family="system-ui" font-size="10" fill="#475569">GT: Change</text>
+  <text x="110" y="155" text-anchor="end" font-family="system-ui" font-size="10" fill="#475569">GT: No-change</text>
+
+  <!-- TP -->
+  <rect x="120" y="80" width="96" height="60" rx="5" fill="#dcfce7" stroke="#059669" stroke-width="1.5"/>
+  <text x="168" y="107" text-anchor="middle" font-family="system-ui" font-size="14" font-weight="700" fill="#065f46">TP</text>
+  <text x="168" y="125" text-anchor="middle" font-family="system-ui" font-size="10" fill="#166534">True Positive</text>
+
+  <!-- FN -->
+  <rect x="220" y="80" width="96" height="60" rx="5" fill="#fce7f3" stroke="#db2777" stroke-width="1.5"/>
+  <text x="268" y="107" text-anchor="middle" font-family="system-ui" font-size="14" font-weight="700" fill="#9d174d">FN</text>
+  <text x="268" y="125" text-anchor="middle" font-family="system-ui" font-size="10" fill="#9d174d">False Negative</text>
+
+  <!-- FP -->
+  <rect x="120" y="145" width="96" height="60" rx="5" fill="#fef9c3" stroke="#d97706" stroke-width="1.5"/>
+  <text x="168" y="172" text-anchor="middle" font-family="system-ui" font-size="14" font-weight="700" fill="#78350f">FP</text>
+  <text x="168" y="190" text-anchor="middle" font-family="system-ui" font-size="10" fill="#92400e">False Positive</text>
+
+  <!-- TN -->
+  <rect x="220" y="145" width="96" height="60" rx="5" fill="#e2e8f0" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="268" y="172" text-anchor="middle" font-family="system-ui" font-size="14" font-weight="700" fill="#475569">TN</text>
+  <text x="268" y="190" text-anchor="middle" font-family="system-ui" font-size="10" fill="#475569">True Negative</text>
+
+  <!-- ===== RIGHT: Metric formulas ===== -->
+  <text x="570" y="52" text-anchor="middle" font-family="system-ui" font-size="11" font-weight="600" fill="#334155">Metric Formulas</text>
+
+  <!-- Precision -->
+  <rect x="420" y="64" width="320" height="50" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.2"/>
+  <text x="435" y="85" font-family="system-ui" font-size="11" font-weight="600" fill="#1e40af">Precision</text>
+  <text x="435" y="103" font-family="system-ui" font-size="11" fill="#1d4ed8">= TP / (TP + FP)</text>
+
+  <!-- Recall -->
+  <rect x="420" y="122" width="320" height="50" rx="6" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.2"/>
+  <text x="435" y="143" font-family="system-ui" font-size="11" font-weight="600" fill="#4c1d95">Recall</text>
+  <text x="435" y="161" font-family="system-ui" font-size="11" fill="#5b21b6">= TP / (TP + FN)</text>
+
+  <!-- F1 change class -->
+  <rect x="420" y="180" width="320" height="50" rx="6" fill="#dcfce7" stroke="#059669" stroke-width="1.2"/>
+  <text x="435" y="201" font-family="system-ui" font-size="11" font-weight="600" fill="#065f46">F1&#x2081; (change class)</text>
+  <text x="435" y="219" font-family="system-ui" font-size="11" fill="#166534">= 2&#x00B7;P&#x00B7;R / (P + R)</text>
+
+  <!-- mF1 -->
+  <rect x="420" y="238" width="320" height="64" rx="6" fill="#fef9c3" stroke="#d97706" stroke-width="1.2"/>
+  <text x="435" y="259" font-family="system-ui" font-size="11" font-weight="600" fill="#78350f">mF1 (mean F1, 2 classes)</text>
+  <text x="435" y="277" font-family="system-ui" font-size="11" fill="#92400e">= (F1&#x2080; + F1&#x2081;) / 2</text>
+  <text x="435" y="295" font-family="system-ui" font-size="10" fill="#b45309">&#x26A0; Inflated by dominant no-change class</text>
+
+  <!-- IoU -->
+  <rect x="420" y="310" width="320" height="50" rx="6" fill="#e0f2fe" stroke="#0284c7" stroke-width="1.2"/>
+  <text x="435" y="331" font-family="system-ui" font-size="11" font-weight="600" fill="#075985">IoU (change class)</text>
+  <text x="435" y="349" font-family="system-ui" font-size="11" fill="#0369a1">= TP / (TP + FP + FN)</text>
+
+  <!-- Dividing line -->
+  <line x1="20" y1="232" x2="380" y2="232" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="4,3"/>
+
+  <!-- Bottom note left -->
+  <rect x="20" y="238" width="360" height="80" rx="6" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1"/>
+  <text x="200" y="258" text-anchor="middle" font-family="system-ui" font-size="11" font-weight="600" fill="#334155">Primary metric: F1&#x2081;</text>
+  <text x="200" y="275" text-anchor="middle" font-family="system-ui" font-size="10" fill="#475569">We report F1 of the change class (class 1).</text>
+  <text x="200" y="291" text-anchor="middle" font-family="system-ui" font-size="10" fill="#475569">mF1 is also reported but inflated because</text>
+  <text x="200" y="307" text-anchor="middle" font-family="system-ui" font-size="10" fill="#475569">the no-change class (class 0) dominates.</text>
+</svg>
