@@ -1,0 +1,7 @@
+Model,Backbone,Params,F1_1,IoU_1,OA,Notes
+FC-Siam-Diff,CNN,--,TBD,TBD,TBD,Literature
+STANet,CNN/Attention,--,TBD,TBD,TBD,Literature
+BIT,CNN+Transformer,--,TBD,TBD,TBD,Literature
+ChangeFormer,Transformer,--,TBD,TBD,TBD,Literature
+Mamba-CD,SSM/Mamba,--,TBD,TBD,TBD,Literature
+MambaRefine-CD,MambaVision,43.52M,0.9472,0.8996,0.9949,Ours

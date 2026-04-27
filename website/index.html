@@ -1,793 +1,504 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>MambaRefine-CD — Remote Sensing Change Detection</title>
-  <meta name="description" content="MambaRefine-CD: Differential Region–Boundary Interaction with Adaptive Receptive Field Refinement for Remote Sensing Change Detection."/>
-  <link rel="stylesheet" href="styles.css"/>
-  <!-- MathJax v3 — tex-svg renderer, strict delimiters \( \) and \[ \] only -->
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MambaRefine-CD</title>
+  <meta name="description" content="Research website for MambaRefine-CD with verified local results, local-source SOTA extraction, efficiency profiling, and qualitative outputs.">
+  <link rel="stylesheet" href="styles.css">
   <script>
   window.MathJax = {
     tex: {
       inlineMath: [['\\(', '\\)']],
       displayMath: [['\\[', '\\]']],
-      processEscapes: true,
-      tags: 'ams'
+      processEscapes: true
     },
     svg: { fontCache: 'global' }
   };
   </script>
-  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+  <script defer src="script.js"></script>
 </head>
 <body>
+  <div class="progress-bar" id="progress-bar"></div>
 
-<!-- Scroll progress indicator -->
-<div id="progress-bar"></div>
-
-<!-- ═══════════════════════════════════ NAV ═══════════════════════════════════ -->
-<nav id="site-nav">
-  <div class="nav-inner">
-    <span class="nav-brand">MambaRefine-CD</span>
-    <ul class="nav-links">
-      <li><a href="#motivation">Motivation</a></li>
-      <li><a href="#architecture">Architecture</a></li>
-      <li><a href="#drbi">D-RBI</a></li>
-      <li><a href="#decoder">Decoder</a></li>
-      <li><a href="#math">Math</a></li>
-      <li><a href="#datasets">Datasets</a></li>
-      <li><a href="#results">Results</a></li>
-      <li><a href="#code">Code</a></li>
-    </ul>
-    <div class="nav-toggle" aria-label="Toggle navigation">
-      <span></span><span></span><span></span>
-    </div>
-  </div>
-</nav>
-
-<!-- ═══════════════════════════════════ HERO ══════════════════════════════════ -->
-<section id="hero">
-  <div class="container">
-    <div class="hero-tag">Remote Sensing Change Detection</div>
-    <h1>MambaRefine-CD: Differential Region&ndash;Boundary Interaction with Adaptive Receptive Field Refinement</h1>
-    <p class="hero-subtitle">
-      A principled framework that decomposes pairwise feature differences into spatially-aware region and boundary streams, then refines coarse predictions with a bounded residual correction.
-    </p>
-    <div class="hero-buttons">
-      <a href="https://github.com/Dineth14/MambaRefine-CD" class="btn btn-primary">&#10148; GitHub Repository</a>
-      <a href="#architecture" class="btn btn-secondary">View Architecture</a>
-      <a href="#results" class="btn btn-secondary">See Results</a>
-      <a href="#code" class="btn btn-secondary">Quick Start</a>
-    </div>
-    <!-- Mini pipeline (CSS/HTML, no image dependency) -->
-    <div class="hero-pipeline">
-      <div class="pipe-node input">Image A<span class="sub">pre-change</span></div>
-      <div class="pipe-arrow">&#8594;</div>
-      <div class="pipe-node encoder">MambaVision<span class="sub">shared encoder</span></div>
-      <div class="pipe-arrow">&#8594;</div>
-      <div class="pipe-node drbi">D-RBI &times;4<span class="sub">per scale</span></div>
-      <div class="pipe-arrow">&#8594;</div>
-      <div class="pipe-node arf">ARF-FPN + H<sub>b</sub><span class="sub">decode &amp; refine</span></div>
-      <div class="pipe-arrow">&#8594;</div>
-      <div class="pipe-node out">Change Map<span class="sub">&sigma;(P<sub>f</sub>)</span></div>
-      <div class="pipe-arrow">&#8592;</div>
-      <div class="pipe-node input">Image B<span class="sub">post-change</span></div>
-    </div>
-  </div>
-</section>
-
-<!-- ═══════════════════════════════ MOTIVATION ════════════════════════════════ -->
-<section id="motivation">
-  <div class="container">
-    <p class="section-label">Problem Statement</p>
-    <h2 class="section-title">Why naive feature differencing falls short</h2>
-    <p class="section-lead">
-      Change detection from bitemporal satellite imagery is fundamentally hard. Three failure modes recur across methods that rely on pixel-wise feature subtraction.
-    </p>
-
-    <div class="challenge-grid fade-in">
-      <div class="challenge-card">
-        <div class="icon">&#127774;</div>
-        <h4>Seasonal &amp; Illumination Pseudo-Changes</h4>
-        <p>Vegetation phenology, shadows, and sensor noise produce large \(|F_2^l - F_1^l|\) responses at non-change locations, causing false positives.</p>
+  <header class="site-header">
+    <nav class="nav-shell">
+      <a class="brand" href="#top">MambaRefine-CD</a>
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="nav-links">Menu</button>
+      <div class="nav-links" id="nav-links">
+        <a href="#motivation">Motivation</a>
+        <a href="#method">Method</a>
+        <a href="#datasets">Datasets</a>
+        <a href="#verified-results">Verified Results</a>
+        <a href="#comparison">SOTA Comparison</a>
+        <a href="#qualitative">Qualitative</a>
+        <a href="#efficiency">Efficiency</a>
+        <a href="#usage">Usage</a>
       </div>
-      <div class="challenge-card">
-        <div class="icon">&#128204;</div>
-        <h4>Weak Boundary Localization</h4>
-        <p>Simple subtraction blurs gradients at change boundaries. The resulting predictions are spatially coarse, underperforming at high-frequency edges.</p>
-      </div>
-      <div class="challenge-card">
-        <div class="icon">&#128736;</div>
-        <h4>Fixed Receptive Field in Decoder</h4>
-        <p>Standard FPN decoders apply a single dilation rate per scale. Small buildings need local context; large fields need wide receptive fields. One fixed rate cannot serve both.</p>
-      </div>
-      <div class="challenge-card">
-        <div class="icon">&#9881;</div>
-        <h4>Entangled Region &amp; Boundary Signals</h4>
-        <p>Region-interior change evidence and boundary-edge evidence live in different spatial frequency bands. Mixing them in a single feature degrades both tasks.</p>
-      </div>
-    </div>
+    </nav>
+  </header>
 
-    <div class="diagram-wrap fade-in" style="margin-top:2rem;">
-      <img src="assets/diagrams/01_problem_naive_difference.svg" alt="Naive differencing vs D-RBI: failure modes of |F2-F1| and how D-RBI resolves them"/>
-      <p class="diagram-caption">Figure 1. Left: three failure modes of naive feature subtraction. Right: how D-RBI decomposes the difference into separate region and boundary streams.</p>
-    </div>
-  </div>
-</section>
-
-<!-- ════════════════════════════ NAIVE DIFF MATH ══════════════════════════════ -->
-<section id="naive-diff">
-  <div class="container">
-    <p class="section-label">Analysis</p>
-    <h2 class="section-title">The mathematics of naive differencing</h2>
-    <p class="section-lead">
-      Let \(F_1^l, F_2^l \in \mathbb{R}^{H_l \times W_l \times C_l}\) be encoder features at scale \(l\) for images \(I_1\) and \(I_2\). Naive methods form:
-    </p>
-
-    <div class="eq-block fade-in">
-      <div class="eq-label">Naive difference</div>
-      \[D_l^{\text{naive}} = |F_2^l - F_1^l|\]
-    </div>
-
-    <p>This has two fundamental problems. First, it discards the <em>sign</em> of change and cannot distinguish gain from loss. Second, it provides no mechanism to separate smooth interior change from sharp boundary change. MambaRefine-CD replaces this with a learned, context-aware fusion:</p>
-
-    <div class="eq-block fade-in">
-      <div class="eq-label">D-RBI difference feature</div>
-      \[D_l = \phi_l\!\left(\left[F_1^l,\; F_2^l,\; |F_2^l - F_1^l|,\; F_1^l \odot F_2^l\right]\right)\]
-    </div>
-
-    <p class="callout">
-      <strong>Key insight:</strong> The four-component concatenation \([F_1, F_2, |F_2-F_1|, F_1 \odot F_2]\) encodes both unilateral context and bilateral interaction. The bottleneck \(\phi_l\) compresses this to a single difference tensor \(D_l\) that is subsequently decomposed into region and boundary streams by learned, bounded gates.
-    </p>
-  </div>
-</section>
-
-<!-- ════════════════════════════ BACKBONE ═════════════════════════════════════ -->
-<section id="backbone">
-  <div class="container">
-    <p class="section-label">Encoder</p>
-    <h2 class="section-title">MambaVision: hierarchical SSM-based encoder</h2>
-    <p class="section-lead">
-      MambaVision extends the Vision Mamba architecture with a hybrid CNN–SSM design, producing four resolution levels that combine local convolutional inductive bias with long-range state-space modeling.
-    </p>
-
-    <div class="diagram-wrap fade-in">
-      <img src="assets/diagrams/02_mambavision_encoder.svg" alt="Shared MambaVision encoder producing four-scale feature pyramids for both images"/>
-      <p class="diagram-caption">Figure 2. A single MambaVision encoder processes both images with shared weights. Scale-matched feature pairs \((F_1^l, F_2^l)\) feed into per-scale D-RBI modules.</p>
-    </div>
-
-    <p>The state-space model at the core of each Mamba block computes:</p>
-    <div class="eq-block fade-in">
-      <div class="eq-label">Mamba SSM recurrence</div>
-      \[h_t = A_t h_{t-1} + B_t x_t, \qquad y_t = C_t h_t\]
-    </div>
-
-    <p>where \(x_t\) is the input token, \(h_t\) is the hidden state, and \(A_t, B_t, C_t\) are input-dependent parameters (selective SSM). This gives each feature token access to all prior spatial context along the scan path without the quadratic cost of self-attention.</p>
-
-    <h3 style="margin-top:2rem;">MambaVision model variants</h3>
-    <div style="overflow-x:auto;">
-    <table class="data-table fade-in">
-      <thead>
-        <tr>
-          <th>Variant</th>
-          <th>Params (M)</th>
-          <th>FLOPs (G)</th>
-          <th>ImageNet Top-1</th>
-          <th>Stage channels</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr><td>MambaVision-T</td><td>31.8</td><td>4.4</td><td>82.3</td><td>80, 160, 320, 640</td></tr>
-        <tr><td>MambaVision-T2</td><td>35.1</td><td>5.1</td><td>82.7</td><td>80, 160, 320, 640</td></tr>
-        <tr><td>MambaVision-S</td><td>50.1</td><td>7.5</td><td>83.3</td><td>96, 192, 384, 768</td></tr>
-        <tr class="ours"><td>MambaVision-B (ours)</td><td>97.7</td><td>15.0</td><td>84.2</td><td>128, 256, 512, 1024</td></tr>
-        <tr><td>MambaVision-L</td><td>227.9</td><td>34.9</td><td>85.0</td><td>196, 392, 784, 1568</td></tr>
-      </tbody>
-    </table>
-    </div>
-
-    <div class="callout green" style="margin-top:1.5rem;">
-      <strong>Why MambaVision?</strong>
-      Frequency-domain analysis showed that MambaVision's deep stages encode predominantly low-frequency semantic content while shallow stages preserve high-frequency boundary evidence &mdash; exactly the separation needed for region vs. boundary stream decoding.
-    </div>
-  </div>
-</section>
-
-<!-- ════════════════════════════ DESIGN EVOLUTION ════════════════════════════ -->
-<section id="evolution">
-  <div class="container">
-    <p class="section-label">Research Process</p>
-    <h2 class="section-title">How the design evolved</h2>
-    <p class="section-lead">
-      MambaRefine-CD was not designed top-down. Each component was motivated by an empirical observation or a failure mode encountered during development.
-    </p>
-
-    <div class="diagram-wrap fade-in">
-      <img src="assets/diagrams/07_experiment_timeline.svg" alt="Four-stage design evolution timeline"/>
-      <p class="diagram-caption">Figure 3. Design evolution timeline. Each stage informed the next. The Temporal Mamba exploration, though discontinued, clarified the need for numerically stable differential modeling.</p>
-    </div>
-
-    <div class="component-cards fade-in" style="margin-top:2rem;">
-      <div class="component-card">
-        <span class="card-tag tag-blue">Stage 1</span>
-        <h3>Feature Diagnostics</h3>
-        <p>Spectral analysis of MambaVision features confirmed that deep stages capture semantic regions and shallow stages capture edge evidence. This motivated the two-stream decoder.</p>
-      </div>
-      <div class="component-card">
-        <span class="card-tag tag-purple">Stage 2</span>
-        <h3>Decoder Exploration</h3>
-        <p>A naive sigmoid-gated dilation module collapsed during training (all gates converging to 0.5, uniform weighting). Replacing sigmoid gating with softmax over rates produced stable ARF-FPN.</p>
-      </div>
-      <div class="component-card">
-        <span class="card-tag tag-amber">Stage 3</span>
-        <h3>Temporal Mamba Exploration</h3>
-        <p>Treating \((F_1, F_2)\) as a temporal sequence for a Mamba SSM produced NaN losses under float16 AMP. This clarified the need for explicit, stable differential fusion &mdash; leading directly to D-RBI.</p>
-      </div>
-      <div class="component-card">
-        <span class="card-tag tag-green">Stage 4</span>
-        <h3>MambaRefine-CD</h3>
-        <p>D-RBI with GroupNorm preprocessing, bounded gates, and the ARF-FPN + boundary residual decoder. All AMP stability verified by forward-pass smoke tests.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ════════════════════════════ FULL ARCHITECTURE ═══════════════════════════ -->
-<section id="architecture">
-  <div class="container">
-    <p class="section-label">Architecture</p>
-    <h2 class="section-title">Full model architecture</h2>
-    <p class="section-lead">
-      MambaRefine-CD is a two-branch siamese network with a shared encoder, four per-scale D-RBI modules, an ARF-FPN region decoder, and a boundary residual head.
-    </p>
-
-    <div class="diagram-wrap fade-in">
-      <img src="assets/diagrams/Full_architcture.png" alt="Complete end-to-end MambaRefine-CD architecture"/>
-      <p class="diagram-caption">Figure 4. Complete architecture. Both images share one encoder. D-RBI modules decompose per-scale differences. ARF-FPN aggregates region features into a coarse map P<sub>c</sub>. The boundary head H<sub>b</sub> adds a residual correction to produce P<sub>f</sub>.</p>
-    </div>
-
-    <div class="component-cards fade-in">
-      <div class="component-card">
-        <span class="card-tag tag-purple">Encoder</span>
-        <h3>Shared MambaVision</h3>
-        <p>Single encoder with shared weights processes both images. Produces four feature levels at strides 4, 8, 16, 32. No temporal fusion here &mdash; features remain image-independent.</p>
-      </div>
-      <div class="component-card">
-        <span class="card-tag tag-amber">Fusion</span>
-        <h3>D-RBI &times;4</h3>
-        <p>One D-RBI module per scale \(l \in \{1,2,3,4\}\). Takes \((F_1^l, F_2^l)\), applies GroupNorm, forms the four-component concat, bottleneck, then decomposes into \((R_l, B_l)\) via bounded gates.</p>
-      </div>
-      <div class="component-card">
-        <span class="card-tag tag-green">Coarse Decoder</span>
-        <h3>ARF-FPN</h3>
-        <p>Aggregates region features \(\{R_l\}\) across all scales using softmax-weighted dilation rates \(d \in \{1,2,4,8\}\) per location, producing a coarse change logit map \(P_c\).</p>
-      </div>
-      <div class="component-card">
-        <span class="card-tag tag-pink">Refinement</span>
-        <h3>Boundary Head H<sub>b</sub></h3>
-        <p>Takes boundary features \(\{B_l\}\) plus \(P_c\) and its spatial gradient \(\nabla P_c\). Computes a bounded residual correction \(\alpha \cdot \tanh(z)\) added to \(P_c\) to form the refined prediction \(P_f\).</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ════════════════════════════ D-RBI MODULE ════════════════════════════════ -->
-<section id="drbi">
-  <div class="container">
-    <p class="section-label">Core Module</p>
-    <h2 class="section-title">D-RBI: Differential Region&ndash;Boundary Interaction</h2>
-    <p class="section-lead">
-      D-RBI is the central novelty. It replaces naive subtraction with a learned fusion that respects the spatial structure of change, then decomposes the result into two specialized streams.
-    </p>
-
-    <div class="diagram-wrap fade-in">
-      <img src="assets/diagrams/03_drbi_module.svg" alt="Detailed D-RBI module flow"/>
-      <p class="diagram-caption">Figure 5. D-RBI module. Inputs are GroupNorm-normalized before concatenation. The bottleneck \(\phi_l\) compresses to \(D_l\). Region gate \(G_l^r\) and boundary gate \(G_l^b\) produce the two output streams.</p>
-    </div>
-
-    <h3 style="margin-top:2rem;">Step-by-step formulation</h3>
-
-    <div class="eq-block fade-in">
-      <div class="eq-label">Step 1 — Normalization (AMP stability)</div>
-      \[\tilde{F}_1^l = \text{GN}(F_1^l), \qquad \tilde{F}_2^l = \text{GN}(F_2^l)\]
-    </div>
-
-    <div class="eq-block fade-in">
-      <div class="eq-label">Step 2 — Four-component concatenation</div>
-      \[Z_l = \left[\tilde{F}_1^l,\; \tilde{F}_2^l,\; |\tilde{F}_2^l - \tilde{F}_1^l|,\; \tilde{F}_1^l \odot \tilde{F}_2^l\right]\]
-    </div>
-
-    <div class="eq-block fade-in">
-      <div class="eq-label">Step 3 — Bottleneck compression</div>
-      \[D_l = \phi_l(Z_l)\]
-    </div>
-
-    <div class="eq-block fade-in">
-      <div class="eq-label">Step 4 — Region and boundary decomposition</div>
-      \[R_l = G_l^r \odot D_l, \qquad B_l = G_l^b \odot D_l\]
-    </div>
-
-    <p class="callout">
-      <strong>Implementation note:</strong> The product term \(\tilde{F}_1^l \odot \tilde{F}_2^l\) is controlled by a flag <code>use_product</code> (default: <code>False</code>). GroupNorm is critical: without it, float16 activations overflow before the concat when using AMP, producing NaN gradients.
-    </p>
-  </div>
-</section>
-
-<!-- ════════════════════════════ GATES ════════════════════════════════════════ -->
-<section id="gates">
-  <div class="container">
-    <p class="section-label">Gate Design</p>
-    <h2 class="section-title">Region and boundary gates</h2>
-    <p class="section-lead">
-      Both gates operate on \(D_l\) but condition on different spatial signals. Region gates respond to interior feature magnitude. Boundary gates respond to spatial gradients.
-    </p>
-
-    <div class="diagram-wrap fade-in">
-      <img src="assets/diagrams/04_region_boundary_gates.svg" alt="Region gate (left) and boundary gate (right) parallel computation"/>
-      <p class="diagram-caption">Figure 6. The two gates share \(D_l\) as input but operate via different pathways. Clamping prevents sigmoid saturation; bounded outputs prevent degenerate all-on or all-off gating.</p>
-    </div>
-
-    <h3 style="margin-top:2rem;">Region gate</h3>
-    <div class="eq-block fade-in">
-      \[G_l^r = g_{\min}^r + (g_{\max}^r - g_{\min}^r)\;\sigma\!\left(\text{clamp}(\psi_r(D_l),\,-8,\,8)\right)\]
-    </div>
-    <p>
-      where \(g_{\min}^r = 0.2\), \(g_{\max}^r = 0.8\), and \(\psi_r\) is a learned MLP.
-      The logit clamp to \([-8, 8]\) prevents fp16 overflow before the sigmoid.
-      The bounded output range \([0.2, 0.8]\) ensures the gate never fully silences a spatial location.
-    </p>
-
-    <h3 style="margin-top:1.5rem;">Boundary gate</h3>
-    <div class="eq-block fade-in">
-      \[G_l^b = g_{\min}^b + (g_{\max}^b - g_{\min}^b)\;\sigma\!\left(\psi_b\!\left(\text{clamp}(\nabla D_l,\,0,\,10)\right)\right)\]
-    </div>
-    <p>
-      where \(\nabla D_l\) is the Sobel edge magnitude of \(D_l\), clamped to \([0, 10]\) for numerical stability. The boundary gate therefore activates most strongly at spatial edges in the difference feature.
-    </p>
-
-    <div class="callout pink" style="margin-top:1.5rem;">
-      <strong>Why bounded gates?</strong>
-      An unbounded sigmoid gate can reach near-zero values for any spatial location, effectively discarding information. The \([g_{\min}, g_{\max}]\) parameterization ensures every location contributes at least 20% of its \(D_l\) signal to each stream, preventing the decoder from ignoring entire image regions.
-    </div>
-  </div>
-</section>
-
-<!-- ════════════════════════════ ARF DECODER ═════════════════════════════════ -->
-<section id="decoder">
-  <div class="container">
-    <p class="section-label">Decoder</p>
-    <h2 class="section-title">Adaptive RF decoder and boundary residual</h2>
-    <p class="section-lead">
-      Two parallel decoding streams process the region and boundary features. The region stream produces a coarse prediction. The boundary stream computes a bounded residual correction.
-    </p>
-
-    <div class="diagram-wrap fade-in">
-      <img src="assets/diagrams/Adaptive_RF_Decoder.png" alt="ARF-FPN upper path and boundary residual lower path"/>
-      <p class="diagram-caption">Figure 7. Upper path: ARF-FPN with softmax-gated dilation rates processes region features into P<sub>c</sub>. Lower path: boundary head H<sub>b</sub> produces a &alpha;&thinsp;&middot;&thinsp;tanh(z) correction added to P<sub>c</sub>.</p>
-    </div>
-
-    <h3 style="margin-top:2rem;">Coarse prediction via ARF-FPN</h3>
-    <div class="eq-block fade-in">
-      <div class="eq-label">Adaptive receptive field</div>
-      \[P_c = H_c\!\left(\{R_l\}_{l=1}^{L}\right), \qquad H_c \text{ uses softmax-gated dilations } d \in \{1,2,4,8\}\]
-    </div>
-    <p>
-      At each spatial position, a learned attention over dilation rates selects the most appropriate receptive field. Small objects obtain local context (\(d=1\)); large homogeneous areas obtain wide context (\(d=8\)).
-    </p>
-
-    <h3 style="margin-top:1.5rem;">Boundary residual refinement</h3>
-    <div class="eq-block fade-in">
-      <div class="eq-label">Refined prediction</div>
-      \[P_f = P_c + \alpha\;\tanh\!\left(H_b\!\left(\{B_l\}_{l=1}^L,\; P_c,\; \nabla P_c\right)\right)\]
-    </div>
-    <p>
-      where \(\alpha = 0.1\) and \(H_b\) is initialized with a zero-weight final convolution. This means \(P_f = P_c\) at the start of training, so the model learns the coarse prediction first and refines it incrementally &mdash; a stable curriculum.
-    </p>
-
-    <div class="callout green">
-      <strong>Why &alpha;&thinsp;&middot;&thinsp;tanh?</strong>
-      The \(\tanh\) bounds the residual to \((-1, 1)\) and \(\alpha = 0.1\) further scales it to \((-0.1, 0.1)\). This prevents the boundary head from catastrophically overwriting the coarse prediction during early training epochs.
-    </div>
-  </div>
-</section>
-
-<!-- ════════════════════════════ FULL MATH ════════════════════════════════════ -->
-<section id="math">
-  <div class="container">
-    <p class="section-label">Mathematical Formulation</p>
-    <h2 class="section-title">Complete notation and equations</h2>
-    <p class="section-lead">
-      A self-contained reference for all model equations, collected in one place.
-    </p>
-
-    <button class="math-toggle-btn" data-target="math-full-content">&#9660; Expand full formulation</button>
-
-    <div class="math-content" id="math-full-content">
-      <div style="margin-top:1.5rem;">
-
-        <h3>Encoder</h3>
-        <div class="eq-block">
-          \[F_1^l = E_l(I_1), \qquad F_2^l = E_l(I_2), \qquad l \in \{1,2,3,4\}\]
-        </div>
-
-        <h3 style="margin-top:1.25rem;">D-RBI fusion</h3>
-        <div class="eq-block">
-          \[\tilde{F}_i^l = \text{GroupNorm}(F_i^l), \quad i \in \{1,2\}\]
-        </div>
-        <div class="eq-block">
-          \[Z_l = \left[\tilde{F}_1^l,\; \tilde{F}_2^l,\; |\tilde{F}_2^l - \tilde{F}_1^l|,\; \tilde{F}_1^l \odot \tilde{F}_2^l\right]\]
-        </div>
-        <div class="eq-block">
-          \[D_l = \phi_l(Z_l)\]
-        </div>
-
-        <h3 style="margin-top:1.25rem;">Region gate</h3>
-        <div class="eq-block">
-          \[G_l^r = g_{\min}^r + (g_{\max}^r - g_{\min}^r)\;\sigma\!\left(\text{clamp}(\psi_r(D_l),\,-8,\,8)\right)\]
-          \[g_{\min}^r = 0.2, \quad g_{\max}^r = 0.8\]
-        </div>
-
-        <h3 style="margin-top:1.25rem;">Boundary gate</h3>
-        <div class="eq-block">
-          \[G_l^b = g_{\min}^b + (g_{\max}^b - g_{\min}^b)\;\sigma\!\left(\psi_b\!\left(\text{clamp}(\nabla D_l,\,0,\,10)\right)\right)\]
-        </div>
-
-        <h3 style="margin-top:1.25rem;">Stream decomposition</h3>
-        <div class="eq-block">
-          \[R_l = G_l^r \odot D_l, \qquad B_l = G_l^b \odot D_l\]
-        </div>
-
-        <h3 style="margin-top:1.25rem;">Coarse prediction</h3>
-        <div class="eq-block">
-          \[P_c = H_c\!\left(\{R_l\}_{l=1}^{4}\right)\]
-        </div>
-
-        <h3 style="margin-top:1.25rem;">Boundary residual refinement</h3>
-        <div class="eq-block">
-          \[P_f = P_c + \alpha\;\tanh\!\left(H_b\!\left(\{B_l\}_{l=1}^4,\; P_c,\; \nabla P_c\right)\right), \quad \alpha = 0.1\]
-        </div>
-
-        <h3 style="margin-top:1.25rem;">Final prediction</h3>
-        <div class="eq-block">
-          \[\hat{Y} = \sigma(P_f) \in [0,1]^{H \times W}\]
-        </div>
-
-        <h3 style="margin-top:1.25rem;">Symbol reference</h3>
-        <table class="symbol-table">
-          <thead>
-            <tr><th>Symbol</th><th>Meaning</th><th>Shape / Range</th></tr>
-          </thead>
-          <tbody>
-            <tr><td>\(I_1, I_2\)</td><td>Pre- and post-change images</td><td>\(\mathbb{R}^{H \times W \times 3}\)</td></tr>
-            <tr><td>\(F_i^l\)</td><td>Encoder features, image \(i\), scale \(l\)</td><td>\(\mathbb{R}^{H_l \times W_l \times C_l}\)</td></tr>
-            <tr><td>\(D_l\)</td><td>D-RBI difference feature</td><td>\(\mathbb{R}^{H_l \times W_l \times C'}\)</td></tr>
-            <tr><td>\(G_l^r, G_l^b\)</td><td>Region / boundary gates</td><td>\([g_{\min}, g_{\max}]^{H_l \times W_l \times C'}\)</td></tr>
-            <tr><td>\(R_l, B_l\)</td><td>Region / boundary stream features</td><td>\(\mathbb{R}^{H_l \times W_l \times C'}\)</td></tr>
-            <tr><td>\(P_c\)</td><td>Coarse change logit map</td><td>\(\mathbb{R}^{H \times W \times 1}\)</td></tr>
-            <tr><td>\(P_f\)</td><td>Refined change logit map</td><td>\(\mathbb{R}^{H \times W \times 1}\)</td></tr>
-            <tr><td>\(\hat{Y}\)</td><td>Change probability map</td><td>\([0,1]^{H \times W}\)</td></tr>
-            <tr><td>\(\phi_l\)</td><td>Bottleneck conv in D-RBI</td><td>learnable</td></tr>
-            <tr><td>\(\psi_r, \psi_b\)</td><td>Gate MLP heads</td><td>learnable</td></tr>
-            <tr><td>\(\alpha\)</td><td>Residual scale factor</td><td>0.1 (fixed)</td></tr>
-            <tr><td>\(\odot\)</td><td>Element-wise product</td><td>&mdash;</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ════════════════════════════ DATASETS ════════════════════════════════════ -->
-<section id="datasets">
-  <div class="container">
-    <p class="section-label">Datasets</p>
-    <h2 class="section-title">Evaluation benchmarks</h2>
-    <p class="section-lead">
-      We evaluate on three standard remote sensing change detection benchmarks covering urban, rural, and mixed-scene domains.
-    </p>
-
-    <div class="dataset-cards fade-in">
-      <div class="dataset-card">
-        <div class="ds-header">
-          <h3>LEVIR-CD</h3>
-          <p>Large-scale building change detection, urban scenes</p>
-        </div>
-        <div class="ds-body">
-          <div class="ds-stats">
-            <span class="stat-label">Total pairs</span><span class="stat-value">637</span>
-            <span class="stat-label">Resolution</span><span class="stat-value">1024&times;1024 px</span>
-            <span class="stat-label">GSD</span><span class="stat-value">0.5 m/px</span>
-            <span class="stat-label">Split</span><span class="stat-value">448 / 64 / 128</span>
-            <span class="stat-label">Change type</span><span class="stat-value">Building footprints</span>
-            <span class="stat-label">Train crop</span><span class="stat-value">256&times;256</span>
+  <main id="top">
+    <section class="hero-section section" id="hero">
+      <div class="page-shell hero-grid">
+        <div class="hero-copy">
+          <p class="eyebrow">Remote Sensing Change Detection</p>
+          <h1>MambaRefine-CD</h1>
+          <p class="hero-subtitle">Differential Region–Boundary Interaction with Adaptive Receptive Field Refinement for Remote Sensing Change Detection</p>
+          <p class="lede">
+            MambaRefine-CD is a boundary-aware bi-temporal change detection model that combines MambaVision features, structured differential interaction, adaptive receptive-field decoding, and restrained residual boundary refinement.
+          </p>
+          <div class="button-row">
+            <a class="button button-primary" href="https://github.com/Dineth14/MambaRefine-CD">Code</a>
+            <a class="button button-secondary" href="#verified-results">Verified Results</a>
+            <a class="button button-secondary" href="#comparison">Comparison</a>
+            <a class="button button-secondary" href="#usage">Usage</a>
+          </div>
+          <div class="summary-grid">
+            <article class="summary-card">
+              <span class="summary-label">LEVIR F1_1</span>
+              <strong id="summary-levir-f1">--</strong>
+            </article>
+            <article class="summary-card">
+              <span class="summary-label">Best WHU F1_1</span>
+              <strong id="summary-whu-f1">--</strong>
+            </article>
+            <article class="summary-card">
+              <span class="summary-label">Best WHU Boundary F1</span>
+              <strong id="summary-whu-boundary">--</strong>
+            </article>
+            <article class="summary-card">
+              <span class="summary-label">Current Params</span>
+              <strong id="summary-params">TBD</strong>
+            </article>
           </div>
         </div>
-      </div>
-      <div class="dataset-card">
-        <div class="ds-header">
-          <h3>WHU-CD</h3>
-          <p>Building change detection, Christchurch NZ</p>
+        <div class="hero-visual surface-card">
+          <img src="assets/diagrams/full_architecture.svg" alt="Full architecture overview of MambaRefine-CD">
         </div>
-        <div class="ds-body">
-          <div class="ds-stats">
-            <span class="stat-label">Coverage</span><span class="stat-value">20.5 km&sup2;</span>
-            <span class="stat-label">Resolution</span><span class="stat-value">32207&times;15354 px</span>
-            <span class="stat-label">GSD</span><span class="stat-value">0.2 m/px</span>
-            <span class="stat-label">Split</span><span class="stat-value">6096 / 762 / 762</span>
-            <span class="stat-label">Change type</span><span class="stat-value">Post-earthquake rebuild</span>
-            <span class="stat-label">Train crop</span><span class="stat-value">256&times;256</span>
+      </div>
+    </section>
+
+    <section class="section" id="motivation">
+      <div class="page-shell">
+        <div class="section-heading">
+          <span class="section-index">01</span>
+          <div>
+            <h2>Motivation</h2>
+            <p class="section-copy">Observed image difference is not equivalent to semantic change. The model must separate actual structural change from nuisance variation before classification becomes reliable.</p>
           </div>
         </div>
-      </div>
-      <div class="dataset-card">
-        <div class="ds-header">
-          <h3>DSIFN-CD</h3>
-          <p>Multi-scene change detection, 6 Chinese cities</p>
+        <div class="two-column">
+          <article class="surface-card">
+            <h3>Observation decomposition</h3>
+            <div class="math-block">
+              \[
+              \Delta I = \Delta I_{\text{semantic}} + \Delta I_{\text{illumination}} + \Delta I_{\text{seasonal}} + \Delta I_{\text{registration}} + \epsilon
+              \]
+            </div>
+            <p><strong>\(\Delta I_{\text{semantic}}\)</strong> captures real land-cover change, while the remaining terms represent nuisance variations that can trigger false alarms.</p>
+          </article>
+          <article class="surface-card note-card">
+            <h3>Core insight</h3>
+            <p>Change detection is not a subtraction problem. It is a structured comparison problem.</p>
+          </article>
         </div>
-        <div class="ds-body">
-          <div class="ds-stats">
-            <span class="stat-label">Total pairs</span><span class="stat-value">3940</span>
-            <span class="stat-label">Resolution</span><span class="stat-value">512&times;512 px</span>
-            <span class="stat-label">GSD</span><span class="stat-value">variable</span>
-            <span class="stat-label">Split</span><span class="stat-value">3600 / 340</span>
-            <span class="stat-label">Change type</span><span class="stat-value">Urban, road, vegetation</span>
-            <span class="stat-label">Train crop</span><span class="stat-value">256&times;256</span>
+      </div>
+    </section>
+
+    <section class="section" id="problem">
+      <div class="page-shell">
+        <div class="section-heading">
+          <span class="section-index">02</span>
+          <div>
+            <h2>Mathematical Problem</h2>
+            <p class="section-copy">The task is binary change prediction under severe class imbalance.</p>
           </div>
         </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ════════════════════════════ METRICS ═════════════════════════════════════ -->
-<section id="metrics">
-  <div class="container">
-    <p class="section-label">Evaluation Metrics</p>
-    <h2 class="section-title">Understanding the metrics</h2>
-    <p class="section-lead">
-      Change detection is evaluated as binary segmentation. We report F1 of the change class (class 1) as the primary metric, along with mF1, IoU, and overall accuracy.
-    </p>
-
-    <div class="diagram-wrap fade-in">
-      <img src="assets/diagrams/08_metric_explanation.svg" alt="TP/FP/FN matrix and metric formula reference"/>
-      <p class="diagram-caption">Figure 8. Left: confusion matrix structure for binary change detection. Right: metric formulas. Note that mF1 is inflated by the dominant no-change class &mdash; F1<sub>1</sub> is the more discriminating metric.</p>
-    </div>
-
-    <div class="callout warn" style="margin-top:1.5rem;">
-      <strong>mF1 vs F1<sub>1</sub>:</strong>
-      mF1 (mean F1 over both classes) is commonly reported but can exceed 95% even when the change class F1 is only 70%, because the no-change class typically dominates (&gt;90% of pixels). Always compare methods on F1<sub>1</sub> to avoid misleading rankings.
-    </div>
-  </div>
-</section>
-
-<!-- ════════════════════════════ RESULTS ══════════════════════════════════════ -->
-<section id="results">
-  <div class="container">
-    <p class="section-label">Experimental Results</p>
-    <h2 class="section-title">Quantitative comparisons</h2>
-    <p class="section-lead">
-      Results on three benchmarks. All methods trained from scratch with identical augmentation unless otherwise noted.
-    </p>
-
-    <div class="tabs-nav">
-      <button class="tab-btn active" data-tab="tab-levir">LEVIR-CD</button>
-      <button class="tab-btn" data-tab="tab-whu">WHU-CD</button>
-      <button class="tab-btn" data-tab="tab-dsifn">DSIFN-CD</button>
-      <button class="tab-btn" data-tab="tab-ablation">Ablation</button>
-    </div>
-
-    <!-- LEVIR-CD results -->
-    <!-- EDIT RESULTS HERE: tab-levir -->
-    <div class="tab-panel active" id="tab-levir">
-      <div style="overflow-x:auto;">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>Method</th><th>Backbone</th><th>F1<sub>1</sub> (%)</th><th>mF1 (%)</th><th>IoU (%)</th><th>OA (%)</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr><td>FC-EF</td><td>VGG</td><td>83.40</td><td>&mdash;</td><td>71.53</td><td>98.39</td></tr>
-          <tr><td>BIT</td><td>ResNet-18</td><td>89.24</td><td>&mdash;</td><td>80.68</td><td>98.75</td></tr>
-          <tr><td>ChangeFormer</td><td>MiT-B4</td><td>90.40</td><td>&mdash;</td><td>82.48</td><td>98.93</td></tr>
-          <tr><td>SCanNet</td><td>ResNet-18</td><td>90.17</td><td>&mdash;</td><td>82.10</td><td>&mdash;</td></tr>
-          <tr><td>PromptCD</td><td>SAM</td><td>91.24</td><td>&mdash;</td><td>83.89</td><td>&mdash;</td></tr>
-          <tr class="ours"><td><strong>MambaRefine-CD (ours)</strong></td><td>MambaVision-B</td><td class="best">&mdash;</td><td class="best">&mdash;</td><td class="best">&mdash;</td><td class="best">&mdash;</td></tr>
-        </tbody>
-      </table>
-      </div>
-      <p style="font-size:.82rem;color:var(--faint);margin-top:.75rem;"><!-- EDIT RESULTS HERE: replace &mdash; in MambaRefine-CD row with actual numbers once training is complete --></p>
-    </div>
-
-    <!-- WHU-CD results -->
-    <!-- EDIT RESULTS HERE: tab-whu -->
-    <div class="tab-panel" id="tab-whu">
-      <div style="overflow-x:auto;">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>Method</th><th>Backbone</th><th>F1<sub>1</sub> (%)</th><th>mF1 (%)</th><th>IoU (%)</th><th>OA (%)</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr><td>FC-EF</td><td>VGG</td><td>71.63</td><td>&mdash;</td><td>55.79</td><td>98.75</td></tr>
-          <tr><td>BIT</td><td>ResNet-18</td><td>83.98</td><td>&mdash;</td><td>72.39</td><td>98.75</td></tr>
-          <tr><td>ChangeFormer</td><td>MiT-B4</td><td>88.80</td><td>&mdash;</td><td>79.89</td><td>99.10</td></tr>
-          <tr class="ours"><td><strong>MambaRefine-CD (ours)</strong></td><td>MambaVision-B</td><td class="best">&mdash;</td><td class="best">&mdash;</td><td class="best">&mdash;</td><td class="best">&mdash;</td></tr>
-        </tbody>
-      </table>
-      </div>
-      <p style="font-size:.82rem;color:var(--faint);margin-top:.75rem;"><!-- EDIT RESULTS HERE: replace &mdash; with actual numbers --></p>
-    </div>
-
-    <!-- DSIFN-CD results -->
-    <!-- EDIT RESULTS HERE: tab-dsifn -->
-    <div class="tab-panel" id="tab-dsifn">
-      <div style="overflow-x:auto;">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>Method</th><th>Backbone</th><th>F1<sub>1</sub> (%)</th><th>mF1 (%)</th><th>IoU (%)</th><th>OA (%)</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr><td>FC-EF</td><td>VGG</td><td>53.12</td><td>&mdash;</td><td>36.15</td><td>88.09</td></tr>
-          <tr><td>DSIFN</td><td>VGG-16</td><td>66.59</td><td>&mdash;</td><td>49.91</td><td>90.16</td></tr>
-          <tr><td>BIT</td><td>ResNet-18</td><td>67.62</td><td>&mdash;</td><td>51.08</td><td>90.30</td></tr>
-          <tr class="ours"><td><strong>MambaRefine-CD (ours)</strong></td><td>MambaVision-B</td><td class="best">&mdash;</td><td class="best">&mdash;</td><td class="best">&mdash;</td><td class="best">&mdash;</td></tr>
-        </tbody>
-      </table>
-      </div>
-      <p style="font-size:.82rem;color:var(--faint);margin-top:.75rem;"><!-- EDIT RESULTS HERE: replace &mdash; with actual numbers --></p>
-    </div>
-
-    <!-- Ablation -->
-    <!-- EDIT RESULTS HERE: tab-ablation -->
-    <div class="tab-panel" id="tab-ablation">
-      <div style="overflow-x:auto;">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>Configuration</th><th>D-RBI</th><th>ARF-FPN</th><th>Boundary Head</th><th>F1<sub>1</sub> (%)</th><th>IoU (%)</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr><td>Baseline (naive diff + std FPN)</td><td>&#10005;</td><td>&#10005;</td><td>&#10005;</td><td>&mdash;</td><td>&mdash;</td></tr>
-          <tr><td>+ D-RBI</td><td>&#10003;</td><td>&#10005;</td><td>&#10005;</td><td>&mdash;</td><td>&mdash;</td></tr>
-          <tr><td>+ D-RBI + ARF-FPN</td><td>&#10003;</td><td>&#10003;</td><td>&#10005;</td><td>&mdash;</td><td>&mdash;</td></tr>
-          <tr class="ours"><td><strong>Full model</strong></td><td>&#10003;</td><td>&#10003;</td><td>&#10003;</td><td class="best">&mdash;</td><td class="best">&mdash;</td></tr>
-        </tbody>
-      </table>
-      </div>
-      <p style="font-size:.82rem;color:var(--faint);margin-top:.75rem;"><!-- EDIT RESULTS HERE: fill in ablation numbers --></p>
-    </div>
-  </div>
-</section>
-
-<!-- ════════════════════════════ QUALITATIVE ═════════════════════════════════ -->
-<section id="qualitative">
-  <div class="container">
-    <p class="section-label">Qualitative Analysis</p>
-    <h2 class="section-title">Visual prediction comparisons</h2>
-    <p class="section-lead">
-      Each row shows one image pair. Columns: Image A, Image B, Ground Truth, Our Prediction, Error Map.
-      Add images to <code>assets/qualitative/</code> with the naming convention below.
-    </p>
-
-    <!-- EDIT RESULTS HERE: add qualitative images to assets/qualitative/ -->
-    <div class="qual-grid fade-in">
-      <!-- Row 1 -->
-      <div class="qual-row">
-        <div class="qual-cell">
-          <div class="img-placeholder">Image A</div>
-          <div class="col-label">Image A</div>
+        <div class="three-column">
+          <article class="surface-card">
+            <h3>Inputs</h3>
+            <div class="math-block">\[
+            I_1, I_2 \in \mathbb{R}^{3 \times H \times W}
+            \]</div>
+          </article>
+          <article class="surface-card">
+            <h3>Target</h3>
+            <div class="math-block">\[
+            Y \in \{0,1\}^{H \times W}
+            \]</div>
+          </article>
+          <article class="surface-card">
+            <h3>Predictor</h3>
+            <div class="math-block">\[
+            f_{\theta}(I_1, I_2) \rightarrow \hat{Y}
+            \]</div>
+          </article>
         </div>
-        <div class="qual-cell">
-          <div class="img-placeholder">Image B</div>
-          <div class="col-label">Image B</div>
+        <article class="surface-card">
+          <div class="math-block">\[
+          \Pr(Y=1) \ll \Pr(Y=0)
+          \]</div>
+          <p>This is why OA alone can be misleading: a model can score highly by over-predicting no-change.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section" id="naive-difference">
+      <div class="page-shell">
+        <div class="section-heading">
+          <span class="section-index">03</span>
+          <div>
+            <h2>Why Naive Difference Fails</h2>
+            <p class="section-copy">Absolute differencing is easy to compute but weak as a complete representation.</p>
+          </div>
         </div>
-        <div class="qual-cell">
-          <div class="img-placeholder">Ground Truth</div>
-          <div class="col-label">Ground Truth</div>
-        </div>
-        <div class="qual-cell">
-          <div class="img-placeholder">Prediction</div>
-          <div class="col-label">Ours</div>
-        </div>
-        <div class="qual-cell">
-          <div class="img-placeholder">Error</div>
-          <div class="col-label">Error Map</div>
+        <div class="two-column">
+          <article class="surface-card">
+            <div class="math-block">\[
+            D_l^{\text{naive}} = |F_2^l - F_1^l|
+            \]</div>
+            <div class="math-block">\[
+            \mathbb{E}[D_l] =
+            \Pr(Y=0)\mathbb{E}[D_l \mid Y=0] +
+            \Pr(Y=1)\mathbb{E}[D_l \mid Y=1]
+            \]</div>
+            <p>Because \(\Pr(Y=0)\) dominates, raw difference statistics are biased toward background behavior.</p>
+          </article>
+          <figure class="surface-card figure-card">
+            <img src="assets/diagrams/metrics_explanation.svg" alt="Metric interpretation and imbalance diagram">
+            <figcaption>Metric interpretation must respect imbalance; direct comparison between \(mF1\) and \(F1_1\) is invalid.</figcaption>
+          </figure>
         </div>
       </div>
-      <!-- Row 2 -->
-      <div class="qual-row">
-        <div class="qual-cell"><div class="img-placeholder">Image A</div><div class="col-label">Image A</div></div>
-        <div class="qual-cell"><div class="img-placeholder">Image B</div><div class="col-label">Image B</div></div>
-        <div class="qual-cell"><div class="img-placeholder">Ground Truth</div><div class="col-label">Ground Truth</div></div>
-        <div class="qual-cell"><div class="img-placeholder">Prediction</div><div class="col-label">Ours</div></div>
-        <div class="qual-cell"><div class="img-placeholder">Error</div><div class="col-label">Error Map</div></div>
+    </section>
+
+    <section class="section" id="method">
+      <div class="page-shell">
+        <div class="section-heading">
+          <span class="section-index">04</span>
+          <div>
+            <h2>MambaVision Encoder</h2>
+            <p class="section-copy">A shared encoder preserves feature-space alignment across timestamps.</p>
+          </div>
+        </div>
+        <div class="two-column">
+          <article class="surface-card">
+            <div class="math-block">\[
+            F_1^l = E_l(I_1), \qquad F_2^l = E_l(I_2), \qquad l \in \{1,2,3,4\}
+            \]</div>
+            <div class="math-block">\[
+            h_t = A_t h_{t-1} + B_t x_t, \qquad y_t = C_t h_t
+            \]</div>
+            <p>MambaVision provides strong semantic modeling with efficient long-range state updates, but boundary preservation still requires explicit architectural support.</p>
+          </article>
+          <figure class="surface-card figure-card">
+            <img src="assets/diagrams/full_architecture.svg" alt="Encoder and decoder overview">
+            <figcaption>Shared MambaVision features are passed into D-RBI before decoding.</figcaption>
+          </figure>
+        </div>
       </div>
-      <!-- Row 3 -->
-      <div class="qual-row">
-        <div class="qual-cell"><div class="img-placeholder">Image A</div><div class="col-label">Image A</div></div>
-        <div class="qual-cell"><div class="img-placeholder">Image B</div><div class="col-label">Image B</div></div>
-        <div class="qual-cell"><div class="img-placeholder">Ground Truth</div><div class="col-label">Ground Truth</div></div>
-        <div class="qual-cell"><div class="img-placeholder">Prediction</div><div class="col-label">Ours</div></div>
-        <div class="qual-cell"><div class="img-placeholder">Error</div><div class="col-label">Error Map</div></div>
+    </section>
+
+    <section class="section" id="drbi">
+      <div class="page-shell">
+        <div class="section-heading">
+          <span class="section-index">05</span>
+          <div>
+            <h2>D-RBI Module</h2>
+            <p class="section-copy">D-RBI enriches temporal comparison before routing evidence to region and boundary streams.</p>
+          </div>
+        </div>
+        <div class="two-column">
+          <article class="surface-card">
+            <div class="math-block">\[
+            Z_l =
+            \left[
+            F_1^l,\,
+            F_2^l,\,
+            |F_2^l-F_1^l|,\,
+            F_1^l \odot F_2^l
+            \right]
+            \]</div>
+            <div class="math-block">\[
+            D_l = \phi_l(Z_l)
+            \]</div>
+            <p>The product term is optional in the implementation and may be disabled for stability.</p>
+          </article>
+          <figure class="surface-card figure-card">
+            <img src="assets/diagrams/drbi_module.svg" alt="D-RBI module diagram">
+            <figcaption>Structured comparison exposes context, disagreement, and optional agreement before gating.</figcaption>
+          </figure>
+        </div>
       </div>
-    </div>
-    <p style="font-size:.82rem;color:var(--faint);margin-top:.75rem;">
-      <!-- Image naming convention: assets/qualitative/example_01_A.png, example_01_B.png, example_01_gt.png, example_01_pred.png, example_01_err.png -->
-    </p>
-  </div>
-</section>
+    </section>
 
-<!-- ════════════════════════════ CODE ════════════════════════════════════════ -->
-<section id="code">
-  <div class="container">
-    <p class="section-label">Code &amp; Usage</p>
-    <h2 class="section-title">Quick start</h2>
+    <section class="section" id="gates">
+      <div class="page-shell">
+        <div class="section-heading">
+          <span class="section-index">06</span>
+          <div>
+            <h2>Region / Boundary Gates</h2>
+            <p class="section-copy">Region evidence is broad and coherent; boundary evidence is sparse and high-frequency.</p>
+          </div>
+        </div>
+        <article class="surface-card disclosure-card">
+          <button class="disclosure-toggle" type="button" data-target="gates-math" aria-expanded="false">Show equations</button>
+          <div class="disclosure-content" id="gates-math">
+            <div class="math-block">\[
+            G_l^r =
+            g_{\min}^r +
+            (g_{\max}^r-g_{\min}^r)\sigma(\psi_r(D_l)),
+            \qquad
+            R_l = G_l^r \odot D_l
+            \]</div>
+            <div class="math-block">\[
+            G_l^b =
+            g_{\min}^b +
+            (g_{\max}^b-g_{\min}^b)\sigma(\psi_b(\nabla D_l)),
+            \qquad
+            B_l = G_l^b \odot D_l
+            \]</div>
+            <div class="math-block">\[
+            \nabla D_l =
+            \sqrt{(S_x * D_l)^2 + (S_y * D_l)^2 + \epsilon}
+            \]</div>
+          </div>
+        </article>
+      </div>
+    </section>
 
-    <h3>1. Installation</h3>
-    <pre><code>git clone https://github.com/keshawa17/MambaRefine-CD.git
-cd MambaRefine-CD
-pip install -e .
-# or
-pip install -r requirements.txt</code></pre>
+    <section class="section" id="decoder">
+      <div class="page-shell">
+        <div class="section-heading">
+          <span class="section-index">07</span>
+          <div>
+            <h2>Adaptive RF Decoder</h2>
+            <p class="section-copy">The region stream enters the main decoder, which mixes multiple dilation scales via soft weighting.</p>
+          </div>
+        </div>
+        <div class="two-column">
+          <article class="surface-card">
+            <div class="math-block">\[
+            A_l^{(d)} = \text{Conv}_{3\times3}^{d}(\tilde{R}_l),
+            \quad d \in \{1,2,4,8\}
+            \]</div>
+            <div class="math-block">\[
+            \bar{R}_l = \sum_{d} w_l^{(d)} A_l^{(d)}, \qquad
+            U_l = \bar{R}_l + \text{Up}(U_{l+1})
+            \]</div>
+            <div class="math-block">\[
+            P_c = H_c(U_1)
+            \]</div>
+          </article>
+          <figure class="surface-card figure-card">
+            <img src="assets/diagrams/decoder_code_faithful.svg" alt="Code-faithful decoder diagram">
+            <figcaption>Code-faithful coarse decoder plus lightweight residual boundary correction.</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
 
-    <h3 style="margin-top:1.5rem;">2. Data preparation</h3>
-    <pre><code>datasets/
-  LEVIR-CD/
-    train/  A/  B/  label/
-    val/    A/  B/  label/
-    test/   A/  B/  label/</code></pre>
+    <section class="section" id="refinement">
+      <div class="page-shell">
+        <div class="section-heading">
+          <span class="section-index">08</span>
+          <div>
+            <h2>Boundary Residual Refinement</h2>
+            <p class="section-copy">The refinement head is intentionally bounded so it sharpens contours without overwriting the coarse prediction.</p>
+          </div>
+        </div>
+        <article class="surface-card">
+          <div class="math-block">\[
+          E_c = \nabla \sigma(P_c)
+          \]</div>
+          <div class="math-block">\[
+          \Delta = H_b(B_1, P_c, E_c)
+          \]</div>
+          <div class="math-block">\[
+          P_f = P_c + 0.05 \tanh(\Delta), \qquad \hat{Y} = \sigma(P_f)
+          \]</div>
+        </article>
+      </div>
+    </section>
 
-    <h3 style="margin-top:1.5rem;">3. Training</h3>
-    <pre><code>python mambavision/train.py \
-  --config mambavision/configs/mambavision_base_1k.yaml \
-  --dataset LEVIR-CD \
-  --data-path ./datasets/LEVIR-CD \
-  --output ./outputs/levir_base \
-  --amp                      # float16 mixed precision
-  --cuda 1                   # GPU index</code></pre>
+    <section class="section" id="datasets">
+      <div class="page-shell">
+        <div class="section-heading">
+          <span class="section-index">09</span>
+          <div>
+            <h2>Datasets</h2>
+            <p class="section-copy">The website distinguishes reproduced local results from literature-reported values and missing entries.</p>
+          </div>
+        </div>
+        <div class="dataset-grid">
+          <article class="surface-card"><h3>LEVIR-CD</h3><p>High-resolution building change benchmark and main binary CD reference dataset.</p></article>
+          <article class="surface-card"><h3>WHU-CD</h3><p>Urban building change dataset with stronger sensitivity to precise boundary delineation.</p></article>
+          <article class="surface-card"><h3>DSIFN-CD</h3><p>More heterogeneous scene distribution used to assess broader generalization.</p></article>
+          <article class="surface-card"><h3>SECOND</h3><p>Semantic change benchmark. Binary-mode metrics are usable; SeK is only valid when semantic predictions truly exist.</p></article>
+        </div>
+      </div>
+    </section>
 
-    <h3 style="margin-top:1.5rem;">4. Evaluation</h3>
-    <pre><code>python mambavision/validate.py \
-  --config mambavision/configs/mambavision_base_1k.yaml \
-  --checkpoint outputs/levir_base/best.pth \
-  --dataset LEVIR-CD \
-  --data-path ./datasets/LEVIR-CD</code></pre>
+    <section class="section" id="metrics">
+      <div class="page-shell">
+        <div class="section-heading">
+          <span class="section-index">10</span>
+          <div>
+            <h2>Metrics</h2>
+            <p class="section-copy">The website keeps metric definitions explicit so binary and literature-reported values are not mixed improperly.</p>
+          </div>
+        </div>
+        <article class="surface-card disclosure-card">
+          <button class="disclosure-toggle" type="button" data-target="metrics-math" aria-expanded="false">Show metric definitions</button>
+          <div class="disclosure-content" id="metrics-math">
+            <div class="math-block">\[
+            P_1 = \frac{TP_1}{TP_1+FP_1},
+            \quad
+            R_1 = \frac{TP_1}{TP_1+FN_1},
+            \quad
+            F1_1 = \frac{2P_1R_1}{P_1+R_1}
+            \]</div>
+            <div class="math-block">\[
+            IoU_1 = \frac{TP_1}{TP_1+FP_1+FN_1},
+            \quad
+            mF1 = \frac{F1_0 + F1_1}{2},
+            \quad
+            mIoU = \frac{IoU_0 + IoU_1}{2}
+            \]</div>
+            <div class="math-block">\[
+            OA = \frac{TP+TN}{TP+TN+FP+FN}
+            \]</div>
+          </div>
+          <p class="status-note">Important: this site does not compare \(mF1\) against \(F1_1\). Unclear literature values are marked unverified.</p>
+        </article>
+      </div>
+    </section>
 
-    <h3 style="margin-top:1.5rem;">5. Inference on a single pair</h3>
-    <pre><code>from mambavision.models import build_model
-import torch, torchvision.transforms as T
-from PIL import Image
+    <section class="section" id="verified-results">
+      <div class="page-shell">
+        <div class="section-heading">
+          <span class="section-index">11</span>
+          <div>
+            <h2>Verified MambaRefine-CD Results</h2>
+            <p class="section-copy">These tables are populated from local output folders and local fallback logs only.</p>
+          </div>
+        </div>
+        <div class="tab-shell" data-tab-group="ours-results">
+          <div class="tab-list">
+            <button class="tab-button is-active" type="button" data-tab-target="ours-LEVIR-CD">LEVIR-CD</button>
+            <button class="tab-button" type="button" data-tab-target="ours-WHU-CD">WHU-CD</button>
+            <button class="tab-button" type="button" data-tab-target="ours-DSIFN-CD">DSIFN-CD</button>
+            <button class="tab-button" type="button" data-tab-target="ours-SECOND">SECOND</button>
+          </div>
+        </div>
+        <div id="ours-results-panels"></div>
+      </div>
+    </section>
 
-model = build_model('mambavision_base').cuda().eval()
-model.load_state_dict(torch.load('best.pth')['model'])
+    <section class="section" id="comparison">
+      <div class="page-shell">
+        <div class="section-heading">
+          <span class="section-index">12</span>
+          <div>
+            <h2>SOTA Comparison</h2>
+            <p class="section-copy">The comparison tables prefer reproduced evaluations under our loaders and our metrics. Missing checkpoints and adapter failures are shown explicitly.</p>
+          </div>
+        </div>
+        <p class="status-note">Ranking should be based on reproduced rows under the same pipeline. Literature values are not mixed into these direct comparisons.</p>
+        <div class="tab-shell" data-tab-group="comparison">
+          <div class="tab-list">
+            <button class="tab-button is-active" type="button" data-tab-target="compare-LEVIR-CD">LEVIR-CD</button>
+            <button class="tab-button" type="button" data-tab-target="compare-WHU-CD">WHU-CD</button>
+            <button class="tab-button" type="button" data-tab-target="compare-DSIFN-CD">DSIFN-CD</button>
+            <button class="tab-button" type="button" data-tab-target="compare-SECOND">SECOND</button>
+          </div>
+        </div>
+        <div id="comparison-panels"></div>
+      </div>
+    </section>
 
-tfm = T.Compose([T.Resize(256), T.ToTensor(),
-                 T.Normalize([0.485,0.456,0.406],[0.229,0.224,0.225])])
-img_a = tfm(Image.open('A.png')).unsqueeze(0).cuda()
-img_b = tfm(Image.open('B.png')).unsqueeze(0).cuda()
+    <section class="section" id="qualitative">
+      <div class="page-shell">
+        <div class="section-heading">
+          <span class="section-index">13</span>
+          <div>
+            <h2>Qualitative Results</h2>
+            <p class="section-copy">The gallery is collected automatically from local output folders and grouped by inferred dataset.</p>
+          </div>
+        </div>
+        <div class="filter-row">
+          <button class="filter-button is-active" type="button" data-filter="All">All</button>
+          <button class="filter-button" type="button" data-filter="LEVIR-CD">LEVIR-CD</button>
+          <button class="filter-button" type="button" data-filter="WHU-CD">WHU-CD</button>
+          <button class="filter-button" type="button" data-filter="DSIFN-CD">DSIFN-CD</button>
+          <button class="filter-button" type="button" data-filter="SECOND">SECOND</button>
+        </div>
+        <div class="qualitative-grid" id="qualitative-grid"></div>
+      </div>
+    </section>
 
-with torch.no_grad():
-    pred = model(img_a, img_b)   # shape: (1, 1, H, W)
-    binary = (pred.sigmoid() > 0.5).float()</code></pre>
-  </div>
-</section>
+    <section class="section" id="efficiency">
+      <div class="page-shell">
+        <div class="section-heading">
+          <span class="section-index">14</span>
+          <div>
+            <h2>Efficiency</h2>
+            <p class="section-copy">Efficiency values come from local model scripts and are reported separately from dataset metrics.</p>
+          </div>
+        </div>
+        <div class="two-column">
+          <div class="surface-card">
+            <table class="data-table" id="efficiency-table">
+              <thead>
+                <tr><th>Item</th><th>Value</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <article class="surface-card">
+            <h3>Reporting status</h3>
+            <p id="efficiency-status">Loading local efficiency profile.</p>
+          </article>
+        </div>
+      </div>
+    </section>
 
-<!-- ════════════════════════════ FOOTER ══════════════════════════════════════ -->
-<footer>
-  <div class="container">
-    <p>MambaRefine-CD &mdash; Research project. Code released under MIT License.</p>
-    <p style="margin-top:.5rem;">Built with plain HTML, CSS, and MathJax v3.</p>
-  </div>
-</footer>
+    <section class="section" id="usage">
+      <div class="page-shell">
+        <div class="section-heading">
+          <span class="section-index">15</span>
+          <div>
+            <h2>Usage</h2>
+            <p class="section-copy">All configuration is controlled through <code>configs/global_config.yaml</code>.</p>
+          </div>
+        </div>
+        <article class="surface-card code-card">
+<pre><code>python scripts/extract_all_results_for_website.py
+python scripts/model_efficiency.py
+python scripts/run_sota_reproduction_pipeline.py
+python scripts/collect_website_qualitative.py
+python scripts/validate_website.py
+cd website && python -m http.server 8000</code></pre>
+        </article>
+      </div>
+    </section>
 
-<!-- Back to top -->
-<button id="back-top" title="Back to top">&#8679;</button>
-
-<script src="script.js"></script>
+    <section class="section" id="notes">
+      <div class="page-shell">
+        <div class="section-heading">
+          <span class="section-index">16</span>
+          <div>
+            <h2>Notes / Citation Placeholder</h2>
+            <p class="section-copy">This section is reserved for final paper citation, acknowledgements, and manual notes for any external values that still require human verification.</p>
+          </div>
+        </div>
+        <article class="surface-card">
+          <p>Unverified literature numbers are displayed as such and should not be treated as final rankings without metric-definition checks.</p>
+        </article>
+      </div>
+    </section>
+  </main>
 </body>
 </html>

@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from utils.config import load_config
+from data.second import inspect_second_dataset
 
 OUTPUT_DIR = ROOT / "outputs" / "dataset_manifests"
 
@@ -85,6 +86,8 @@ def _compute_change_ratio(label_dir: Path | None, sample_n: int = 50) -> float |
 
 def check_dataset(ds_cfg: dict) -> dict:
     name = ds_cfg.get("name", "unknown")
+    if str(name).upper() == "SECOND":
+        return inspect_second_dataset(ds_cfg)
     root = Path(ds_cfg.get("root", ""))
 
     a_cands = ds_cfg.get("image_a_dir_candidates", _A_CANDS)
@@ -170,13 +173,28 @@ def main() -> None:
         print(f"[{status}] {name}")
         print(f"       Root    : {manifest['root']}")
         for split, info in manifest.get("splits", {}).items():
-            cnt = info.get("count_a", 0)
-            c_ok = "✓" if info.get("count_ok") else "✗"
-            print(f"       {split:5s}  {c_ok}  A/B/mask={info['count_a']}/{info['count_b']}/{info['count_label']}"
-                  f"  size={manifest['first_image_sizes'].get(split,'?')}")
+            if str(name).upper() == "SECOND":
+                print(
+                    f"       {split:5s}  A/B/sem/binary="
+                    f"{info.get('image_a_count', 0)}/{info.get('image_b_count', 0)}/"
+                    f"{info.get('label_a_count', 0)}:{info.get('label_b_count', 0)}/"
+                    f"{info.get('binary_label_count', 0)}"
+                )
+                if info.get("error"):
+                    print(f"       {split:5s}  ERROR: {info['error']}")
+                if info.get("change_pixel_ratio") is not None:
+                    print(f"       {split:5s}  Change ratio : {info['change_pixel_ratio']:.4f}")
+                if info.get("ignore_pixel_ratio") is not None:
+                    print(f"       {split:5s}  Ignore ratio : {info['ignore_pixel_ratio']:.4f}")
+            else:
+                c_ok = "✓" if info.get("count_ok") else "✗"
+                print(f"       {split:5s}  {c_ok}  A/B/mask={info['count_a']}/{info['count_b']}/{info['count_label']}"
+                      f"  size={manifest['first_image_sizes'].get(split,'?')}")
         ratio = manifest.get("changed_pixel_ratio")
         if ratio is not None:
             print(f"       Change ratio (sample): {ratio:.4f} ({ratio*100:.2f}%)")
+        for warning in manifest.get("warnings", []):
+            print(f"       Warning : {warning}")
         print(f"       Manifest : {out_file}")
         if not ok:
             all_ok = False

@@ -17,6 +17,7 @@ Supported dataset names (case-insensitive, flexible aliases):
   WHU-CD   / whu   / whucd
   SYSU-CD  / sysu  / sysucd
   DSIFN-CD / dsifn / dsifncd
+    SECOND   / second
 """
 from __future__ import annotations
 
@@ -31,6 +32,7 @@ from data.levircd  import LEVIRCDDataset, LEVIRCDTileDataset
 from data.whucd    import WHUCDDataset
 from data.sysucd   import SYSUCDDataset
 from data.dsifncd  import DSIFNCDDataset
+from data.second   import SECONDDataset
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +50,7 @@ _REGISTRY: dict = {
     "dsifn-cd":  DSIFNCDDataset,
     "dsifn":     DSIFNCDDataset,
     "dsifncd":   DSIFNCDDataset,
+    "second":    SECONDDataset,
 }
 
 _LEVIR_NAMES = {"levir-cd", "levir", "levircd"}
@@ -116,6 +119,27 @@ def build_dataset(
     )
     if cls is LEVIRCDDataset:
         pass  # no extra kwargs
+    elif cls is SECONDDataset:
+        kwargs.update({
+            "mode": str(dataset_cfg.get("mode", "binary")),
+            "task_type": str(dataset_cfg.get("task_type", "semantic_change")),
+            "ignore_index": int(dataset_cfg.get("ignore_index", 255)),
+            "binary_from_semantic": bool(dataset_cfg.get("binary_from_semantic", True)),
+            "num_classes": int(dataset_cfg.get("num_classes", 7)),
+            "a_candidates": dataset_cfg.get("image_a_dir_candidates", []),
+            "b_candidates": dataset_cfg.get("image_b_dir_candidates", []),
+            "label_a_candidates": dataset_cfg.get("label_a_dir_candidates", []),
+            "label_b_candidates": dataset_cfg.get("label_b_dir_candidates", []),
+            "binary_label_candidates": dataset_cfg.get("binary_label_dir_candidates", []),
+            "train_split": dataset_cfg.get("train_split"),
+            "val_split": dataset_cfg.get("val_split"),
+            "test_split": dataset_cfg.get("test_split"),
+            "precompute_binary_masks": bool(dataset_cfg.get("precompute_second_binary_masks", False)),
+            "second_binary_cache_dir": dataset_cfg.get("second_binary_cache_dir"),
+            "cache_images_in_ram": bool(dataset_cfg.get("cache_images_in_ram", False)),
+            "cache_masks_in_ram": bool(dataset_cfg.get("cache_masks_in_ram", False)),
+            "profile_enabled": bool(dataset_cfg.get("profile_enabled", False)),
+        })
     else:
         if "image_a_dir_candidates" in dataset_cfg:
             kwargs["a_candidates"] = dataset_cfg["image_a_dir_candidates"]
@@ -244,7 +268,7 @@ def _estimate_positive_ratio(ds: Dataset, n: int = 200) -> float:
     for i in range(min(n, len(ds))):
         try:
             item = ds[i]
-            m = item.get("mask", item.get("label"))
+            m = item.get("mask", item.get("change_mask", item.get("label")))
             if m is not None:
                 if isinstance(m, torch.Tensor):
                     m = m.numpy()
@@ -303,30 +327,40 @@ def build_dataloaders(cfg: dict, dataset_cfg: Optional[dict] = None):
     train_ds = build_dataset(dc, "train", augment=True,  seed=seed)
     val_ds   = build_dataset(dc, "val",   augment=False, seed=seed)
 
-    nw  = int(dc.get("num_workers", 8))
-    pin = str(hw.get("device", "cuda")).startswith("cuda")
+    nw = int(dc.get("num_workers", 8))
+    pin = bool(dc.get("pin_memory", str(hw.get("device", "cuda")).startswith("cuda")))
+    persistent_workers = bool(dc.get("persistent_workers", True)) and nw > 0
+    prefetch_factor = int(dc.get("prefetch_factor", 2)) if nw > 0 else None
 
     sampler = _make_train_sampler(train_ds, dc)
     use_shuffle = sampler is None
 
-    train_loader = DataLoader(
-        train_ds,
-        batch_size         = int(tc["batch_size"]),
-        shuffle            = use_shuffle,
-        sampler            = sampler,
-        num_workers        = nw,
-        pin_memory         = pin,
-        drop_last          = True,
-        persistent_workers = nw > 0,
-    )
-    val_loader = DataLoader(
-        val_ds,
-        batch_size         = int(vc.get("batch_size", tc["batch_size"])),
-        shuffle            = False,
-        num_workers        = nw,
-        pin_memory         = pin,
-        persistent_workers = nw > 0,
-    )
+    train_loader_kwargs = {
+        "dataset": train_ds,
+        "batch_size": int(tc["batch_size"]),
+        "shuffle": use_shuffle,
+        "sampler": sampler,
+        "num_workers": nw,
+        "pin_memory": pin,
+        "drop_last": True,
+        "persistent_workers": persistent_workers,
+    }
+    if prefetch_factor is not None:
+        train_loader_kwargs["prefetch_factor"] = prefetch_factor
+
+    val_loader_kwargs = {
+        "dataset": val_ds,
+        "batch_size": int(vc.get("batch_size", tc["batch_size"])),
+        "shuffle": False,
+        "num_workers": nw,
+        "pin_memory": pin,
+        "persistent_workers": persistent_workers,
+    }
+    if prefetch_factor is not None:
+        val_loader_kwargs["prefetch_factor"] = prefetch_factor
+
+    train_loader = DataLoader(**train_loader_kwargs)
+    val_loader = DataLoader(**val_loader_kwargs)
     return train_loader, val_loader
 
 
@@ -342,15 +376,19 @@ def build_test_loader(cfg: dict, dataset_cfg: Optional[dict] = None) -> DataLoad
     split   = str(cfg.get("evaluation", {}).get("split", "test"))
     test_ds = build_dataset(dc, split, augment=False, seed=seed)
 
-    nw  = int(dc.get("num_workers", 4))
-    pin = str(hw.get("device", "cuda")).startswith("cuda")
-
-    return DataLoader(
-        test_ds,
-        batch_size         = int(vc.get("batch_size", tc.get("batch_size", 8))),
-        shuffle            = False,
-        num_workers        = nw,
-        pin_memory         = pin,
-        persistent_workers = nw > 0,
-    )
-
+    nw = int(dc.get("num_workers", 8))
+    pin = bool(dc.get("pin_memory", str(hw.get("device", "cuda")).startswith("cuda")))
+    persistent_workers = bool(dc.get("persistent_workers", True)) and nw > 0
+    prefetch_factor = int(dc.get("prefetch_factor", 2)) if nw > 0 else None
+    loader_kwargs = {
+        "dataset": test_ds,
+        "batch_size": int(vc.get("batch_size", tc.get("batch_size", 8))),
+        "shuffle": False,
+        "num_workers": nw,
+        "pin_memory": pin,
+        "persistent_workers": persistent_workers,
+    }
+    if prefetch_factor is not None:
+        loader_kwargs["prefetch_factor"] = prefetch_factor
+    loader = DataLoader(**loader_kwargs)
+    return loader

@@ -31,7 +31,6 @@ try:
 except ImportError:
     _TQDM = False
 
-from training.losses           import BCEDiceLoss
 from training.metrics          import StreamingMetrics
 from training.boundary_metrics import BoundaryMetrics
 from training.checkpoint       import save as save_ckpt, peek as peek_ckpt
@@ -120,7 +119,7 @@ class Trainer:
         self,
         cfg: dict,
         model: nn.Module,
-        loss_fn: BCEDiceLoss,
+        loss_fn: nn.Module,
         optimizer: torch.optim.Optimizer,
         scheduler,
         train_loader: DataLoader,
@@ -148,6 +147,7 @@ class Trainer:
         self.log_every     = int(tc.get("log_every", 20))
         self.grad_clip     = float(tc.get("gradient_clip", 1.0))
         self.amp           = bool(cfg.get("hardware", {}).get("mixed_precision", True))
+        self.non_blocking_transfer = bool(tc.get("non_blocking_transfer", True))
         self.aux_weight    = float(cfg.get("decoder", {}).get("aux_weight", 0.4))
         self.threshold     = float(cfg.get("evaluation", {}).get("threshold", 0.5))
         bm_cfg             = cfg.get("boundary_metrics", {})
@@ -262,9 +262,14 @@ class Trainer:
     # Training step
     # ------------------------------------------------------------------
     def _step(self, batch: dict):
-        ia = batch["image_a"].to(self.device, non_blocking=True)
-        ib = batch["image_b"].to(self.device, non_blocking=True)
-        lb = batch["label"].to(self.device, non_blocking=True)
+        ia = batch["image_a"].to(self.device, non_blocking=self.non_blocking_transfer)
+        ib = batch["image_b"].to(self.device, non_blocking=self.non_blocking_transfer)
+        lb = batch["label"].to(self.device, non_blocking=self.non_blocking_transfer)
+        ignore_mask = batch.get("ignore_mask")
+        valid_mask = None
+        if ignore_mask is not None and torch.is_tensor(ignore_mask):
+            ignore_mask = ignore_mask.to(self.device, non_blocking=self.non_blocking_transfer)
+            valid_mask = (ignore_mask <= 0.5).float()
 
         # Collect D-RBI debug tensors every nan_diag_every iterations
         iteration   = getattr(self, "_current_iter", 0)
@@ -279,11 +284,21 @@ class Trainer:
             logits, aux = self.model(ia, ib)
             # Clamp logits before loss to prevent BCE/Dice from receiving inf values.
             logits = torch.clamp(logits, -20.0, 20.0)
-            total, bce, dice = self.loss_fn(logits, lb)
+            total, primary_loss, dice = self.loss_fn(logits, lb, valid_mask=valid_mask)
+            loss_stats = dict(getattr(self.loss_fn, "latest_stats", {}))
             if aux is not None:
                 aux = torch.clamp(aux, -20.0, 20.0)
-                aux_total, _, _ = self.loss_fn(aux, lb)
+                aux_total, _, _ = self.loss_fn(aux, lb, valid_mask=valid_mask)
                 total = total + self.aux_weight * aux_total
+            if not loss_stats:
+                loss_stats = {
+                    "total_loss": float(total.detach().item()),
+                    "dice_loss": float(dice.detach().item()),
+                    "focal_loss": float(primary_loss.detach().item()),
+                    "sek_loss": 0.0,
+                    "soft_kappa": 0.0,
+                    "sek_was_sanitized": False,
+                }
 
         # ------ Fail-fast NaN/Inf detection --------------------------------
         loss_val = total.item()
@@ -312,7 +327,14 @@ class Trainer:
                 self.logger.warning(
                     f"[NaN] Skipping optimizer step (skip #{self._nan_skipped})"
                 )
-                return float("nan"), float("nan"), float("nan")
+                return {
+                    "loss": float("nan"),
+                    "dice_loss": float("nan"),
+                    "focal_loss": float("nan"),
+                    "sek_loss": float("nan"),
+                    "soft_kappa": float("nan"),
+                    "bce_loss": float("nan"),
+                }
         # ------ End NaN detection ------------------------------------------
 
         self.scaler.scale(total).backward()
@@ -330,7 +352,20 @@ class Trainer:
         if do_diag and not nan_detected:
             self.nan_diag.write(iteration, debug_info, logits, loss_val)
 
-        return loss_val, bce.item(), dice.item()
+        if loss_stats.get("sek_was_sanitized"):
+            self.logger.warning(
+                "[SeK loss @ iter %s] SeK-inspired loss became NaN/Inf; using sek_loss=0 for this batch.",
+                iteration,
+            )
+
+        return {
+            "loss": loss_val,
+            "dice_loss": float(loss_stats.get("dice_loss", float(dice.detach().item()))),
+            "focal_loss": float(loss_stats.get("focal_loss", 0.0)),
+            "sek_loss": float(loss_stats.get("sek_loss", 0.0)),
+            "soft_kappa": float(loss_stats.get("soft_kappa", 0.0)),
+            "bce_loss": float(loss_stats.get("bce_loss", 0.0)),
+        }
 
     # ------------------------------------------------------------------
     # Validation
@@ -352,10 +387,10 @@ class Trainer:
 
         val_iter = tqdm(self.val_loader, desc="Validating", leave=False, unit="batch") if _TQDM else self.val_loader
         for batch in val_iter:
-            ia = batch["image_a"].to(self.device, non_blocking=True)
-            ib = batch["image_b"].to(self.device, non_blocking=True)
+            ia = batch["image_a"].to(self.device, non_blocking=self.non_blocking_transfer)
+            ib = batch["image_b"].to(self.device, non_blocking=self.non_blocking_transfer)
             lbl_key = "label" if "label" in batch else "mask"
-            lb = batch[lbl_key].to(self.device, non_blocking=True)
+            lb = batch[lbl_key].to(self.device, non_blocking=self.non_blocking_transfer)
             logits, _ = self.model(ia, ib)
             pix_metrics.update(logits, lb)
             bnd_metrics.update(logits, lb)
@@ -446,7 +481,7 @@ class Trainer:
                 batch = next(loader_iter)
 
             self._current_iter = iteration
-            loss, bce, dice = self._step(batch)
+            step_stats = self._step(batch)
 
             if self.scheduler:
                 self.scheduler.step()
@@ -456,19 +491,34 @@ class Trainer:
                 # Display nan/inf as "NaN" instead of crashing format string
                 def _fmt(v):
                     return f"{v:.4f}" if isinstance(v, float) and not (v != v) else "NaN"
-                msg = (
-                    f"[{iteration+1}/{self.max_iter}] "
-                    f"loss={_fmt(loss)} bce={_fmt(bce)} dice={_fmt(dice)} lr={lr:.2e}"
-                )
+                loss_type = str(self.cfg.get("loss", {}).get("type", "bce_dice")).lower().replace("-", "_")
+                if loss_type == "bce_dice":
+                    msg = (
+                        f"[{iteration+1}/{self.max_iter}] "
+                        f"loss={_fmt(step_stats['loss'])} "
+                        f"bce={_fmt(step_stats['bce_loss'])} "
+                        f"dice={_fmt(step_stats['dice_loss'])} lr={lr:.2e}"
+                    )
+                else:
+                    msg = (
+                        f"[{iteration+1}/{self.max_iter}] "
+                        f"loss={_fmt(step_stats['loss'])} "
+                        f"dice={_fmt(step_stats['dice_loss'])} "
+                        f"focal={_fmt(step_stats['focal_loss'])} "
+                        f"sek={_fmt(step_stats['sek_loss'])} lr={lr:.2e}"
+                    )
                 if pbar:
                     pbar.set_description(msg)
                 else:
                     self.logger.info(msg)
                 if self.writer:
-                    self.writer.add_scalar("train/loss",  loss,  iteration)
-                    self.writer.add_scalar("train/bce",   bce,   iteration)
-                    self.writer.add_scalar("train/dice",  dice,  iteration)
-                    self.writer.add_scalar("train/lr",    lr,    iteration)
+                    self.writer.add_scalar("train/loss", step_stats["loss"], iteration)
+                    self.writer.add_scalar("train/dice_loss", step_stats["dice_loss"], iteration)
+                    self.writer.add_scalar("train/focal_loss", step_stats["focal_loss"], iteration)
+                    self.writer.add_scalar("train/sek_loss", step_stats["sek_loss"], iteration)
+                    self.writer.add_scalar("train/soft_kappa", step_stats["soft_kappa"], iteration)
+                    self.writer.add_scalar("train/bce", step_stats["bce_loss"], iteration)
+                    self.writer.add_scalar("train/lr", lr, iteration)
 
             if pbar:
                 pbar.update(1)

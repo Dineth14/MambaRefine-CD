@@ -1,0 +1,25 @@
+{
+  "generated_at": "2026-04-27T00:16:44",
+  "sources": {
+    "ChangeFormer": {
+      "matched_files": [],
+      "notes": "No model-scoped local files found. Generic docs are intentionally ignored."
+    },
+    "BIT": {
+      "matched_files": [],
+      "notes": "No model-scoped local files found. Generic docs are intentionally ignored."
+    },
+    "SNUNet": {
+      "matched_files": [],
+      "notes": "No model-scoped local files found. Generic docs are intentionally ignored."
+    },
+    "STANet": {
+      "matched_files": [],
+      "notes": "No model-scoped local files found. Generic docs are intentionally ignored."
+    },
+    "Mamba-CD": {
+      "matched_files": [],
+      "notes": "No model-scoped local files found. Generic docs are intentionally ignored."
+    }
+  }
+}

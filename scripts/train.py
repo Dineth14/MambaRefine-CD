@@ -34,6 +34,13 @@ from training.checkpoint  import find_latest, peek as peek_ckpt
 from training.final_eval  import run_final_test_evaluation
 
 
+def _dataset_run_label(exp_name: str, dataset_name: str) -> str:
+    dataset_slug = dataset_name.replace("/", "-").replace(" ", "_")
+    if dataset_slug.lower() in exp_name.lower():
+        return exp_name
+    return f"{exp_name}_{dataset_slug}"
+
+
 def _cosine_schedule(optimizer, max_iter: int, warmup: int, eta_min: float = 1e-5):
     def lr_fn(it: int) -> float:
         if it < warmup:
@@ -48,12 +55,14 @@ def main() -> None:
     exp = cfg.experiment
     tc  = cfg.training
     hw  = cfg.hardware
+    ds  = cfg.dataset
 
     set_seed(int(exp.seed))
 
     # ── Output directory ──────────────────────────────────────────────────────
     ts       = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_name = f"run_{ts}_{exp.name}"
+    run_label = _dataset_run_label(str(exp.name), str(ds.name))
+    run_name = f"run_{ts}_{run_label}"
     out_dir  = ROOT / exp.output_root / run_name
     out_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy(GLOBAL_CONFIG_PATH, out_dir / "config.yaml")
@@ -61,6 +70,7 @@ def main() -> None:
     # ── Logger ────────────────────────────────────────────────────────────────
     logger = get_logger(exp.name, out_dir / "logs")
     logger.info(f"Experiment : {exp.name}")
+    logger.info(f"Dataset    : {ds.name}  mode={ds.get('mode', 'binary')}")
     logger.info(f"Output dir : {out_dir}")
 
     # ── Resume pre-processing ─────────────────────────────────────────────────

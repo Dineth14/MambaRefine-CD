@@ -1,90 +1,96 @@
-# MambaRefine-CD Website
+# Website README
 
-Research project website for **MambaRefine-CD**. Built with plain HTML/CSS/JS and MathJax v3.
-
-## Local preview
+## Preview locally
 
 ```bash
 cd website
 python -m http.server 8000
-# Open http://localhost:8000 in your browser
 ```
 
-> **Important:** Open via a local server, not directly as a `file://` URL, so that relative paths to SVG assets resolve correctly.
+Then open `http://localhost:8000`.
 
-## GitHub Pages deployment
+## Extract verified results
 
-1. Push the repo to GitHub.
-2. Go to **Settings → Pages**.
-3. Source: **Deploy from a branch** → branch `main`, folder `/website`.
-4. The site will be published at `https://<username>.github.io/<repo>/`.
-
-## Editing results
-
-Results tables are in `index.html`. Each table is marked with:
-
-```html
-<!-- EDIT RESULTS HERE: tab-levir -->
-<!-- EDIT RESULTS HERE: tab-whu -->
-<!-- EDIT RESULTS HERE: tab-dsifn -->
-<!-- EDIT RESULTS HERE: tab-ablation -->
+```bash
+python scripts/extract_all_results_for_website.py
 ```
 
-Replace `&mdash;` placeholder cells in the **MambaRefine-CD (ours)** row with actual numbers.
+Outputs:
 
-## Adding qualitative images
+- `website/assets/data/ours_results.json`
+- `website/assets/data/ours_results.csv`
+- `website/assets/data/ours_results_all_candidates.json`
 
-Place images in `assets/qualitative/` following this naming convention:
+## Reproduce SOTA evaluations
 
-```
-assets/qualitative/
-  example_01_A.png      # pre-change image crop
-  example_01_B.png      # post-change image crop
-  example_01_gt.png     # ground truth mask
-  example_01_pred.png   # model prediction
-  example_01_err.png    # error map (TP=green, FP=red, FN=blue)
+```bash
+python scripts/run_sota_reproduction_pipeline.py
 ```
 
-Then update the `<img>` tags in the `#qualitative` section of `index.html`:
+Outputs:
 
-```html
-<img src="assets/qualitative/example_01_A.png" alt="..."/>
+- `outputs/sota_reproduced_eval/reports/master_status.json`
+- `outputs/sota_reproduced_eval/tables/`
+- `website/assets/data/reproduced_sota_results.json`
+
+## Extract external SOTA results from local sources only
+
+```bash
+python scripts/extract_external_sota_results.py
 ```
 
-The placeholder `<div class="img-placeholder">` divs are already in place — replace each with an `<img>` tag.
+Outputs:
 
-## Replacing diagrams
+- `website/assets/data/external_sota_results.json`
+- `website/assets/data/external_sota_results.csv`
+- `website/assets/data/external_sota_sources.json`
 
-All SVG diagrams are in `assets/diagrams/`. They are plain SVG files with embedded Unicode text — no external fonts required.
+## Profile model efficiency
 
-If you want to regenerate them with ChatGPT, use `DIAGRAM_GENERATION_GUIDE.md` in this folder. It explains the architecture, the shared visual style, and gives a copy-paste prompt for each SVG.
-
-| File | Content |
-|---|---|
-| `01_problem_naive_difference.svg` | Naive diff failure modes vs D-RBI |
-| `02_mambavision_encoder.svg` | Shared encoder + 4-scale feature pyramids |
-| `03_drbi_module.svg` | D-RBI module detail |
-| `04_region_boundary_gates.svg` | Region and boundary gate parallel paths |
-| `05_adaptive_rf_decoder.svg` | ARF-FPN + boundary residual decoder |
-| `06_full_architecture.svg` | Complete end-to-end architecture |
-| `07_experiment_timeline.svg` | Design evolution 4-stage timeline |
-| `08_metric_explanation.svg` | TP/FP/FN confusion matrix + metric formulas |
-
-## MathJax configuration
-
-The site uses MathJax v3 with `tex-svg.js`. Inline math uses `\( ... \)` and display math uses `\[ ... \]`. Do **not** use `$` or `$$` delimiters — they are not configured and will render as plain text.
-
-## File structure
-
+```bash
+python scripts/model_efficiency.py
 ```
-website/
-  index.html              ← main page (793 lines, 16 sections)
-  styles.css              ← all styles (Inter font, academic palette)
-  script.js               ← tabs, mobile nav, scroll progress, fade-in
-  README.md               ← this file
-  assets/
-    diagrams/             ← 8 SVG diagrams
-    results/              ← (placeholder) result figures
-    qualitative/          ← (placeholder) qualitative image grids
-    datasets/             ← (placeholder) dataset preview images
+
+Outputs:
+
+- `website/assets/data/ours_efficiency.json`
+- `outputs/model_efficiency/latest_efficiency.json`
+
+## Collect qualitative images
+
+```bash
+python scripts/collect_website_qualitative.py
 ```
+
+Outputs:
+
+- `website/assets/qualitative/manifest.json`
+- copied qualitative images under `website/assets/qualitative/`
+
+## Validate website
+
+```bash
+python scripts/validate_website.py
+```
+
+Outputs:
+
+- `outputs/website_validation/website_validation_report.json`
+- `outputs/website_validation/website_validation_report.md`
+
+## Deploy on GitHub Pages
+
+1. Push the repository.
+2. Open the repository settings on GitHub.
+3. Go to **Pages**.
+4. Choose **Deploy from a branch**.
+5. Set the published folder to `/website`.
+
+## Where to edit values manually
+
+- Verified local results: `website/assets/data/ours_results.json`
+- Reproduced comparison rows: `website/assets/data/reproduced_sota_results.json`
+- External local-source results: `website/assets/data/external_sota_results.json`
+- Efficiency values: `website/assets/data/ours_efficiency.json`
+- Qualitative manifest: `website/assets/qualitative/manifest.json`
+- Static content and section text: `website/index.html`

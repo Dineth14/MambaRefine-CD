@@ -9,7 +9,7 @@ Three benchmark tiers are used in the MERCon paper:
 |------|---------|---------|
 | Main | LEVIR-CD | Primary building change benchmark |
 | Boundary | WHU-CD | Boundary-sensitive evaluation |
-| Generalization | SYSU-CD / DSIFN-CD | Cross-domain generalization |
+| Generalization | SYSU-CD / DSIFN-CD / SECOND | Cross-domain generalization |
 
 ---
 
@@ -75,6 +75,24 @@ Datasets/DSIFN-CD/
     t1/  t2/  GT/
   testset/ (or test/)
     t1/  t2/  GT/
+```
+
+### 5. SECOND
+- **Type**: Semantic change detection
+- **Binary mode**: supported now by converting semantic labels into change/no-change masks
+- **Semantic mode**: dataset loading and metric scaffolding only; model-side semantic outputs are still TODO
+
+**Expected folder layout (auto-detected candidates):**
+```
+Datasets/SECOND/
+  train/  A|im1|...  B|im2|...  label1|semantic1|...  label2|semantic2|...  change|mask|...
+  val/    ...
+  test/   ...
+```
+OR with split files:
+```
+  A/  B/  label1/  label2/  change/
+  train.txt  val.txt  test.txt
 ```
 
 ---
@@ -187,11 +205,48 @@ evaluation:
   threshold: 0.5
   threshold_sweep: true
   threshold_list: [0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60]
-  threshold_select_metric: "mF1"   # options: mF1 | F1_1 | IoU_1
+  threshold_select_metric: "mF1"   # options: mF1 | F1_1 | IoU_1 | Fscd
 ```
 
 `best_thresholds.json` is saved alongside eval outputs and contains the
 optimal threshold for each of the three selection metrics.
+
+For `dataset.name: SECOND`, set:
+
+```yaml
+evaluation:
+  second_metrics: true
+  compute_SeK: true
+  sek_binary_fallback: false
+  threshold_select_metric: Fscd
+```
+
+SECOND evaluation additionally saves `second_metrics.json`, `second_metrics.csv`,
+and `best_thresholds_SECOND.json`. The dedicated SECOND report includes `OA`,
+`Fscd` / `F1scd`, `mIoU`, `SeK`, `binary_F1`, `binary_IoU`, and
+`semantic_mIoU`. With the current binary-only model, `SeK` and `semantic_mIoU`
+remain `N/A` unless future semantic predictions are available.
+
+### SECOND: metric vs training loss
+
+- **True SeK** is an evaluation metric for semantic change detection and is computed from a semantic confusion matrix.
+- **Binary SECOND training** does not optimize true SeK directly. It uses a differentiable **soft-kappa / SeK-inspired surrogate loss**.
+- This surrogate is used only as a training objective. It should not be reported as final semantic SeK.
+- With binary outputs, report `OA`, `Fscd`, binary `mIoU`, and optionally `binary_kappa`.
+- Report true `SeK` only when semantic predictions are available.
+
+Recommended SECOND training loss:
+
+```yaml
+loss:
+  type: dice_focal_sek
+  dice_weight: 1.0
+  focal_weight: 0.2
+  sek_weight: 0.05
+  sek_mode: binary
+  sek_eps: 1e-6
+  sek_separate_nochange: true
+```
 
 ---
 
@@ -325,13 +380,14 @@ The LaTeX tables use `\toprule`, `\midrule`, `\bottomrule` from the
 python scripts/check_dataset.py
 ```
 
-This checks all four dataset roots and saves manifests to:
+This checks all configured dataset roots and saves manifests to:
 ```
 outputs/dataset_manifests/
   LEVIR-CD_manifest.json
   WHU-CD_manifest.json
   SYSU-CD_manifest.json
   DSIFN-CD_manifest.json
+  SECOND_manifest.json
 ```
 
 Each manifest includes: root path, A/B/mask counts per split,

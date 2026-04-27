@@ -21,34 +21,40 @@ except ImportError:
     _ALB = False
 
 
-def build_train_transforms(image_size: int = 256):
+def build_train_transforms(image_size: int = 256, additional_targets: dict | None = None):
     """Return albumentations Compose for training, or None if unavailable."""
     if not _ALB:
         return None
+    targets = {"image_b": "image"}
+    if additional_targets:
+        targets.update(additional_targets)
     return A.Compose(
         [
             A.HorizontalFlip(p=0.5),
             A.VerticalFlip(p=0.5),
             A.RandomRotate90(p=0.5),
             A.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.1, hue=0.05, p=0.3),
-            A.GaussNoise(var_limit=(5.0, 20.0), p=0.2),
+            A.GaussNoise(std_range=(0.02, 0.08), p=0.2),
             A.Normalize(mean=_MEAN.tolist(), std=_STD.tolist()),
             ToTensorV2(),
         ],
-        additional_targets={"image_b": "image"},
+        additional_targets=targets,
     )
 
 
-def build_eval_transforms():
+def build_eval_transforms(additional_targets: dict | None = None):
     """Return albumentations Compose for eval (normalisation only), or None."""
     if not _ALB:
         return None
+    targets = {"image_b": "image"}
+    if additional_targets:
+        targets.update(additional_targets)
     return A.Compose(
         [
             A.Normalize(mean=_MEAN.tolist(), std=_STD.tolist()),
             ToTensorV2(),
         ],
-        additional_targets={"image_b": "image"},
+        additional_targets=targets,
     )
 
 

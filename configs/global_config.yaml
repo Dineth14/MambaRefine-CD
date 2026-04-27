@@ -14,13 +14,13 @@
 #   DSIFN training:      dataset.name = DSIFN-CD and comment out the LEVIR-only tile overrides.
 
 experiment:
-  name: DSIFN_experiment 
+  name: DSIFN_experiment
   output_root: outputs/dsifn_experiment
   seed: 42
 
 hardware:
   device: cuda
-  gpu_ids: [0]
+  gpu_ids: [1]
   mixed_precision: true
 
 model:
@@ -29,6 +29,9 @@ model:
   variant: base        # tiny | tiny2 | small | base | large
   decoder: adaptive_rf
   pretrained: true
+  output_mode: "binary"      # binary | semantic
+  num_classes: 1
+  semantic_num_classes: 7
   return_features: false
   freeze_backbone: false
 
@@ -74,6 +77,7 @@ training:
   weight_decay: 0.01
   skip_nan_steps: true
   nan_diag_every: 50
+  non_blocking_transfer: true
 
 resume:
   enabled: false
@@ -82,16 +86,26 @@ resume:
 
 dataset:
   # Active dataset selector. Base values are resolved from datasets_catalog.
-  # Supported names: LEVIR-CD | WHU-CD | SYSU-CD | DSIFN-CD
+  # Supported names: LEVIR-CD | WHU-CD | SYSU-CD | DSIFN-CD | SECOND
   name: DSIFN-CD
+  task_type: semantic_change
+  mode: binary
+  ignore_index: 255
 
   # Common per-run overrides for the active dataset.
   image_size: 256
-  num_workers: 4
+  num_workers: 8
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 4
   val_ratio: 0.2
   augment: true
   binary: true
   split: train
+  precompute_second_binary_masks: true
+  second_binary_cache_dir: outputs/second_binary_masks
+  cache_images_in_ram: false
+  cache_masks_in_ram: false
 
   # Uncomment only if your local dataset path differs from datasets_catalog.
   # root: /storage2/ChangeDetection/MV/Datasets/LEVIRCD
@@ -118,7 +132,7 @@ dataset:
   #target_change_tile_ratio: 0.5
 
 validation:
-  batch_size: 8
+  batch_size: 4
   save_samples: true
   sample_count: 16
   split: val
@@ -128,16 +142,23 @@ evaluation:
   threshold: 0.5
   threshold_sweep: true
   threshold_list: [0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60]
-  threshold_select_metric: "mF1"   # options: mF1 | F1_1 | IoU_1
+  threshold_select_metric: "Fscd"   # options: mF1 | F1_1 | IoU_1 | Fscd
+  second_metrics: true              # applied only when dataset.name: SECOND
+  compute_SeK: true
+  sek_binary_fallback: false
   use_tta: false
   tta_augmentations: [original, hflip, vflip, rot90]
   save_predictions: false
 
 loss:
-  type: dice_focal
+  type: dice_focal_sek
   dice_weight: 1.0
-  focal_weight: 0.3
+  focal_weight: 0.2
   focal_gamma: 1.5
+  sek_weight: 0.05
+  sek_mode: binary
+  sek_eps: 1e-6
+  sek_separate_nochange: true
   bce_weight: 1.0
 
 ema:
@@ -234,6 +255,8 @@ datasets_catalog:
   dsifn:
     name: DSIFN-CD
     root: /storage2/ChangeDetection/MV/Datasets/DSIFN-CD/DSIFN
+    task_type: binary_change
+    mode: binary
     image_size: 256
     num_workers: 8
     val_ratio: 0.2
@@ -246,6 +269,32 @@ datasets_catalog:
     image_b_dir_candidates: [t2, T2, B, imageB, after, img2]
     label_dir_candidates: [mask, GT, label, labels, OUT, change_map]
 
+  SECOND:
+    name: SECOND
+    root: /storage2/ChangeDetection/MV/Datasets/SECOND
+    task_type: semantic_change
+    mode: binary
+    image_size: 256
+    train_split: train
+    val_split: val
+    test_split: test
+    num_workers: 8
+    pin_memory: true
+    persistent_workers: true
+    prefetch_factor: 4
+    num_classes: 7
+    ignore_index: 255
+    binary_from_semantic: true
+    precompute_second_binary_masks: true
+    second_binary_cache_dir: outputs/second_binary_masks
+    cache_images_in_ram: false
+    cache_masks_in_ram: false
+    image_a_dir_candidates: [A, im1, img1, imageA, T1, time1]
+    image_b_dir_candidates: [B, im2, img2, imageB, T2, time2]
+    label_a_dir_candidates: [label1, labelA, label_t1, semantic1, sem1]
+    label_b_dir_candidates: [label2, labelB, label_t2, semantic2, sem2]
+    binary_label_dir_candidates: [label, change, change_label, mask, binary]
+
 post_training:
   run_test_eval: true
   export_best_model: true
@@ -253,7 +302,7 @@ post_training:
 benchmark:
   model_name: levir_rf_tile
   output_dir: outputs/benchmark_runs/summary
-  datasets: [LEVIR-CD, WHU-CD, SYSU-CD, DSIFN-CD]
+  datasets: [LEVIR-CD, WHU-CD, SYSU-CD, DSIFN-CD, SECOND]
   eval_split: test
   main_dataset: LEVIR-CD
   checkpoints:
@@ -261,3 +310,4 @@ benchmark:
     whu: null
     sysu: null
     dsifn: null
+    second: null

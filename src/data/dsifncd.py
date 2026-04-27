@@ -154,11 +154,11 @@ class DSIFNCDDataset(Dataset):
                 else:
                     self.names = all_names
 
-        self.tiles     = None if split == "train" else self._build_tiles()
         self.transform = build_train_transforms(image_size) if self.do_augment else None
         self.a_lookup  = _build_file_lookup(self.a_dir)    # type: ignore[arg-type]
         self.b_lookup  = _build_file_lookup(self.b_dir)    # type: ignore[arg-type]
         self.l_lookup  = _build_file_lookup(self.lbl_dir)  # type: ignore[arg-type]
+        self.tiles     = None if split == "train" else self._build_tiles()
 
     def _check_dirs(self, parent: Path) -> None:
         for attr, label in [("a_dir", "A/t1"), ("b_dir", "B/t2"), ("lbl_dir", "GT/label")]:
@@ -222,8 +222,9 @@ class DSIFNCDDataset(Dataset):
             img_b = np.array(Image.open(self._resolve_path(self.b_lookup, name, "image_b")).convert("RGB"))[r:r+s, c:c+s]
             lbl   = np.array(Image.open(self._resolve_path(self.l_lookup, name, "label")).convert("L"))[r:r+s, c:c+s]
 
-        # DSIFN GT may be {0, 255} or {0, 1} — handle both
-        lbl_bin = (lbl > 127).astype(np.uint8)
+        # DSIFN GT may be {0, 255} or {0, 1}; choose the threshold from the mask range.
+        threshold = 0 if int(lbl.max()) <= 1 else 127
+        lbl_bin = (lbl > threshold).astype(np.uint8)
 
         if self.do_augment and self.transform is not None:
             aug = self.transform(image=img_a, image_b=img_b, mask=lbl_bin)

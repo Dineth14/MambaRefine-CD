@@ -1,118 +1,40 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 740 420">
-  <defs>
-    <marker id="arr" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-      <polygon points="0,0 8,3 0,6" fill="#64748b"/>
-    </marker>
-    <marker id="arr-g" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-      <polygon points="0,0 8,3 0,6" fill="#16a34a"/>
-    </marker>
-    <marker id="arr-p" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-      <polygon points="0,0 8,3 0,6" fill="#db2777"/>
-    </marker>
-  </defs>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 560" role="img" aria-labelledby="title desc">
+  <title id="title">Region boundary gates</title>
+  <desc id="desc">Diagram of the region and boundary gate decomposition.</desc>
+  <rect width="980" height="560" fill="#fbfaf7"/>
+  <g font-family="IBM Plex Sans, Arial, sans-serif">
+    <rect x="84" y="216" width="160" height="120" rx="24" fill="#e4eef3" stroke="#9bb8c9" stroke-width="2.2"/>
+    <text x="164" y="272" text-anchor="middle" font-size="34" fill="#2f4b5e">D_l</text>
+    <text x="164" y="308" text-anchor="middle" font-size="17" fill="#5e6b73">shared differential code</text>
 
-  <rect width="740" height="420" fill="#f8fafc"/>
+    <path d="M244 252 C314 252 318 166 382 166" stroke="#48697d" stroke-width="3" fill="none"/>
+    <path d="M244 300 C314 300 318 394 382 394" stroke="#5f8370" stroke-width="3" fill="none"/>
 
-  <text x="370" y="26" text-anchor="middle" font-family="system-ui" font-size="13" font-weight="600" fill="#0f172a">Region and Boundary Gates</text>
+    <rect x="382" y="92" width="220" height="148" rx="26" fill="#e4eef3" stroke="#9bb8c9" stroke-width="2.2"/>
+    <text x="492" y="144" text-anchor="middle" font-size="26" fill="#2f4b5e">Region gate</text>
+    <text x="492" y="178" text-anchor="middle" font-size="16" fill="#5e6b73">psi_r(D_l) then bounded sigmoid</text>
+    <text x="492" y="210" text-anchor="middle" font-size="16" fill="#5e6b73">coherent interior support</text>
 
-  <!-- ===== D_l INPUT ===== -->
-  <rect x="285" y="48" width="170" height="44" rx="7" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/>
-  <text x="370" y="66" text-anchor="middle" font-family="system-ui" font-size="12" font-weight="700" fill="#4c1d95">D&#x2097;</text>
-  <text x="370" y="83" text-anchor="middle" font-family="system-ui" font-size="10" fill="#5b21b6">compressed differential feature</text>
+    <rect x="382" y="320" width="220" height="148" rx="26" fill="#e3efe8" stroke="#9fc0af" stroke-width="2.2"/>
+    <text x="492" y="372" text-anchor="middle" font-size="26" fill="#416957">Boundary gate</text>
+    <text x="492" y="406" text-anchor="middle" font-size="16" fill="#5e6b73">psi_b(grad D_l) with Sobel cue</text>
+    <text x="492" y="438" text-anchor="middle" font-size="16" fill="#5e6b73">sparse contour emphasis</text>
 
-  <!-- Branch lines from D_l -->
-  <line x1="370" y1="92" x2="370" y2="112" stroke="#64748b" stroke-width="1.5"/>
-  <line x1="370" y1="112" x2="172" y2="112" stroke="#64748b" stroke-width="1.5"/>
-  <line x1="370" y1="112" x2="568" y2="112" stroke="#64748b" stroke-width="1.5"/>
-  <line x1="172" y1="112" x2="172" y2="134" stroke="#16a34a" stroke-width="1.5" marker-end="url(#arr-g)"/>
-  <line x1="568" y1="112" x2="568" y2="134" stroke="#db2777" stroke-width="1.5" marker-end="url(#arr-p)"/>
+    <path d="M602 166 H718" stroke="#48697d" stroke-width="3" fill="none"/>
+    <path d="M602 394 H718" stroke="#5f8370" stroke-width="3" fill="none"/>
+    <polygon points="718,166 700,156 700,176" fill="#48697d"/>
+    <polygon points="718,394 700,384 700,404" fill="#5f8370"/>
 
-  <!-- ===== LEFT: REGION GATE ===== -->
-  <text x="172" y="126" text-anchor="middle" font-family="system-ui" font-size="10" fill="#166534" font-weight="600">REGION GATE</text>
+    <rect x="736" y="92" width="160" height="148" rx="26" fill="#e4eef3" stroke="#9bb8c9" stroke-width="2.2"/>
+    <rect x="736" y="320" width="160" height="148" rx="26" fill="#e3efe8" stroke="#9fc0af" stroke-width="2.2"/>
+    <text x="816" y="154" text-anchor="middle" font-size="30" fill="#2f4b5e">R_l</text>
+    <text x="816" y="188" text-anchor="middle" font-size="16" fill="#5e6b73">region stream</text>
+    <text x="816" y="382" text-anchor="middle" font-size="30" fill="#416957">B_l</text>
+    <text x="816" y="416" text-anchor="middle" font-size="16" fill="#5e6b73">boundary stream</text>
 
-  <!-- psi_r MLP -->
-  <rect x="96" y="136" width="152" height="40" rx="6" fill="#fef9c3" stroke="#d97706" stroke-width="1.5"/>
-  <text x="172" y="152" text-anchor="middle" font-family="system-ui" font-size="11" font-weight="600" fill="#78350f">&#x03C8;&#x1D63; (D&#x2097;)</text>
-  <text x="172" y="168" text-anchor="middle" font-family="system-ui" font-size="10" fill="#92400e">2-layer channel-wise MLP</text>
+    <rect x="114" y="76" width="184" height="64" rx="18" fill="#f0e9dc" stroke="#c4b294" stroke-width="2"/>
+    <text x="206" y="116" text-anchor="middle" font-size="16" fill="#7c6646">bounded gates prevent branch domination</text>
 
-  <!-- Arrow -->
-  <line x1="172" y1="176" x2="172" y2="196" stroke="#16a34a" stroke-width="1.5" marker-end="url(#arr-g)"/>
-
-  <!-- clamp -->
-  <rect x="96" y="198" width="152" height="36" rx="6" fill="#fefce8" stroke="#ca8a04" stroke-width="1.2"/>
-  <text x="172" y="213" text-anchor="middle" font-family="system-ui" font-size="11" fill="#713f12">clamp( z, &#x2212;8, 8 )</text>
-  <text x="172" y="228" text-anchor="middle" font-family="system-ui" font-size="10" fill="#92400e">prevents gradient explosion</text>
-
-  <!-- Arrow -->
-  <line x1="172" y1="234" x2="172" y2="254" stroke="#16a34a" stroke-width="1.5" marker-end="url(#arr-g)"/>
-
-  <!-- sigma -->
-  <rect x="116" y="256" width="112" height="36" rx="6" fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/>
-  <text x="172" y="278" text-anchor="middle" font-family="system-ui" font-size="13" fill="#166534">&#x03C3;( z )</text>
-
-  <!-- Gate bounds annotation -->
-  <rect x="12" y="266" width="96" height="36" rx="5" fill="#f0fdf4" stroke="#86efac" stroke-width="1"/>
-  <text x="60" y="280" text-anchor="middle" font-family="system-ui" font-size="9" fill="#166534">bounded to</text>
-  <text x="60" y="294" text-anchor="middle" font-family="system-ui" font-size="9" fill="#166534">[0.2, 0.8]</text>
-  <line x1="108" y1="280" x2="116" y2="278" stroke="#86efac" stroke-width="1"/>
-
-  <!-- Arrow -->
-  <line x1="172" y1="292" x2="172" y2="312" stroke="#16a34a" stroke-width="1.5" marker-end="url(#arr-g)"/>
-
-  <!-- Hadamard product region -->
-  <rect x="96" y="314" width="152" height="36" rx="6" fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/>
-  <text x="172" y="337" text-anchor="middle" font-family="system-ui" font-size="12" fill="#166534">G&#x1D63; &#x2299; D&#x2097;</text>
-
-  <!-- Arrow -->
-  <line x1="172" y1="350" x2="172" y2="370" stroke="#16a34a" stroke-width="2" marker-end="url(#arr-g)"/>
-
-  <!-- Output R_l -->
-  <rect x="96" y="372" width="152" height="40" rx="7" fill="#bbf7d0" stroke="#16a34a" stroke-width="2"/>
-  <text x="172" y="388" text-anchor="middle" font-family="system-ui" font-size="13" font-weight="700" fill="#166534">R&#x2097; (Region)</text>
-  <text x="172" y="403" text-anchor="middle" font-family="system-ui" font-size="10" fill="#166534">&#x2192; ARF-FPN decoder</text>
-
-  <!-- ===== RIGHT: BOUNDARY GATE ===== -->
-  <text x="568" y="126" text-anchor="middle" font-family="system-ui" font-size="10" fill="#9d174d" font-weight="600">BOUNDARY GATE</text>
-
-  <!-- Sobel gradient -->
-  <rect x="492" y="136" width="152" height="40" rx="6" fill="#fff1f2" stroke="#f43f5e" stroke-width="1.5"/>
-  <text x="568" y="152" text-anchor="middle" font-family="system-ui" font-size="11" font-weight="600" fill="#9d174d">&#x2207; D&#x2097; (Sobel)</text>
-  <text x="568" y="168" text-anchor="middle" font-family="system-ui" font-size="10" fill="#be185d">fixed filter, no params</text>
-
-  <!-- clamp note -->
-  <rect x="492" y="198" width="152" height="36" rx="6" fill="#fff1f2" stroke="#f43f5e" stroke-width="1.2"/>
-  <text x="568" y="213" text-anchor="middle" font-family="system-ui" font-size="11" fill="#9d174d">clamp( &#x2207;, 0, 10 )</text>
-  <text x="568" y="228" text-anchor="middle" font-family="system-ui" font-size="10" fill="#be185d">prevents Sobel saturation</text>
-
-  <line x1="568" y1="176" x2="568" y2="198" stroke="#db2777" stroke-width="1.5" marker-end="url(#arr-p)"/>
-  <line x1="568" y1="234" x2="568" y2="254" stroke="#db2777" stroke-width="1.5" marker-end="url(#arr-p)"/>
-
-  <!-- psi_b MLP -->
-  <rect x="492" y="256" width="152" height="36" rx="6" fill="#fce7f3" stroke="#db2777" stroke-width="1.5"/>
-  <text x="568" y="272" text-anchor="middle" font-family="system-ui" font-size="11" font-weight="600" fill="#9d174d">&#x03C8;&#x1D47;( &#x2207;D&#x2097; )</text>
-  <text x="568" y="288" text-anchor="middle" font-family="system-ui" font-size="10" fill="#be185d">gradient-conditioned MLP</text>
-
-  <!-- sigma -->
-  <line x1="568" y1="292" x2="568" y2="312" stroke="#db2777" stroke-width="1.5" marker-end="url(#arr-p)"/>
-  <rect x="512" y="314" width="112" height="36" rx="6" fill="#fce7f3" stroke="#db2777" stroke-width="1.5"/>
-  <text x="568" y="337" text-anchor="middle" font-family="system-ui" font-size="13" fill="#9d174d">&#x03C3;( z )</text>
-
-  <!-- Hadamard product boundary -->
-  <line x1="568" y1="350" x2="568" y2="370" stroke="#db2777" stroke-width="1.5" marker-end="url(#arr-p)"/>
-  <rect x="492" y="312" width="152" height="36" rx="6" fill="#fce7f3" stroke="#db2777" stroke-width="1.5"/>
-
-  <!-- redraw the sigma box properly -->
-  <rect x="492" y="314" width="152" height="36" rx="6" fill="#fce7f3" stroke="#db2777" stroke-width="1.5"/>
-  <text x="568" y="337" text-anchor="middle" font-family="system-ui" font-size="12" fill="#9d174d">G&#x1D47; &#x2299; D&#x2097;</text>
-
-  <line x1="568" y1="350" x2="568" y2="370" stroke="#db2777" stroke-width="2" marker-end="url(#arr-p)"/>
-
-  <!-- Output B_l -->
-  <rect x="492" y="372" width="152" height="40" rx="7" fill="#fbcfe8" stroke="#db2777" stroke-width="2"/>
-  <text x="568" y="388" text-anchor="middle" font-family="system-ui" font-size="13" font-weight="700" fill="#9d174d">B&#x2097; (Boundary)</text>
-  <text x="568" y="403" text-anchor="middle" font-family="system-ui" font-size="10" fill="#9d174d">&#x2192; residual refinement</text>
-
-  <!-- Gate insight note at bottom center -->
-  <text x="370" y="410" text-anchor="middle" font-family="system-ui" font-size="10" fill="#64748b">Gate formula: G = g&#x208B;&#x1D4D; + (g&#x208A;&#x1D4D; &#x2212; g&#x208B;&#x1D4D;) &#x00B7; &#x03C3;(z)  ensures bounded output regardless of initialization</text>
+    <text x="490" y="518" text-anchor="middle" font-size="18" fill="#5e6b73">Region and boundary evidence are separated because they carry different spatial frequencies and different decision roles.</text>
+  </g>
 </svg>

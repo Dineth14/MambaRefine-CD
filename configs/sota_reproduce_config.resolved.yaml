@@ -1,0 +1,148 @@
+experiment:
+  name: sota_reproduced_eval
+  output_root: outputs/sota_reproduced_eval
+  seed: 42
+hardware:
+  device: cuda
+  gpu_ids:
+  - 0
+  mixed_precision: true
+datasets:
+  active:
+  - LEVIR-CD
+  - WHU-CD
+  - DSIFN-CD
+  LEVIR-CD:
+    root: /storage2/ChangeDetection/MV/Datasets/LEVIRCD
+    split: test
+    image_size: 256
+    task_type: binary
+    name: LEVIR-CD
+  WHU-CD:
+    root: /storage2/ChangeDetection/MV/Datasets/WHU-CD
+    split: test
+    image_size: 256
+    task_type: binary
+    name: WHU-CD
+  DSIFN-CD:
+    root: /storage2/ChangeDetection/MV/Datasets/DSIFN-CD
+    split: test
+    image_size: 256
+    task_type: binary
+    name: DSIFN-CD
+evaluation:
+  batch_size: 8
+  threshold_sweep: true
+  threshold_values:
+  - 0.3
+  - 0.35
+  - 0.4
+  - 0.45
+  - 0.5
+  - 0.55
+  - 0.6
+  - 0.65
+  - 0.7
+  threshold_select_metric: F1_1
+  save_qualitative: true
+  num_qualitative_samples: 16
+  num_workers: 0
+  pin_memory: true
+external_models:
+  ChangeFormer:
+    enabled: true
+    repo_url: https://github.com/wgcban/ChangeFormer.git
+    repo_dir: external/ChangeFormer
+    weights_dir: external_weights/ChangeFormer
+    adapter: changeformer
+    official_weights:
+      LEVIR-CD:
+        type: github_release_or_manual
+        url: https://github.com/wgcban/ChangeFormer/releases/download/v0.1.0/CD_ChangeFormerV6_LEVIR_b16_lr0.0001_adamw_train_test_200_linear_ce_multi_train_True_multi_infer_False_shuffle_AB_False_embed_dim_256.zip
+      DSIFN-CD:
+        type: github_release_or_manual
+        url: https://github.com/wgcban/ChangeFormer/releases/download/v0.1.0/CD_ChangeFormerV6_DSIFN_b16_lr0.00006_adamw_train_test_200_linear_ce_multi_train_True_multi_infer_False_shuffle_AB_False_embed_dim_256.zip
+      WHU-CD:
+        type: missing
+    resolved_checkpoints:
+      LEVIR-CD: external_weights/ChangeFormer/LEVIR-CD/CD_ChangeFormerV6_LEVIR_b16_lr0.0001_adamw_train_test_200_linear_ce_multi_train_True_multi_infer_False_shuffle_AB_False_embed_dim_256/best_ckpt.pt
+      WHU-CD: null
+      DSIFN-CD: external_weights/ChangeFormer/DSIFN-CD/CD_ChangeFormerV6_DSIFN_b16_lr0.00006_adamw_train_test_200_linear_ce_multi_train_True_multi_infer_False_shuffle_AB_False_embed_dim_256/best_ckpt.pt
+  BIT:
+    enabled: true
+    repo_url: https://github.com/justchenhao/BIT_CD.git
+    repo_dir: external/BIT_CD
+    weights_dir: external_weights/BIT
+    adapter: bit
+    official_weights:
+      LEVIR-CD:
+        type: google_drive_or_manual
+        url: null
+        note: Official README provides Baidu/Google Drive links. Automatic download
+          may not work. If missing, place checkpoint manually.
+      WHU-CD:
+        type: missing
+      DSIFN-CD:
+        type: missing
+    resolved_checkpoints:
+      LEVIR-CD: external/BIT_CD/checkpoints/BIT_LEVIR/best_ckpt.pt
+      WHU-CD: null
+      DSIFN-CD: null
+  SNUNet:
+    enabled: true
+    repo_url: https://github.com/likyoo/Siam-NestedUNet.git
+    repo_dir: external/Siam-NestedUNet
+    weights_dir: external_weights/SNUNet
+    adapter: snunet
+    official_weights:
+      LEVIR-CD:
+        type: manual
+      WHU-CD:
+        type: manual
+      DSIFN-CD:
+        type: manual
+    resolved_checkpoints:
+      LEVIR-CD: null
+      WHU-CD: null
+      DSIFN-CD: null
+  STANet:
+    enabled: true
+    repo_url: https://github.com/justchenhao/STANet.git
+    repo_dir: external/STANet
+    weights_dir: external_weights/STANet
+    adapter: stanet
+    official_weights:
+      LEVIR-CD:
+        type: manual
+      WHU-CD:
+        type: manual
+      DSIFN-CD:
+        type: manual
+    resolved_checkpoints:
+      LEVIR-CD: null
+      WHU-CD: null
+      DSIFN-CD: null
+  Mamba-CD:
+    enabled: true
+    repo_url: https://github.com/JayParanjape/M-CD.git
+    repo_dir: external/M-CD
+    weights_dir: external_weights/M-CD
+    adapter: mcd
+    official_weights:
+      LEVIR-CD:
+        type: manual
+      WHU-CD:
+        type: manual
+      DSIFN-CD:
+        type: manual
+    resolved_checkpoints:
+      LEVIR-CD: null
+      WHU-CD: null
+      DSIFN-CD: null
+our_model:
+  enabled: true
+  name: MambaRefine-CD
+  checkpoint_paths:
+    LEVIR-CD: outputs/run_20260425_213731_refine_mamba_cd/checkpoints/best.pth
+    WHU-CD: outputs/whu_experiment/run_20260426_015454_WHU-CD/checkpoints/best.pth
+    DSIFN-CD: null

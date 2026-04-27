@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">D-RBI module diagram</title>
+  <desc id="desc">Detailed diagram of the D-RBI module with structured feature comparison and region/boundary routing.</desc>
+  <rect width="1280" height="720" fill="#ffffff"/>
+  <g font-family="Segoe UI, Arial, sans-serif">
+    <rect x="80" y="120" width="170" height="76" rx="18" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
+    <rect x="80" y="240" width="170" height="76" rx="18" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="2"/>
+    <rect x="80" y="360" width="170" height="76" rx="18" fill="#fffbeb" stroke="#fbbf24" stroke-width="2"/>
+    <rect x="80" y="480" width="170" height="76" rx="18" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2" stroke-dasharray="8 8"/>
+    <text x="165" y="168" text-anchor="middle" font-size="26" fill="#1e3a8a">F1^l</text>
+    <text x="165" y="288" text-anchor="middle" font-size="26" fill="#065f46">F2^l</text>
+    <text x="165" y="408" text-anchor="middle" font-size="22" fill="#b45309">|F2^l - F1^l|</text>
+    <text x="165" y="527" text-anchor="middle" font-size="18" fill="#475569">optional product</text>
+
+    <rect x="360" y="120" width="270" height="436" rx="30" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
+    <text x="495" y="180" text-anchor="middle" font-size="30" fill="#0f172a">Concatenate</text>
+    <text x="495" y="218" text-anchor="middle" font-size="18" fill="#475569">context + disagreement + optional agreement</text>
+    <text x="495" y="300" text-anchor="middle" font-size="26" fill="#0f172a">1x1 projection</text>
+    <text x="495" y="340" text-anchor="middle" font-size="22" fill="#0f172a">GroupNorm + GELU</text>
+    <text x="495" y="382" text-anchor="middle" font-size="26" fill="#0f172a">1x1 bottleneck</text>
+    <text x="495" y="424" text-anchor="middle" font-size="18" fill="#475569">compressed differential code D_l</text>
+
+    <rect x="760" y="144" width="180" height="140" rx="22" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
+    <rect x="760" y="392" width="180" height="140" rx="22" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="2"/>
+    <text x="850" y="204" text-anchor="middle" font-size="28" fill="#1e3a8a">Region gate</text>
+    <text x="850" y="238" text-anchor="middle" font-size="18" fill="#475569">bounded interior support</text>
+    <text x="850" y="452" text-anchor="middle" font-size="28" fill="#065f46">Boundary gate</text>
+    <text x="850" y="486" text-anchor="middle" font-size="18" fill="#475569">Sobel-conditioned contour cue</text>
+
+    <rect x="1030" y="144" width="150" height="140" rx="22" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
+    <rect x="1030" y="392" width="150" height="140" rx="22" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="2"/>
+    <text x="1105" y="208" text-anchor="middle" font-size="30" fill="#1e3a8a">R_l</text>
+    <text x="1105" y="456" text-anchor="middle" font-size="30" fill="#065f46">B_l</text>
+
+    <path d="M250 158 H360" stroke="#2563eb" stroke-width="4" fill="none"/>
+    <path d="M250 278 H360" stroke="#059669" stroke-width="4" fill="none"/>
+    <path d="M250 398 H360" stroke="#d97706" stroke-width="4" fill="none"/>
+    <path d="M250 518 H360" stroke="#94a3b8" stroke-width="4" fill="none" stroke-dasharray="8 8"/>
+    <path d="M630 300 C690 300 690 214 760 214" stroke="#2563eb" stroke-width="4" fill="none"/>
+    <path d="M630 380 C690 380 690 462 760 462" stroke="#059669" stroke-width="4" fill="none"/>
+    <path d="M940 214 H1030" stroke="#2563eb" stroke-width="4" fill="none"/>
+    <path d="M940 462 H1030" stroke="#059669" stroke-width="4" fill="none"/>
+  </g>
+</svg>

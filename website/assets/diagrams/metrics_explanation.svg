@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">Metrics explanation diagram</title>
+  <desc id="desc">Diagram showing how class imbalance affects changed-class and mean metrics.</desc>
+  <rect width="1280" height="720" fill="#ffffff"/>
+  <g font-family="Segoe UI, Arial, sans-serif">
+    <rect x="90" y="120" width="300" height="420" rx="30" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
+    <text x="240" y="180" text-anchor="middle" font-size="30" fill="#0f172a">Confusion counts</text>
+    <rect x="140" y="230" width="95" height="95" rx="18" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="2"/>
+    <rect x="255" y="230" width="95" height="95" rx="18" fill="#fffbeb" stroke="#fbbf24" stroke-width="2"/>
+    <rect x="140" y="345" width="95" height="95" rx="18" fill="#fffbeb" stroke="#fbbf24" stroke-width="2"/>
+    <rect x="255" y="345" width="95" height="95" rx="18" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
+    <text x="187" y="287" text-anchor="middle" font-size="24" fill="#065f46">TP</text>
+    <text x="302" y="287" text-anchor="middle" font-size="24" fill="#b45309">FP</text>
+    <text x="187" y="402" text-anchor="middle" font-size="24" fill="#b45309">FN</text>
+    <text x="302" y="402" text-anchor="middle" font-size="24" fill="#1e3a8a">TN</text>
+
+    <rect x="500" y="130" width="250" height="120" rx="24" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="2"/>
+    <rect x="500" y="300" width="250" height="120" rx="24" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
+    <rect x="500" y="470" width="250" height="120" rx="24" fill="#fffbeb" stroke="#fbbf24" stroke-width="2"/>
+    <text x="625" y="185" text-anchor="middle" font-size="28" fill="#065f46">F1_1, IoU_1</text>
+    <text x="625" y="217" text-anchor="middle" font-size="18" fill="#475569">changed-class quality</text>
+    <text x="625" y="355" text-anchor="middle" font-size="28" fill="#1e3a8a">mF1, mIoU</text>
+    <text x="625" y="387" text-anchor="middle" font-size="18" fill="#475569">mean over class 0 and class 1</text>
+    <text x="625" y="525" text-anchor="middle" font-size="28" fill="#b45309">OA</text>
+    <text x="625" y="557" text-anchor="middle" font-size="18" fill="#475569">can stay high when no-change dominates</text>
+
+    <rect x="860" y="160" width="310" height="360" rx="30" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
+    <text x="1015" y="220" text-anchor="middle" font-size="28" fill="#0f172a">Website rule</text>
+    <text x="1015" y="280" text-anchor="middle" font-size="22" fill="#475569">Do not compare mF1 to F1_1.</text>
+    <text x="1015" y="332" text-anchor="middle" font-size="22" fill="#475569">Do not rank unclear metric definitions.</text>
+    <text x="1015" y="384" text-anchor="middle" font-size="22" fill="#475569">Mark local literature gaps as TBD.</text>
+    <text x="1015" y="436" text-anchor="middle" font-size="22" fill="#475569">Prefer reproduced local evaluations.</text>
+
+    <path d="M390 330 H500" stroke="#2563eb" stroke-width="4" fill="none"/>
+    <path d="M750 190 H860" stroke="#059669" stroke-width="4" fill="none"/>
+    <path d="M750 360 H860" stroke="#2563eb" stroke-width="4" fill="none"/>
+    <path d="M750 530 H860" stroke="#d97706" stroke-width="4" fill="none"/>
+  </g>
+</svg>

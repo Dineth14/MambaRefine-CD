@@ -1,0 +1,950 @@
+{
+  "generated_at": "2026-04-27T00:16:44",
+  "records": [
+    {
+      "value": "TBD",
+      "metric": "params",
+      "dataset": "LEVIR-CD",
+      "model": "ChangeFormer",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "flops",
+      "dataset": "LEVIR-CD",
+      "model": "ChangeFormer",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "F1_1",
+      "dataset": "LEVIR-CD",
+      "model": "ChangeFormer",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "F1_1"
+    },
+    {
+      "value": "TBD",
+      "metric": "IoU_1",
+      "dataset": "LEVIR-CD",
+      "model": "ChangeFormer",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "IoU_1"
+    },
+    {
+      "value": "TBD",
+      "metric": "OA",
+      "dataset": "LEVIR-CD",
+      "model": "ChangeFormer",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "OA"
+    },
+    {
+      "value": "TBD",
+      "metric": "params",
+      "dataset": "WHU-CD",
+      "model": "ChangeFormer",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "flops",
+      "dataset": "WHU-CD",
+      "model": "ChangeFormer",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "F1_1",
+      "dataset": "WHU-CD",
+      "model": "ChangeFormer",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "F1_1"
+    },
+    {
+      "value": "TBD",
+      "metric": "IoU_1",
+      "dataset": "WHU-CD",
+      "model": "ChangeFormer",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "IoU_1"
+    },
+    {
+      "value": "TBD",
+      "metric": "OA",
+      "dataset": "WHU-CD",
+      "model": "ChangeFormer",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "OA"
+    },
+    {
+      "value": "TBD",
+      "metric": "params",
+      "dataset": "DSIFN-CD",
+      "model": "ChangeFormer",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "flops",
+      "dataset": "DSIFN-CD",
+      "model": "ChangeFormer",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "F1_1",
+      "dataset": "DSIFN-CD",
+      "model": "ChangeFormer",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "F1_1"
+    },
+    {
+      "value": "TBD",
+      "metric": "IoU_1",
+      "dataset": "DSIFN-CD",
+      "model": "ChangeFormer",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "IoU_1"
+    },
+    {
+      "value": "TBD",
+      "metric": "OA",
+      "dataset": "DSIFN-CD",
+      "model": "ChangeFormer",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "OA"
+    },
+    {
+      "value": "TBD",
+      "metric": "params",
+      "dataset": "SECOND",
+      "model": "ChangeFormer",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "flops",
+      "dataset": "SECOND",
+      "model": "ChangeFormer",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "OA",
+      "dataset": "SECOND",
+      "model": "ChangeFormer",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "OA"
+    },
+    {
+      "value": "TBD",
+      "metric": "Fscd",
+      "dataset": "SECOND",
+      "model": "ChangeFormer",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "Fscd"
+    },
+    {
+      "value": "TBD",
+      "metric": "mIoU",
+      "dataset": "SECOND",
+      "model": "ChangeFormer",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "mIoU"
+    },
+    {
+      "value": "TBD",
+      "metric": "SeK",
+      "dataset": "SECOND",
+      "model": "ChangeFormer",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "SeK"
+    },
+    {
+      "value": "TBD",
+      "metric": "params",
+      "dataset": "LEVIR-CD",
+      "model": "BIT",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "flops",
+      "dataset": "LEVIR-CD",
+      "model": "BIT",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "F1_1",
+      "dataset": "LEVIR-CD",
+      "model": "BIT",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "F1_1"
+    },
+    {
+      "value": "TBD",
+      "metric": "IoU_1",
+      "dataset": "LEVIR-CD",
+      "model": "BIT",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "IoU_1"
+    },
+    {
+      "value": "TBD",
+      "metric": "OA",
+      "dataset": "LEVIR-CD",
+      "model": "BIT",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "OA"
+    },
+    {
+      "value": "TBD",
+      "metric": "params",
+      "dataset": "WHU-CD",
+      "model": "BIT",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "flops",
+      "dataset": "WHU-CD",
+      "model": "BIT",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "F1_1",
+      "dataset": "WHU-CD",
+      "model": "BIT",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "F1_1"
+    },
+    {
+      "value": "TBD",
+      "metric": "IoU_1",
+      "dataset": "WHU-CD",
+      "model": "BIT",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "IoU_1"
+    },
+    {
+      "value": "TBD",
+      "metric": "OA",
+      "dataset": "WHU-CD",
+      "model": "BIT",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "OA"
+    },
+    {
+      "value": "TBD",
+      "metric": "params",
+      "dataset": "DSIFN-CD",
+      "model": "BIT",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "flops",
+      "dataset": "DSIFN-CD",
+      "model": "BIT",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "F1_1",
+      "dataset": "DSIFN-CD",
+      "model": "BIT",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "F1_1"
+    },
+    {
+      "value": "TBD",
+      "metric": "IoU_1",
+      "dataset": "DSIFN-CD",
+      "model": "BIT",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "IoU_1"
+    },
+    {
+      "value": "TBD",
+      "metric": "OA",
+      "dataset": "DSIFN-CD",
+      "model": "BIT",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "OA"
+    },
+    {
+      "value": "TBD",
+      "metric": "params",
+      "dataset": "SECOND",
+      "model": "BIT",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "flops",
+      "dataset": "SECOND",
+      "model": "BIT",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "OA",
+      "dataset": "SECOND",
+      "model": "BIT",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "OA"
+    },
+    {
+      "value": "TBD",
+      "metric": "Fscd",
+      "dataset": "SECOND",
+      "model": "BIT",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "Fscd"
+    },
+    {
+      "value": "TBD",
+      "metric": "mIoU",
+      "dataset": "SECOND",
+      "model": "BIT",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "mIoU"
+    },
+    {
+      "value": "TBD",
+      "metric": "SeK",
+      "dataset": "SECOND",
+      "model": "BIT",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "SeK"
+    },
+    {
+      "value": "TBD",
+      "metric": "params",
+      "dataset": "LEVIR-CD",
+      "model": "SNUNet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "flops",
+      "dataset": "LEVIR-CD",
+      "model": "SNUNet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "F1_1",
+      "dataset": "LEVIR-CD",
+      "model": "SNUNet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "F1_1"
+    },
+    {
+      "value": "TBD",
+      "metric": "IoU_1",
+      "dataset": "LEVIR-CD",
+      "model": "SNUNet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "IoU_1"
+    },
+    {
+      "value": "TBD",
+      "metric": "OA",
+      "dataset": "LEVIR-CD",
+      "model": "SNUNet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "OA"
+    },
+    {
+      "value": "TBD",
+      "metric": "params",
+      "dataset": "WHU-CD",
+      "model": "SNUNet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "flops",
+      "dataset": "WHU-CD",
+      "model": "SNUNet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "F1_1",
+      "dataset": "WHU-CD",
+      "model": "SNUNet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "F1_1"
+    },
+    {
+      "value": "TBD",
+      "metric": "IoU_1",
+      "dataset": "WHU-CD",
+      "model": "SNUNet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "IoU_1"
+    },
+    {
+      "value": "TBD",
+      "metric": "OA",
+      "dataset": "WHU-CD",
+      "model": "SNUNet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "OA"
+    },
+    {
+      "value": "TBD",
+      "metric": "params",
+      "dataset": "DSIFN-CD",
+      "model": "SNUNet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "flops",
+      "dataset": "DSIFN-CD",
+      "model": "SNUNet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "F1_1",
+      "dataset": "DSIFN-CD",
+      "model": "SNUNet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "F1_1"
+    },
+    {
+      "value": "TBD",
+      "metric": "IoU_1",
+      "dataset": "DSIFN-CD",
+      "model": "SNUNet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "IoU_1"
+    },
+    {
+      "value": "TBD",
+      "metric": "OA",
+      "dataset": "DSIFN-CD",
+      "model": "SNUNet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "OA"
+    },
+    {
+      "value": "TBD",
+      "metric": "params",
+      "dataset": "SECOND",
+      "model": "SNUNet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "flops",
+      "dataset": "SECOND",
+      "model": "SNUNet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "OA",
+      "dataset": "SECOND",
+      "model": "SNUNet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "OA"
+    },
+    {
+      "value": "TBD",
+      "metric": "Fscd",
+      "dataset": "SECOND",
+      "model": "SNUNet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "Fscd"
+    },
+    {
+      "value": "TBD",
+      "metric": "mIoU",
+      "dataset": "SECOND",
+      "model": "SNUNet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "mIoU"
+    },
+    {
+      "value": "TBD",
+      "metric": "SeK",
+      "dataset": "SECOND",
+      "model": "SNUNet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "SeK"
+    },
+    {
+      "value": "TBD",
+      "metric": "params",
+      "dataset": "LEVIR-CD",
+      "model": "STANet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "flops",
+      "dataset": "LEVIR-CD",
+      "model": "STANet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "F1_1",
+      "dataset": "LEVIR-CD",
+      "model": "STANet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "F1_1"
+    },
+    {
+      "value": "TBD",
+      "metric": "IoU_1",
+      "dataset": "LEVIR-CD",
+      "model": "STANet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "IoU_1"
+    },
+    {
+      "value": "TBD",
+      "metric": "OA",
+      "dataset": "LEVIR-CD",
+      "model": "STANet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "OA"
+    },
+    {
+      "value": "TBD",
+      "metric": "params",
+      "dataset": "WHU-CD",
+      "model": "STANet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "flops",
+      "dataset": "WHU-CD",
+      "model": "STANet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "F1_1",
+      "dataset": "WHU-CD",
+      "model": "STANet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "F1_1"
+    },
+    {
+      "value": "TBD",
+      "metric": "IoU_1",
+      "dataset": "WHU-CD",
+      "model": "STANet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "IoU_1"
+    },
+    {
+      "value": "TBD",
+      "metric": "OA",
+      "dataset": "WHU-CD",
+      "model": "STANet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "OA"
+    },
+    {
+      "value": "TBD",
+      "metric": "params",
+      "dataset": "DSIFN-CD",
+      "model": "STANet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "flops",
+      "dataset": "DSIFN-CD",
+      "model": "STANet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "F1_1",
+      "dataset": "DSIFN-CD",
+      "model": "STANet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "F1_1"
+    },
+    {
+      "value": "TBD",
+      "metric": "IoU_1",
+      "dataset": "DSIFN-CD",
+      "model": "STANet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "IoU_1"
+    },
+    {
+      "value": "TBD",
+      "metric": "OA",
+      "dataset": "DSIFN-CD",
+      "model": "STANet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "OA"
+    },
+    {
+      "value": "TBD",
+      "metric": "params",
+      "dataset": "SECOND",
+      "model": "STANet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "flops",
+      "dataset": "SECOND",
+      "model": "STANet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "OA",
+      "dataset": "SECOND",
+      "model": "STANet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "OA"
+    },
+    {
+      "value": "TBD",
+      "metric": "Fscd",
+      "dataset": "SECOND",
+      "model": "STANet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "Fscd"
+    },
+    {
+      "value": "TBD",
+      "metric": "mIoU",
+      "dataset": "SECOND",
+      "model": "STANet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "mIoU"
+    },
+    {
+      "value": "TBD",
+      "metric": "SeK",
+      "dataset": "SECOND",
+      "model": "STANet",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "SeK"
+    },
+    {
+      "value": "TBD",
+      "metric": "params",
+      "dataset": "LEVIR-CD",
+      "model": "Mamba-CD",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "flops",
+      "dataset": "LEVIR-CD",
+      "model": "Mamba-CD",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "F1_1",
+      "dataset": "LEVIR-CD",
+      "model": "Mamba-CD",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "F1_1"
+    },
+    {
+      "value": "TBD",
+      "metric": "IoU_1",
+      "dataset": "LEVIR-CD",
+      "model": "Mamba-CD",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "IoU_1"
+    },
+    {
+      "value": "TBD",
+      "metric": "OA",
+      "dataset": "LEVIR-CD",
+      "model": "Mamba-CD",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "OA"
+    },
+    {
+      "value": "TBD",
+      "metric": "params",
+      "dataset": "WHU-CD",
+      "model": "Mamba-CD",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "flops",
+      "dataset": "WHU-CD",
+      "model": "Mamba-CD",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "F1_1",
+      "dataset": "WHU-CD",
+      "model": "Mamba-CD",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "F1_1"
+    },
+    {
+      "value": "TBD",
+      "metric": "IoU_1",
+      "dataset": "WHU-CD",
+      "model": "Mamba-CD",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "IoU_1"
+    },
+    {
+      "value": "TBD",
+      "metric": "OA",
+      "dataset": "WHU-CD",
+      "model": "Mamba-CD",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "OA"
+    },
+    {
+      "value": "TBD",
+      "metric": "params",
+      "dataset": "DSIFN-CD",
+      "model": "Mamba-CD",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "flops",
+      "dataset": "DSIFN-CD",
+      "model": "Mamba-CD",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "F1_1",
+      "dataset": "DSIFN-CD",
+      "model": "Mamba-CD",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "F1_1"
+    },
+    {
+      "value": "TBD",
+      "metric": "IoU_1",
+      "dataset": "DSIFN-CD",
+      "model": "Mamba-CD",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "IoU_1"
+    },
+    {
+      "value": "TBD",
+      "metric": "OA",
+      "dataset": "DSIFN-CD",
+      "model": "Mamba-CD",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "OA"
+    },
+    {
+      "value": "TBD",
+      "metric": "params",
+      "dataset": "SECOND",
+      "model": "Mamba-CD",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "flops",
+      "dataset": "SECOND",
+      "model": "Mamba-CD",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "unknown"
+    },
+    {
+      "value": "TBD",
+      "metric": "OA",
+      "dataset": "SECOND",
+      "model": "Mamba-CD",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "OA"
+    },
+    {
+      "value": "TBD",
+      "metric": "Fscd",
+      "dataset": "SECOND",
+      "model": "Mamba-CD",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "Fscd"
+    },
+    {
+      "value": "TBD",
+      "metric": "mIoU",
+      "dataset": "SECOND",
+      "model": "Mamba-CD",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "mIoU"
+    },
+    {
+      "value": "TBD",
+      "metric": "SeK",
+      "dataset": "SECOND",
+      "model": "Mamba-CD",
+      "source_file": null,
+      "source_type": "missing",
+      "metric_definition": "SeK"
+    }
+  ]
+}

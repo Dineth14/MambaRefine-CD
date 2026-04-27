@@ -33,6 +33,14 @@ from models.cd_model          import build_model
 from training.evaluator       import Evaluator
 from training.checkpoint      import peek as peek_ckpt, load as load_ckpt
 from training.logger          import get_logger
+from utils.visualization      import save_prediction_grid
+
+
+def _dataset_run_label(exp_name: str, dataset_name: str) -> str:
+    dataset_slug = dataset_name.replace("/", "-").replace(" ", "_")
+    if dataset_slug.lower() in exp_name.lower():
+        return exp_name
+    return f"{exp_name}_{dataset_slug}"
 
 
 def main() -> None:
@@ -44,7 +52,8 @@ def main() -> None:
 
     # ── Output directory ──────────────────────────────────────────────────────
     ts      = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_dir = ROOT / exp.output_root / f"eval_{ts}_{exp.name}"
+    run_label = _dataset_run_label(str(exp.name), str(cfg.dataset.name))
+    out_dir = ROOT / "outputs" / f"eval_{ts}_{run_label}"
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "config.yaml").write_text(GLOBAL_CONFIG_PATH.read_text(encoding="utf-8"), encoding="utf-8")
 
@@ -91,15 +100,16 @@ def main() -> None:
     model.eval()
 
     # ── Evaluate ──────────────────────────────────────────────────────────────
-    evaluator = Evaluator(cfg, device, logger=logger)
+    evaluator = Evaluator(cfg, device, logger=logger, save_dir=out_dir)
     amp       = bool(hw.mixed_precision)
     dataset_name = ds_cfg.name
+    second_eval = dataset_name.upper() == "SECOND" and bool(cfg.evaluation.get("second_metrics", False))
 
     logger.info(f"\nRunning evaluation on {dataset_name} [{split}] ...")
     results = evaluator.evaluate(model, loader, dataset_name=dataset_name, amp=amp)
 
     # ── Print table ───────────────────────────────────────────────────────────
-    evaluator.print_table(results, title="EVALUATION RESULTS")
+    evaluator.print_table(results, title="SECOND EVALUATION RESULTS" if second_eval else "EVALUATION RESULTS")
 
     # ── Build flat metrics dict with canonical key names ─────────────────────
     threshold   = results.get("best_threshold", float(cfg.evaluation.threshold))
@@ -169,6 +179,24 @@ def main() -> None:
             + [threshold, tta_enabled, temperature]
         )
     logger.info(f"Saved CSV   → {csv_path}")
+    if second_eval:
+        logger.info(f"Saved SECOND JSON → {out_dir / 'second_metrics.json'}")
+        logger.info(f"Saved SECOND CSV  → {out_dir / 'second_metrics.csv'}")
+
+    qualitative_dir = out_dir / "qualitative_samples"
+    qualitative_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        batch = next(iter(loader))
+        ia = batch["image_a"]
+        ib = batch["image_b"]
+        label = batch.get("mask", batch.get("change_mask", batch.get("label")))
+        with torch.no_grad():
+            logits, _ = model(ia.to(device), ib.to(device))
+            pred = (torch.sigmoid(logits).cpu() > threshold).float()
+        save_prediction_grid(ia, ib, label, pred, qualitative_dir / "prediction_grid.png", count=min(4, ia.shape[0]))
+        logger.info(f"Saved qualitative samples → {qualitative_dir}")
+    except Exception as exc:
+        logger.warning(f"Could not save qualitative samples: {exc}")
 
 
 if __name__ == "__main__":

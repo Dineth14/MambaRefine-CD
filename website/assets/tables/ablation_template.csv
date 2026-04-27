@@ -1,0 +1,6 @@
+Variant,D-RBI,Region Gate,Boundary Gate,Adaptive RF,Boundary Residual,mF1,F1_1,Boundary F1
+Baseline,No,No,No,No,No,TBD,TBD,TBD
+Adaptive RF,No,No,No,Yes,No,TBD,TBD,TBD
+D-RBI only,Yes,Yes,Yes,No,No,TBD,TBD,TBD
+D-RBI + Adaptive RF,Yes,Yes,Yes,Yes,No,TBD,TBD,TBD
+Full MambaRefine-CD,Yes,Yes,Yes,Yes,Yes,TBD,TBD,TBD

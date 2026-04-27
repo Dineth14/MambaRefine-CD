@@ -1,110 +1,54 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 320">
-  <defs>
-    <marker id="arr" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-      <polygon points="0,0 8,3 0,6" fill="#64748b"/>
-    </marker>
-    <marker id="arr2" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-      <polygon points="0,0 8,3 0,6" fill="#3b82f6"/>
-    </marker>
-  </defs>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 540" role="img" aria-labelledby="title desc">
+  <title id="title">MambaVision encoder</title>
+  <desc id="desc">Shared MambaVision encoder building a four-scale feature pyramid.</desc>
+  <rect width="980" height="540" fill="#fbfaf7"/>
+  <g font-family="IBM Plex Sans, Arial, sans-serif">
+    <rect x="56" y="108" width="140" height="92" rx="20" fill="#e4eef3" stroke="#9bb8c9" stroke-width="2"/>
+    <rect x="56" y="330" width="140" height="92" rx="20" fill="#e3efe8" stroke="#9fc0af" stroke-width="2"/>
+    <text x="126" y="155" text-anchor="middle" font-size="24" fill="#2f4b5e">Image I1</text>
+    <text x="126" y="377" text-anchor="middle" font-size="24" fill="#416957">Image I2</text>
 
-  <rect width="780" height="320" fill="#f8fafc"/>
+    <rect x="262" y="72" width="220" height="388" rx="28" fill="#f5f2ea" stroke="#b8b0a0" stroke-width="2.5"/>
+    <text x="372" y="118" text-anchor="middle" font-size="30" fill="#24323a">Shared MambaVision</text>
+    <text x="372" y="152" text-anchor="middle" font-size="18" fill="#5e6b73">same weights for both timestamps</text>
 
-  <!-- Title -->
-  <text x="390" y="28" text-anchor="middle" font-family="system-ui" font-size="13" font-weight="600" fill="#0f172a">Shared Siamese MambaVision Encoder</text>
+    <rect x="534" y="74" width="150" height="82" rx="18" fill="#e4eef3" stroke="#9bb8c9" stroke-width="2"/>
+    <rect x="714" y="74" width="150" height="82" rx="18" fill="#e3efe8" stroke="#9fc0af" stroke-width="2"/>
+    <rect x="534" y="178" width="150" height="82" rx="18" fill="#e4eef3" stroke="#9bb8c9" stroke-width="2"/>
+    <rect x="714" y="178" width="150" height="82" rx="18" fill="#e3efe8" stroke="#9fc0af" stroke-width="2"/>
+    <rect x="534" y="282" width="150" height="82" rx="18" fill="#e4eef3" stroke="#9bb8c9" stroke-width="2"/>
+    <rect x="714" y="282" width="150" height="82" rx="18" fill="#e3efe8" stroke="#9fc0af" stroke-width="2"/>
+    <rect x="534" y="386" width="150" height="82" rx="18" fill="#e4eef3" stroke="#9bb8c9" stroke-width="2"/>
+    <rect x="714" y="386" width="150" height="82" rx="18" fill="#e3efe8" stroke="#9fc0af" stroke-width="2"/>
 
-  <!-- ===== INPUT IMAGES ===== -->
-  <!-- Image A -->
-  <rect x="20" y="56" width="86" height="56" rx="6" fill="#e2e8f0" stroke="#94a3b8" stroke-width="1.2"/>
-  <text x="63" y="82" text-anchor="middle" font-family="system-ui" font-size="11" font-weight="600" fill="#334155">Image A</text>
-  <text x="63" y="98" text-anchor="middle" font-family="system-ui" font-size="10" fill="#64748b">(pre-change)</text>
+    <text x="609" y="122" text-anchor="middle" font-size="22" fill="#2f4b5e">F1^1</text>
+    <text x="789" y="122" text-anchor="middle" font-size="22" fill="#416957">F2^1</text>
+    <text x="609" y="226" text-anchor="middle" font-size="22" fill="#2f4b5e">F1^2</text>
+    <text x="789" y="226" text-anchor="middle" font-size="22" fill="#416957">F2^2</text>
+    <text x="609" y="330" text-anchor="middle" font-size="22" fill="#2f4b5e">F1^3</text>
+    <text x="789" y="330" text-anchor="middle" font-size="22" fill="#416957">F2^3</text>
+    <text x="609" y="434" text-anchor="middle" font-size="22" fill="#2f4b5e">F1^4</text>
+    <text x="789" y="434" text-anchor="middle" font-size="22" fill="#416957">F2^4</text>
 
-  <!-- Image B -->
-  <rect x="20" y="136" width="86" height="56" rx="6" fill="#e2e8f0" stroke="#94a3b8" stroke-width="1.2"/>
-  <text x="63" y="162" text-anchor="middle" font-family="system-ui" font-size="11" font-weight="600" fill="#334155">Image B</text>
-  <text x="63" y="178" text-anchor="middle" font-family="system-ui" font-size="10" fill="#64748b">(post-change)</text>
+    <text x="908" y="122" font-size="16" fill="#5e6b73">detail</text>
+    <text x="908" y="226" font-size="16" fill="#5e6b73">mid</text>
+    <text x="908" y="330" font-size="16" fill="#5e6b73">semantic</text>
+    <text x="908" y="434" font-size="16" fill="#5e6b73">global</text>
 
-  <!-- Arrows from images to encoder -->
-  <line x1="106" y1="84" x2="178" y2="108" stroke="#64748b" stroke-width="1.5" marker-end="url(#arr)"/>
-  <line x1="106" y1="164" x2="178" y2="148" stroke="#64748b" stroke-width="1.5" marker-end="url(#arr)"/>
+    <path d="M196 154 H262" stroke="#48697d" stroke-width="3" fill="none"/>
+    <path d="M196 376 H262" stroke="#48697d" stroke-width="3" fill="none"/>
+    <polygon points="262,154 244,144 244,164" fill="#48697d"/>
+    <polygon points="262,376 244,366 244,386" fill="#48697d"/>
 
-  <!-- Shared weight note -->
-  <text x="63" y="220" text-anchor="middle" font-family="system-ui" font-size="10" fill="#7c3aed" font-weight="500">shared</text>
-  <text x="63" y="233" text-anchor="middle" font-family="system-ui" font-size="10" fill="#7c3aed" font-weight="500">weights</text>
-  <line x1="63" y1="187" x2="63" y2="212" stroke="#7c3aed" stroke-width="1" stroke-dasharray="4,3"/>
+    <path d="M482 140 H534" stroke="#48697d" stroke-width="3" fill="none"/>
+    <path d="M482 220 H534" stroke="#48697d" stroke-width="3" fill="none"/>
+    <path d="M482 300 H534" stroke="#48697d" stroke-width="3" fill="none"/>
+    <path d="M482 380 H534" stroke="#48697d" stroke-width="3" fill="none"/>
+    <path d="M482 140 H714" stroke="#5f8370" stroke-width="3" fill="none" opacity="0.72"/>
+    <path d="M482 220 H714" stroke="#5f8370" stroke-width="3" fill="none" opacity="0.72"/>
+    <path d="M482 300 H714" stroke="#5f8370" stroke-width="3" fill="none" opacity="0.72"/>
+    <path d="M482 380 H714" stroke="#5f8370" stroke-width="3" fill="none" opacity="0.72"/>
 
-  <!-- ===== ENCODER BOX ===== -->
-  <rect x="182" y="56" width="200" height="136" rx="8" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/>
-  <text x="282" y="82" text-anchor="middle" font-family="system-ui" font-size="12" font-weight="700" fill="#4c1d95">MambaVision</text>
-  <text x="282" y="99" text-anchor="middle" font-family="system-ui" font-size="11" fill="#5b21b6">Encoder E</text>
-
-  <!-- Internal stages hint -->
-  <rect x="200" y="110" width="54" height="26" rx="4" fill="#ddd6fe" stroke="#7c3aed" stroke-width="1"/>
-  <text x="227" y="127" text-anchor="middle" font-family="system-ui" font-size="9" fill="#4c1d95">Conv</text>
-
-  <rect x="262" y="110" width="54" height="26" rx="4" fill="#ddd6fe" stroke="#7c3aed" stroke-width="1"/>
-  <text x="289" y="127" text-anchor="middle" font-family="system-ui" font-size="9" fill="#4c1d95">Mamba</text>
-
-  <rect x="324" y="110" width="44" height="26" rx="4" fill="#ddd6fe" stroke="#7c3aed" stroke-width="1"/>
-  <text x="346" y="127" text-anchor="middle" font-family="system-ui" font-size="9" fill="#4c1d95">SSM</text>
-
-  <text x="282" y="170" text-anchor="middle" font-family="system-ui" font-size="10" fill="#6d28d9">4-scale feature pyramid</text>
-
-  <!-- ===== OUTPUT FEATURE PYRAMIDS ===== -->
-  <!-- Scale labels -->
-  <text x="470" y="46" text-anchor="middle" font-family="system-ui" font-size="11" fill="#0f172a" font-weight="600">Features from A</text>
-  <text x="660" y="46" text-anchor="middle" font-family="system-ui" font-size="11" fill="#0f172a" font-weight="600">Features from B</text>
-
-  <!-- Scale indicators -->
-  <text x="430" y="60" font-family="system-ui" font-size="9" fill="#64748b">scale</text>
-  <text x="430" y="72" font-family="system-ui" font-size="9" fill="#64748b">stride</text>
-
-  <!-- Arrows from encoder to A-side features -->
-  <line x1="382" y1="90"  x2="432" y2="80"  stroke="#3b82f6" stroke-width="1.5" marker-end="url(#arr2)"/>
-  <line x1="382" y1="108" x2="432" y2="130" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#arr2)"/>
-  <line x1="382" y1="124" x2="432" y2="180" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#arr2)"/>
-  <line x1="382" y1="140" x2="432" y2="232" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#arr2)"/>
-
-  <!-- Feature A boxes: 4 scales -->
-  <rect x="435" y="62" width="68" height="32" rx="5" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.2"/>
-  <text x="469" y="79" text-anchor="middle" font-family="system-ui" font-size="11" fill="#1e40af">F&#x2081;&#x00B9; &#x2F; 4</text>
-
-  <rect x="435" y="112" width="68" height="32" rx="5" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.2"/>
-  <text x="469" y="129" text-anchor="middle" font-family="system-ui" font-size="11" fill="#1e40af">F&#x2081;&#x00B2; &#x2F; 8</text>
-
-  <rect x="435" y="162" width="68" height="32" rx="5" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.2"/>
-  <text x="469" y="179" text-anchor="middle" font-family="system-ui" font-size="11" fill="#1e40af">F&#x2081;&#x00B3; &#x2F;16</text>
-
-  <rect x="435" y="212" width="68" height="32" rx="5" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.2"/>
-  <text x="469" y="229" text-anchor="middle" font-family="system-ui" font-size="11" fill="#1e40af">F&#x2081;&#x2074; &#x2F;32</text>
-
-  <!-- Connecting line between A and B feature sets -->
-  <text x="560" y="80"  text-anchor="middle" font-family="system-ui" font-size="10" fill="#94a3b8">aligned</text>
-  <text x="560" y="92"  text-anchor="middle" font-family="system-ui" font-size="10" fill="#94a3b8">pair</text>
-  <line x1="503" y1="78" x2="614" y2="78" stroke="#cbd5e1" stroke-width="1" stroke-dasharray="4,3"/>
-  <line x1="503" y1="128" x2="614" y2="128" stroke="#cbd5e1" stroke-width="1" stroke-dasharray="4,3"/>
-  <line x1="503" y1="178" x2="614" y2="178" stroke="#cbd5e1" stroke-width="1" stroke-dasharray="4,3"/>
-  <line x1="503" y1="228" x2="614" y2="228" stroke="#cbd5e1" stroke-width="1" stroke-dasharray="4,3"/>
-
-  <!-- Feature B boxes: 4 scales -->
-  <rect x="617" y="62" width="68" height="32" rx="5" fill="#e0f2fe" stroke="#0284c7" stroke-width="1.2"/>
-  <text x="651" y="79" text-anchor="middle" font-family="system-ui" font-size="11" fill="#075985">F&#x2082;&#x00B9; &#x2F; 4</text>
-
-  <rect x="617" y="112" width="68" height="32" rx="5" fill="#e0f2fe" stroke="#0284c7" stroke-width="1.2"/>
-  <text x="651" y="129" text-anchor="middle" font-family="system-ui" font-size="11" fill="#075985">F&#x2082;&#x00B2; &#x2F; 8</text>
-
-  <rect x="617" y="162" width="68" height="32" rx="5" fill="#e0f2fe" stroke="#0284c7" stroke-width="1.2"/>
-  <text x="651" y="179" text-anchor="middle" font-family="system-ui" font-size="11" fill="#075985">F&#x2082;&#x00B3; &#x2F;16</text>
-
-  <rect x="617" y="212" width="68" height="32" rx="5" fill="#e0f2fe" stroke="#0284c7" stroke-width="1.2"/>
-  <text x="651" y="229" text-anchor="middle" font-family="system-ui" font-size="11" fill="#075985">F&#x2082;&#x2074; &#x2F;32</text>
-
-  <!-- Arrow to D-RBI label -->
-  <line x1="723" y1="145" x2="754" y2="145" stroke="#64748b" stroke-width="1.5" marker-end="url(#arr)"/>
-  <text x="760" y="135" font-family="system-ui" font-size="11" fill="#475569">to</text>
-  <text x="757" y="149" font-family="system-ui" font-size="11" fill="#475569">D-RBI</text>
-
-  <!-- Caption -->
-  <text x="390" y="295" text-anchor="middle" font-family="system-ui" font-size="11" fill="#64748b">Weight sharing enforces temporal symmetry. Both images produce aligned feature pyramids at 4 spatial scales.</text>
+    <text x="490" y="508" font-size="18" text-anchor="middle" fill="#5e6b73">Shared encoding keeps the feature space aligned before temporal comparison.</text>
+  </g>
 </svg>

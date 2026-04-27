@@ -1,4 +1,4 @@
-"""Benchmark all datasets with a single script.
+"""Benchmark all configured datasets with a single script.
 
 Reads configs/global_config.yaml, evaluates each checkpoint on its
 matching dataset, then generates:

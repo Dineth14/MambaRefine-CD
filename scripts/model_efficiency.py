@@ -1,214 +1,227 @@
 #!/usr/bin/env python3
-"""Model efficiency profiler.
+"""Profile local model efficiency for the website.
 
-Reports:
-  - Total parameters
-  - Trainable parameters
-  - Estimated FLOPs (via ptflops or fvcore if installed)
-  - Peak GPU memory for one forward+backward pass
-  - Throughput (images/sec)
-
-Usage:
-    cd /storage2/ChangeDetection/MV/MambaRefine-CD
-    conda run -n mamba_new python scripts/model_efficiency.py
-
-No CLI arguments required — reads configs/global_config.yaml.
+Reads configs/global_config.yaml and writes normalized JSON outputs.
+No CLI args.
 """
 from __future__ import annotations
 
 import gc
+import json
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
+from typing import Any
 
-# Add project src to path
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 import torch
 
-# ── Config ────────────────────────────────────────────────────────────────────
+from utils.config import load_config
+from models.cd_model import build_model
 
-def _load_cfg():
-    from utils.config import load_config
-    cfg_path = ROOT / "configs" / "global_config.yaml"
-    cfg = load_config(str(cfg_path))
-    # Override for efficiency test: no pretrained download needed, small batch
+WEBSITE_DATA = ROOT / "website" / "assets" / "data"
+OUTPUT_DIR = ROOT / "outputs" / "model_efficiency"
+
+
+def _count_params(module: torch.nn.Module | None) -> int:
+    if module is None:
+        return 0
+    return sum(param.numel() for param in module.parameters())
+
+
+def _format_millions(count: int | None) -> float | None:
+    if count is None:
+        return None
+    return round(count / 1e6, 4)
+
+
+def _device_from_cfg(cfg: dict[str, Any]) -> torch.device:
+    raw = str(cfg.get("hardware", {}).get("device", "cuda"))
+    if torch.cuda.is_available():
+        return torch.device(raw)
+    return torch.device("cpu")
+
+
+def _load_cfg() -> dict[str, Any]:
+    cfg = load_config()
     cfg["model"]["pretrained"] = False
+    if str(cfg.get("model", {}).get("output_mode", "binary")).lower() == "semantic":
+        cfg["model"]["output_mode"] = "binary"
+        cfg.setdefault("_notes", []).append("output_mode forced to binary for unsupported semantic head path")
     return cfg
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _param_counts(model: torch.nn.Module):
-    total     = sum(p.numel() for p in model.parameters())
-    trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    return total, trainable
-
-
-def _human(n: int) -> str:
-    if n >= 1e9:
-        return f"{n / 1e9:.2f} G"
-    if n >= 1e6:
-        return f"{n / 1e6:.2f} M"
-    if n >= 1e3:
-        return f"{n / 1e3:.2f} K"
-    return str(n)
-
-
-def _try_ptflops(model, image_size: int):
-    """Returns (macs_string, params_string) or None."""
+def _try_ptflops(model: torch.nn.Module, image_size: int) -> tuple[str | None, str | None]:
     try:
         from ptflops import get_model_complexity_info
-        # ptflops needs a single-input model; wrap our siamese model
-        class _Wrapper(torch.nn.Module):
-            def __init__(self, m):
-                super().__init__()
-                self.m = m
-            def forward(self, x):
-                return self.m(x, x)
+    except ImportError:
+        return None, "ptflops not installed"
 
-        macs, params = get_model_complexity_info(
-            _Wrapper(model),
+    class _Wrapper(torch.nn.Module):
+        def __init__(self, inner: torch.nn.Module) -> None:
+            super().__init__()
+            self.inner = inner
+
+        def forward(self, x: torch.Tensor) -> Any:
+            return self.inner(x, x)
+
+    try:
+        macs, _ = get_model_complexity_info(
+            _Wrapper(model.cpu()),
             (3, image_size, image_size),
             as_strings=True,
             print_per_layer_stat=False,
             verbose=False,
         )
-        return macs, params
-    except ImportError:
-        return None
-    except Exception as e:
-        return f"ptflops error: {e}", None
+        return macs, None
+    except Exception as exc:  # pragma: no cover
+        return None, f"ptflops failed: {exc}"
 
 
-def _try_fvcore(model, image_size: int, device):
-    """Returns FlopCountAnalysis result or None."""
+def _try_fvcore(model: torch.nn.Module, image_size: int, device: torch.device) -> tuple[float | None, str | None]:
     try:
-        from fvcore.nn import FlopCountAnalysis, flop_count_str
-        dummy = torch.zeros(1, 3, image_size, image_size, device=device)
-        flops = FlopCountAnalysis(model, (dummy, dummy))
-        flops.unsupported_ops_warnings(False)
-        flops.uncalled_modules_warnings(False)
-        total = flops.total()
-        return total, flop_count_str(flops)
+        from fvcore.nn import FlopCountAnalysis
     except ImportError:
-        return None
-    except Exception as e:
-        return None
+        return None, "fvcore not installed"
+    try:
+        dummy = torch.zeros(1, 3, image_size, image_size, device=device)
+        analysis = FlopCountAnalysis(model, (dummy, dummy))
+        analysis.unsupported_ops_warnings(False)
+        analysis.uncalled_modules_warnings(False)
+        total = analysis.total()
+        return float(total) / 1e9, None
+    except Exception as exc:  # pragma: no cover
+        return None, f"fvcore failed: {exc}"
 
 
-def _peak_memory(model, image_size: int, device, batch_size: int = 2):
-    """Returns peak GPU memory in MB (forward + backward)."""
+def _peak_memory(model: torch.nn.Module, image_size: int, device: torch.device, train_step: bool) -> float | None:
     if device.type != "cuda":
         return None
-    torch.cuda.reset_peak_memory_stats(device)
-    torch.cuda.empty_cache()
-    ia = torch.randn(batch_size, 3, image_size, image_size, device=device)
-    ib = torch.randn(batch_size, 3, image_size, image_size, device=device)
-    with torch.cuda.amp.autocast():
-        out, _ = model(ia, ib)
-        loss = out.mean()
-    loss.backward()
-    peak_mb = torch.cuda.max_memory_allocated(device) / 1024 ** 2
-    model.zero_grad(set_to_none=True)
-    del ia, ib, out, loss
     torch.cuda.empty_cache()
     gc.collect()
-    return peak_mb
+    torch.cuda.reset_peak_memory_stats(device)
+    image_a = torch.randn(1, 3, image_size, image_size, device=device)
+    image_b = torch.randn(1, 3, image_size, image_size, device=device)
+    try:
+        with torch.amp.autocast("cuda", enabled=True):
+            logits, _ = model(image_a, image_b)
+            if train_step:
+                loss = logits.mean()
+                loss.backward()
+        peak = torch.cuda.max_memory_allocated(device) / 1024 ** 2
+    finally:
+        model.zero_grad(set_to_none=True)
+        del image_a, image_b
+        if "logits" in locals():
+            del logits
+        if "loss" in locals():
+            del loss
+        torch.cuda.empty_cache()
+        gc.collect()
+    return round(float(peak), 3)
 
 
-def _throughput(model, image_size: int, device, batch_size: int = 4, runs: int = 50):
-    """Returns images/sec (inference-only, with AMP if CUDA)."""
+def _throughput(model: torch.nn.Module, image_size: int, device: torch.device, runs: int = 10) -> float | None:
+    image_a = torch.randn(1, 3, image_size, image_size, device=device)
+    image_b = torch.randn(1, 3, image_size, image_size, device=device)
     model.eval()
-    ia = torch.randn(batch_size, 3, image_size, image_size, device=device)
-    ib = torch.randn(batch_size, 3, image_size, image_size, device=device)
-
-    use_amp = device.type == "cuda"
-    ctx = torch.cuda.amp.autocast() if use_amp else torch.amp.autocast("cpu", enabled=False)
-
-    # Warmup
-    with torch.no_grad(), ctx:
-        for _ in range(5):
-            model(ia, ib)
-
-    if device.type == "cuda":
-        torch.cuda.synchronize()
-
-    t0 = time.perf_counter()
-    with torch.no_grad(), ctx:
+    try:
+        for _ in range(3):
+            with torch.no_grad():
+                model(image_a, image_b)
+        if device.type == "cuda":
+            torch.cuda.synchronize(device)
+        start = time.perf_counter()
         for _ in range(runs):
-            model(ia, ib)
-    if device.type == "cuda":
-        torch.cuda.synchronize()
-    elapsed = time.perf_counter() - t0
-    model.train()
-    return (runs * batch_size) / elapsed
+            with torch.no_grad():
+                model(image_a, image_b)
+        if device.type == "cuda":
+            torch.cuda.synchronize(device)
+        elapsed = time.perf_counter() - start
+    finally:
+        model.train()
+        del image_a, image_b
+    if elapsed <= 0:
+        return None
+    return round(runs / elapsed, 4)
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+def main() -> None:
+    WEBSITE_DATA.mkdir(parents=True, exist_ok=True)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-def main():
     cfg = _load_cfg()
-    device_str = cfg.get("hardware", {}).get("device", "cuda")
-    device     = torch.device(device_str if torch.cuda.is_available() else "cpu")
+    device = _device_from_cfg(cfg)
     image_size = int(cfg.get("dataset", {}).get("image_size", 256))
-    batch_size = int(cfg.get("training", {}).get("batch_size", 4))
-
-    print(f"\n{'='*60}")
-    print("  Model Efficiency Report")
-    print(f"{'='*60}")
-    print(f"  Config  : {ROOT / 'configs' / 'global_config.yaml'}")
-    print(f"  Device  : {device}")
-    print(f"  Image   : {image_size}×{image_size}")
-    print(f"  Mode    : {cfg.get('model', {}).get('mode', 'dual')}")
-    print(f"  Decoder : {cfg.get('model', {}).get('decoder', '?')}")
-    print(f"  D-RBI   : {cfg.get('difference', {}).get('enabled', False)}")
-    print(f"{'='*60}\n")
-
-    from models.cd_model import build_model
     model = build_model(cfg).to(device)
 
-    # ── Params ────────────────────────────────────────────────────────
-    total, trainable = _param_counts(model)
-    frozen = total - trainable
-    print(f"  Parameters")
-    print(f"    Total      : {_human(total)}")
-    print(f"    Trainable  : {_human(trainable)}")
-    print(f"    Frozen     : {_human(frozen)}")
+    total_params = _count_params(model)
+    trainable_params = sum(param.numel() for param in model.parameters() if param.requires_grad)
+    backbone_params = _count_params(getattr(model, "encoder", None))
+    drbi_params = _count_params(getattr(model, "diff_modules", None))
+    decoder_params = _count_params(getattr(model, "decoder", None))
 
-    # ── FLOPs ─────────────────────────────────────────────────────────
-    print(f"\n  FLOPs (image_size={image_size})")
-    pt = _try_ptflops(model.cpu() if device.type == "cuda" else model, image_size)
-    if pt and pt[0] is not None:
-        print(f"    ptflops MACs : {pt[0]}")
+    flops_g = None
+    flops_reason = None
+    ptflops_text, ptflops_reason = _try_ptflops(model, image_size)
+    if ptflops_text is not None:
+        flops_reason = None
     else:
-        fv = _try_fvcore(model.to(device), image_size, device)
-        if fv:
-            gflops = fv[0] / 1e9
-            print(f"    fvcore FLOPs : {gflops:.2f} G")
-        else:
-            print("    (ptflops and fvcore not available — skip)")
+        flops_g, flops_reason = _try_fvcore(model, image_size, device)
     model = model.to(device)
 
-    # ── Peak memory ───────────────────────────────────────────────────
-    if device.type == "cuda":
-        print(f"\n  Peak GPU Memory (forward+backward, batch={batch_size})")
-        try:
-            peak = _peak_memory(model, image_size, device, batch_size)
-            print(f"    {peak:.1f} MB")
-        except Exception as e:
-            print(f"    Error: {e}")
-
-    # ── Throughput ────────────────────────────────────────────────────
-    print(f"\n  Throughput (inference, batch={batch_size}, {image_size}px)")
+    runtime_notes: list[str] = []
     try:
-        fps = _throughput(model, image_size, device, batch_size)
-        print(f"    {fps:.1f} images/sec")
-    except Exception as e:
-        print(f"    Error: {e}")
+        peak_forward_memory_mb = _peak_memory(model, image_size, device, train_step=False)
+    except Exception as exc:  # pragma: no cover
+        peak_forward_memory_mb = None
+        runtime_notes.append(f"forward memory unavailable: {exc}")
+    try:
+        peak_train_step_memory_mb = _peak_memory(model, image_size, device, train_step=True)
+    except Exception as exc:  # pragma: no cover
+        peak_train_step_memory_mb = None
+        runtime_notes.append(f"train-step memory unavailable: {exc}")
+    try:
+        fps = _throughput(model, image_size, device)
+    except Exception as exc:  # pragma: no cover
+        fps = None
+        runtime_notes.append(f"throughput unavailable: {exc}")
 
-    print(f"\n{'='*60}\n")
+    payload = {
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "config_path": str((ROOT / "configs" / "global_config.yaml").resolve()),
+        "notes": cfg.get("_notes", []) + runtime_notes,
+        "metrics": {
+            "device": str(device),
+            "image_size": image_size,
+            "variant": cfg.get("model", {}).get("variant"),
+            "decoder": cfg.get("model", {}).get("decoder"),
+            "difference_enabled": bool(cfg.get("difference", {}).get("enabled", True)),
+            "total_params": total_params,
+            "trainable_params": trainable_params,
+            "backbone_params": backbone_params,
+            "drbi_params": drbi_params,
+            "decoder_params": decoder_params,
+            "total_params_millions": _format_millions(total_params),
+            "trainable_params_millions": _format_millions(trainable_params),
+            "backbone_params_millions": _format_millions(backbone_params),
+            "drbi_params_millions": _format_millions(drbi_params),
+            "decoder_params_millions": _format_millions(decoder_params),
+            "ptflops_macs": ptflops_text if ptflops_text is not None else "TBD",
+            "flops_gmac": flops_g if flops_g is not None else "TBD",
+            "flops_reason": flops_reason or ptflops_reason,
+            "peak_forward_memory_mb": peak_forward_memory_mb if peak_forward_memory_mb is not None else "TBD",
+            "peak_train_step_memory_mb": peak_train_step_memory_mb if peak_train_step_memory_mb is not None else "TBD",
+            "fps": fps if fps is not None else "TBD",
+        },
+    }
+
+    for target in [WEBSITE_DATA / "ours_efficiency.json", OUTPUT_DIR / "latest_efficiency.json"]:
+        target.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        print(f"Wrote {target}")
 
 
 if __name__ == "__main__":

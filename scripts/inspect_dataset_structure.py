@@ -21,12 +21,45 @@ import numpy as np
 
 # ── Load config ──────────────────────────────────────────────────────────────
 from utils.config import load_config
+from data.second import inspect_second_dataset
 cfg = load_config()
 dc = cfg.get("dataset", {})
-data_root = Path(dc.get("root", "/storage2/ChangeDetection/MV/Datasets/LEVIRCD"))
+data_root = Path(str(dc.get("root", "")))
+dataset_name = str(dc.get("name", "unknown"))
 
 out_dir = ROOT / "outputs" / "dataset_inspection"
 out_dir.mkdir(parents=True, exist_ok=True)
+
+if dataset_name.upper() == "SECOND":
+    manifest = inspect_second_dataset(dc)
+    report_path = out_dir / "inspection_report.json"
+    manifest_path = ROOT / "outputs" / "dataset_manifests" / "SECOND_manifest.json"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(report_path, "w") as f:
+        json.dump(manifest, f, indent=2)
+    with open(manifest_path, "w") as f:
+        json.dump(manifest, f, indent=2)
+
+    print(f"\nDataset root : {data_root}")
+    print(f"Dataset      : {dataset_name}")
+    print(f"Exists       : {data_root.exists()}\n")
+    for split, info in manifest.get("splits", {}).items():
+        print(f"[{split.upper()}]")
+        print(f"  image A dir      : {info.get('detected_image_a_dir')}")
+        print(f"  image B dir      : {info.get('detected_image_b_dir')}")
+        print(f"  label A dir      : {info.get('detected_label_a_dir')}")
+        print(f"  label B dir      : {info.get('detected_label_b_dir')}")
+        print(f"  binary mask dir  : {info.get('detected_binary_mask_dir')}")
+        print(f"  change ratio     : {info.get('change_pixel_ratio')}")
+        print(f"  ignore ratio     : {info.get('ignore_pixel_ratio')}")
+        print(f"  class IDs A      : {info.get('class_ids_label_a')}")
+        print(f"  class IDs B      : {info.get('class_ids_label_b')}")
+        if info.get("error"):
+            print(f"  error            : {info.get('error')}")
+        print()
+    print(f"Report saved to: {report_path}")
+    print(f"Manifest saved to: {manifest_path}\n")
+    raise SystemExit(0)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 IMG_EXTS = {".png", ".jpg", ".jpeg", ".tif", ".tiff"}

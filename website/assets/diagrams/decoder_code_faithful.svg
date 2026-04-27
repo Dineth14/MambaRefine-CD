@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 560" role="img" aria-labelledby="title desc">
+  <title id="title">Code-faithful decoder</title>
+  <desc id="desc">Coarse decoder with residual boundary refinement using B1, Pc, and edge cue.</desc>
+  <rect width="980" height="560" fill="#fbfaf7"/>
+  <g font-family="IBM Plex Sans, Arial, sans-serif">
+    <rect x="52" y="108" width="148" height="80" rx="18" fill="#e4eef3" stroke="#9bb8c9" stroke-width="2"/>
+    <rect x="52" y="226" width="148" height="80" rx="18" fill="#e4eef3" stroke="#9bb8c9" stroke-width="2"/>
+    <rect x="52" y="344" width="148" height="80" rx="18" fill="#e4eef3" stroke="#9bb8c9" stroke-width="2"/>
+    <rect x="52" y="452" width="148" height="62" rx="18" fill="#e3efe8" stroke="#9fc0af" stroke-width="2"/>
+    <text x="126" y="157" text-anchor="middle" font-size="22" fill="#2f4b5e">R4</text>
+    <text x="126" y="275" text-anchor="middle" font-size="22" fill="#2f4b5e">R3</text>
+    <text x="126" y="393" text-anchor="middle" font-size="22" fill="#2f4b5e">R2</text>
+    <text x="126" y="490" text-anchor="middle" font-size="22" fill="#416957">R1</text>
+
+    <rect x="274" y="132" width="214" height="264" rx="28" fill="#f5f2ea" stroke="#b8b0a0" stroke-width="2.4"/>
+    <text x="381" y="194" text-anchor="middle" font-size="28" fill="#24323a">Adaptive RF Decoder</text>
+    <text x="381" y="228" text-anchor="middle" font-size="18" fill="#5e6b73">top-down region fusion</text>
+    <text x="381" y="300" text-anchor="middle" font-size="26" fill="#24323a">Pc</text>
+    <text x="381" y="334" text-anchor="middle" font-size="17" fill="#5e6b73">coarse change logits</text>
+
+    <path d="M200 148 H274" stroke="#48697d" stroke-width="3" fill="none"/>
+    <path d="M200 266 H274" stroke="#48697d" stroke-width="3" fill="none"/>
+    <path d="M200 384 H274" stroke="#48697d" stroke-width="3" fill="none"/>
+    <path d="M200 482 H274" stroke="#48697d" stroke-width="3" fill="none"/>
+
+    <rect x="568" y="82" width="142" height="74" rx="18" fill="#e3efe8" stroke="#9fc0af" stroke-width="2"/>
+    <text x="639" y="126" text-anchor="middle" font-size="24" fill="#416957">B1</text>
+
+    <rect x="568" y="216" width="142" height="74" rx="18" fill="#e4eef3" stroke="#9bb8c9" stroke-width="2"/>
+    <text x="639" y="260" text-anchor="middle" font-size="24" fill="#2f4b5e">Pc</text>
+
+    <rect x="568" y="350" width="142" height="74" rx="18" fill="#f0e9dc" stroke="#c4b294" stroke-width="2"/>
+    <text x="639" y="392" text-anchor="middle" font-size="24" fill="#7c6646">grad sigma(Pc)</text>
+
+    <path d="M488 304 H568" stroke="#48697d" stroke-width="3" fill="none"/>
+    <path d="M488 304 C522 304 520 252 568 252" stroke="#48697d" stroke-width="3" fill="none" opacity="0.7"/>
+    <path d="M488 304 C522 304 520 384 568 384" stroke="#48697d" stroke-width="3" fill="none" opacity="0.7"/>
+
+    <rect x="758" y="170" width="158" height="166" rx="26" fill="#e3efe8" stroke="#9fc0af" stroke-width="2.3"/>
+    <text x="837" y="226" text-anchor="middle" font-size="24" fill="#416957">Boundary head</text>
+    <text x="837" y="260" text-anchor="middle" font-size="20" fill="#5e6b73">Hb</text>
+    <text x="837" y="296" text-anchor="middle" font-size="18" fill="#5e6b73">predict Delta</text>
+
+    <path d="M710 119 H758" stroke="#48697d" stroke-width="3" fill="none"/>
+    <path d="M710 253 H758" stroke="#48697d" stroke-width="3" fill="none"/>
+    <path d="M710 387 H758" stroke="#48697d" stroke-width="3" fill="none"/>
+
+    <rect x="758" y="386" width="158" height="96" rx="22" fill="#f0e9dc" stroke="#c4b294" stroke-width="2.2"/>
+    <text x="837" y="426" text-anchor="middle" font-size="22" fill="#7c6646">Pf = Pc + 0.05 tanh(Delta)</text>
+    <text x="837" y="456" text-anchor="middle" font-size="16" fill="#5e6b73">bounded logit refinement</text>
+
+    <text x="490" y="524" text-anchor="middle" font-size="18" fill="#5e6b73">The residual branch sharpens boundaries but cannot overwrite the coarse prediction aggressively because the correction is bounded.</text>
+  </g>
+</svg>

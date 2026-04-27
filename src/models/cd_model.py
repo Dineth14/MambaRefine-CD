@@ -228,7 +228,19 @@ def build_model(cfg: dict) -> nn.Module:
     ``"temporal_mamba"``
         **DISABLED** — raises ValueError.  Set ``model.mode: dual``.
     """
-    mode = str(cfg.get("model", {}).get("mode", "dual")).lower()
+    model_cfg = cfg.get("model", {})
+    dataset_cfg = cfg.get("dataset", {})
+    output_mode = str(model_cfg.get("output_mode", "binary")).lower()
+    dataset_mode = str(dataset_cfg.get("mode", "binary")).lower()
+
+    if output_mode == "semantic":
+        raise NotImplementedError(
+            "model.output_mode=semantic is reserved for future semantic change detection. "
+            "The current model only supports binary logits. "
+            "For SECOND semantic-label training today, set dataset.mode=semantic and keep model.output_mode=binary."
+        )
+
+    mode = str(model_cfg.get("mode", "dual")).lower()
     if mode == "temporal_mamba":
         raise ValueError(
             "temporal_mamba mode has been disabled due to training instability. "
@@ -236,7 +248,6 @@ def build_model(cfg: dict) -> nn.Module:
         )
     # Legacy class kept for API compatibility
     if mode == "dual":
-        dec_name = cfg.get("model", {}).get("decoder", "adaptive_rf")
         diff_enabled = cfg.get("difference", {}).get("enabled", True)
         # Only use DRBISiameseMambaCD when D-RBI is wanted (adaptive_rf + enabled)
         # or always — it handles the fallback internally

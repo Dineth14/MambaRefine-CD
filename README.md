@@ -65,7 +65,16 @@ MambaRefine-CD consists of four main components:
 | Adaptive RF | TBD | TBD | TBD | TBD | TBD | TBD |
 | **MambaRefine-CD** | **TBD** | **TBD** | **TBD** | **TBD** | **TBD** | **TBD** |
 
+### SECOND
+
+| Model | mF1 | F1_1 | mIoU | IoU_1 | OA | Boundary F1 |
+|---|---|---|---|---|---|---|
+| Binary baseline | TBD | TBD | TBD | TBD | TBD | TBD |
+| **MambaRefine-CD (binary mode)** | **TBD** | **TBD** | **TBD** | **TBD** | **TBD** | **TBD** |
+
 > We report both **literature-style metrics** (mF1, mIoU, OA) and **change-focused metrics** (F1_1, IoU_1, Boundary F1) for a more complete evaluation. Note that mF1 averages over the easy no-change class and can overstate model quality; F1_1 and Boundary F1 are more discriminating.
+
+For SECOND, true **SeK** remains an evaluation metric for semantic change detection. During binary SECOND training, the objective uses a **differentiable soft-kappa / SeK-inspired surrogate loss** instead. This improves change-sensitive supervision without pretending that binary logits are semantic SeK predictions. In binary mode, report OA, Fscd, binary mIoU, and optionally binary kappa. Report true SeK only when semantic predictions exist.
 
 ---
 
@@ -191,6 +200,28 @@ Y   = sigmoid(P_f)                         # final change probability map
 
 All training is iteration-based. Validation runs every `training.validate_every` iterations and the best checkpoint is saved automatically. Training can be resumed from any checkpoint.
 
+### SECOND soft-kappa training note
+
+When `loss.type: dice_focal_sek` is enabled for SECOND, training optimizes:
+
+```text
+Dice + Focal + SeK-inspired soft-kappa surrogate
+```
+
+Recommended starting weights:
+
+```yaml
+loss:
+  type: dice_focal_sek
+  dice_weight: 1.0
+  focal_weight: 0.2
+  sek_weight: 0.05
+  sek_mode: binary
+  sek_separate_nochange: true
+```
+
+This is a training surrogate only. It is not the same as the final semantic SeK metric used in evaluation.
+
 ### LEVIR-CD
 
 Edit `configs/global_config.yaml`:
@@ -231,6 +262,29 @@ dataset:
 python scripts/train.py
 ```
 
+### SECOND binary mode
+
+SECOND is a semantic change detection dataset, but the current runtime supports it first in binary mode by converting semantic labels to change/no-change masks.
+
+Edit `configs/global_config.yaml`:
+
+```yaml
+dataset:
+  name: SECOND
+  root: /storage2/ChangeDetection/MV/Datasets/SECOND
+  task_type: semantic_change
+  mode: binary
+
+model:
+  output_mode: binary
+```
+
+Then run:
+
+```bash
+python scripts/train.py
+```
+
 ### Resume training
 
 ```yaml
@@ -262,9 +316,48 @@ evaluation:
   use_tta: false                # enable test-time augmentation if needed
 ```
 
-### WHU-CD / DSIFN-CD
+### WHU-CD / DSIFN-CD / SECOND
 
 Same procedure — update `dataset.name`, `dataset.root`, and the checkpoint path.
+
+For SECOND binary mode, keep:
+
+```yaml
+dataset:
+  name: SECOND
+  mode: binary
+
+model:
+  output_mode: binary
+```
+
+For SECOND semantic-label evaluation with the current binary model, use:
+
+```yaml
+dataset:
+  name: SECOND
+  mode: semantic
+
+model:
+  output_mode: binary
+
+evaluation:
+  second_metrics: true
+  compute_SeK: true
+  sek_binary_fallback: false
+  threshold_select_metric: Fscd
+```
+
+This writes the standard `eval_metrics.json` / `eval_metrics.csv` pair plus:
+
+```text
+outputs/eval_<timestamp>_<run_label>/second_metrics.json
+outputs/eval_<timestamp>_<run_label>/second_metrics.csv
+outputs/eval_<timestamp>_<run_label>/best_thresholds_SECOND.json
+```
+
+`second_metrics.json` reports `OA`, `Fscd` / `F1scd`, `mIoU`, `SeK`, `binary_F1`, `binary_IoU`, and `semantic_mIoU`.
+When the model only emits binary logits, `SeK` and `semantic_mIoU` stay unavailable and the file includes a note explaining that fallback.
 
 ### Benchmark all datasets
 
@@ -325,6 +418,12 @@ The dataset loader supports flexible directory naming via `image_a_dir_candidate
 - 3940 image pairs at 512×512 px across urban, road, and vegetation change types.
 - Useful for generalization evaluation across heterogeneous scenes.
 
+### SECOND
+
+- Semantic change detection benchmark with bi-temporal semantic labels.
+- Can be used immediately in binary mode by converting semantic labels into change/no-change masks.
+- Future semantic mode infrastructure is included, but full semantic model outputs are not implemented yet.
+
 **Notes:**
 - Training always uses the tile-based pipeline; evaluation keeps the official val/test structure.
 - Tile cache files are saved to `outputs/dataset_indices/` and reused across runs.
@@ -356,6 +455,7 @@ model:
 dataset:
   name: LEVIR-CD
   root: /path/to/dataset
+  mode: binary
 ```
 
 **Enable/disable D-RBI:**

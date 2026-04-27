@@ -96,6 +96,7 @@ def _normalize_config(data: dict[str, Any]) -> dict[str, Any]:
     data.setdefault("checkpoint", {})
     data.setdefault("decoder", {})
     data.setdefault("boundary_metrics", {})
+    data.setdefault("post_training", {})
 
     # Resolve active dataset from one-file catalog.
     catalog = data.get("datasets_catalog", {})
@@ -111,6 +112,7 @@ def _normalize_config(data: dict[str, Any]) -> dict[str, Any]:
     training = data.get("training", {})
     training["use_ema"] = bool(ema.get("enabled", training.get("use_ema", False)))
     training["ema_decay"] = float(ema.get("decay", training.get("ema_decay", 0.999)))
+    training.setdefault("non_blocking_transfer", True)
     data["training"] = training
 
     # Normalize optimizer names for torch.optim getattr usage.
@@ -131,6 +133,12 @@ def _normalize_config(data: dict[str, Any]) -> dict[str, Any]:
         hardware["device"] = f"cuda:{int(gpu_ids[0])}"
     data["hardware"] = hardware
 
+    model = data.get("model", {})
+    model.setdefault("output_mode", "binary")
+    model.setdefault("num_classes", 1)
+    model.setdefault("semantic_num_classes", int(data.get("dataset", {}).get("num_classes", 7)))
+    data["model"] = model
+
     # Preserve checkpoint path for eval/validate in one place.
     checkpoint = data.get("checkpoint", {})
     checkpoint.setdefault("path", None)
@@ -146,11 +154,38 @@ def _normalize_config(data: dict[str, Any]) -> dict[str, Any]:
     validation.setdefault("split", "val")
     data["validation"] = validation
 
+    dataset_cfg = data.get("dataset", {})
+    dataset_cfg.setdefault("num_workers", 8)
+    dataset_cfg.setdefault("pin_memory", True)
+    dataset_cfg.setdefault("persistent_workers", True)
+    dataset_cfg.setdefault("prefetch_factor", 4)
+    dataset_cfg.setdefault("precompute_second_binary_masks", False)
+    dataset_cfg.setdefault("second_binary_cache_dir", "outputs/second_binary_masks")
+    dataset_cfg.setdefault("cache_images_in_ram", False)
+    dataset_cfg.setdefault("cache_masks_in_ram", False)
+    data["dataset"] = dataset_cfg
+
     evaluation = data.get("evaluation", {})
     evaluation.setdefault("split", "test")
     evaluation.setdefault("threshold_list", [0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60])
     evaluation.setdefault("tta_augmentations", ["original", "hflip", "vflip", "rot90"])
+    evaluation.setdefault("threshold_select_metric", "mF1")
+    evaluation.setdefault("second_metrics", False)
+    evaluation.setdefault("compute_SeK", True)
+    evaluation.setdefault("sek_binary_fallback", False)
     data["evaluation"] = evaluation
+
+    loss_cfg = data.get("loss", {})
+    loss_cfg.setdefault("type", "bce_dice")
+    loss_cfg.setdefault("dice_weight", 1.0)
+    loss_cfg.setdefault("focal_weight", 0.3)
+    loss_cfg.setdefault("focal_gamma", 1.5)
+    loss_cfg.setdefault("bce_weight", 1.0)
+    loss_cfg.setdefault("sek_weight", 0.05)
+    loss_cfg.setdefault("sek_mode", str(dataset_cfg.get("mode", "binary")))
+    loss_cfg.setdefault("sek_eps", 1e-6)
+    loss_cfg.setdefault("sek_separate_nochange", False)
+    data["loss"] = loss_cfg
 
     debug = data.get("debug", {})
     debug.setdefault("name", "memory_debug")
@@ -182,7 +217,7 @@ def _normalize_config(data: dict[str, Any]) -> dict[str, Any]:
     benchmark = data.get("benchmark", {})
     benchmark.setdefault("model_name", data["experiment"].get("name", "model"))
     benchmark.setdefault("output_dir", "outputs/benchmark_runs/summary")
-    benchmark.setdefault("datasets", ["LEVIR-CD", "WHU-CD", "SYSU-CD", "DSIFN-CD"])
+    benchmark.setdefault("datasets", ["LEVIR-CD", "WHU-CD", "SYSU-CD", "DSIFN-CD", "SECOND"])
     benchmark.setdefault("eval_split", "test")
     benchmark.setdefault("main_dataset", data["dataset"].get("name", "LEVIR-CD"))
     benchmark.setdefault("checkpoints", {})

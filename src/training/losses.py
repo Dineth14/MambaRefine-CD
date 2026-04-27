@@ -1,26 +1,42 @@
-"""Loss functions for binary change detection.
+"""Loss functions for change detection.
 
 Supported loss types (config: loss.type)
 -----------------------------------------
-bce_dice   (default) — BCE + Dice
-dice_focal             — Dice + Focal loss
-
-Config keys
------------
-    loss:
-      type: bce_dice         # bce_dice | dice_focal
-      bce_weight:  1.0       # used by bce_dice
-      dice_weight: 1.0
-      focal_weight: 0.3      # used by dice_focal
-      focal_gamma:  1.5
+bce_dice         BCE + Dice
+dice_focal       Dice + Focal
+dice_focal_sek   Dice + Focal + SeK-inspired soft-kappa surrogate
 """
 from __future__ import annotations
 
-from typing import Tuple
+from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+from training.sek_loss import SeKLoss
+
+
+def _resolve_valid_mask(
+    reference: torch.Tensor,
+    valid_mask: Optional[torch.Tensor] = None,
+) -> torch.Tensor:
+    if valid_mask is None:
+        return torch.ones_like(reference, dtype=torch.float32)
+    mask = valid_mask.float()
+    while mask.ndim < reference.ndim:
+        mask = mask.unsqueeze(1)
+    if mask.shape != reference.shape:
+        mask = torch.broadcast_to(mask, reference.shape)
+    return mask
+
+
+def _masked_mean(values: torch.Tensor, valid_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+    mask = _resolve_valid_mask(values, valid_mask)
+    denom = mask.sum()
+    if float(denom.item()) <= 0.0:
+        return values.new_zeros(())
+    return (values * mask).sum() / denom
 
 
 class DiceLoss(nn.Module):
@@ -28,72 +44,92 @@ class DiceLoss(nn.Module):
         super().__init__()
         self.smooth = smooth
 
-    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        p = torch.sigmoid(logits).view(-1)
-        t = targets.float().view(-1)
-        num = 2.0 * (p * t).sum() + self.smooth
-        den = p.sum() + t.sum() + self.smooth
+    def forward(
+        self,
+        logits: torch.Tensor,
+        targets: torch.Tensor,
+        valid_mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        logits = torch.clamp(logits.float(), -20.0, 20.0)
+        targets = targets.float()
+        valid = _resolve_valid_mask(targets, valid_mask)
+        denom_valid = valid.sum()
+        if float(denom_valid.item()) <= 0.0:
+            return logits.new_zeros(())
+        p = torch.sigmoid(logits)
+        num = 2.0 * (p * targets * valid).sum() + self.smooth
+        den = (p * valid).sum() + (targets * valid).sum() + self.smooth
         return 1.0 - num / den
 
 
 class FocalLoss(nn.Module):
-    """Binary focal loss.
-
-    loss = -[ t·(1-p)^γ·log(p) + (1-t)·p^γ·log(1-p) ]
-
-    Args:
-        gamma: focusing parameter (higher = more focus on hard examples).
-        reduction: 'mean' | 'sum' | 'none'
-    """
+    """Binary focal loss with optional validity masking."""
 
     def __init__(self, gamma: float = 2.0, reduction: str = "mean") -> None:
         super().__init__()
-        self.gamma     = gamma
+        self.gamma = gamma
         self.reduction = reduction
 
-    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        logits: torch.Tensor,
+        targets: torch.Tensor,
+        valid_mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        logits = torch.clamp(logits.float(), -20.0, 20.0)
         targets = targets.float()
         bce_raw = F.binary_cross_entropy_with_logits(logits, targets, reduction="none")
-        p       = torch.sigmoid(logits)
-        # p_t = p when target=1, (1-p) when target=0
-        p_t     = p * targets + (1.0 - p) * (1.0 - targets)
+        p = torch.sigmoid(logits)
+        p_t = p * targets + (1.0 - p) * (1.0 - targets)
         focal_w = (1.0 - p_t) ** self.gamma
-        loss    = focal_w * bce_raw
+        loss = focal_w * bce_raw
 
-        if self.reduction == "mean":
-            return loss.mean()
         if self.reduction == "sum":
-            return loss.sum()
-        return loss
+            valid = _resolve_valid_mask(loss, valid_mask)
+            return (loss * valid).sum()
+        if self.reduction == "none":
+            return loss
+        return _masked_mean(loss, valid_mask)
 
 
 class BCEDiceLoss(nn.Module):
-    """BCE + Dice.  Returns (total, bce, dice) for logging convenience."""
+    """BCE + Dice. Returns (total, bce, dice) for compatibility."""
 
     def __init__(self, bce_w: float = 1.0, dice_w: float = 1.0) -> None:
         super().__init__()
-        self.bce_w  = bce_w
+        self.bce_w = bce_w
         self.dice_w = dice_w
-        self.bce    = nn.BCEWithLogitsLoss()
-        self.dice   = DiceLoss()
+        self.dice = DiceLoss()
+        self.latest_stats: dict[str, float | str | bool] = {}
 
     def forward(
-        self, logits: torch.Tensor, targets: torch.Tensor
+        self,
+        logits: torch.Tensor,
+        targets: torch.Tensor,
+        valid_mask: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        bce   = self.bce(logits, targets.float())
-        dice  = self.dice(logits, targets)
+        logits = torch.clamp(logits.float(), -20.0, 20.0)
+        targets = targets.float()
+        bce_raw = F.binary_cross_entropy_with_logits(logits, targets, reduction="none")
+        bce = _masked_mean(bce_raw, valid_mask)
+        dice = self.dice(logits, targets, valid_mask=valid_mask)
         total = self.bce_w * bce + self.dice_w * dice
+        self.latest_stats = {
+            "total_loss": float(total.detach().item()),
+            "bce_loss": float(bce.detach().item()),
+            "dice_loss": float(dice.detach().item()),
+            "focal_loss": 0.0,
+            "sek_loss": 0.0,
+            "soft_kappa": 0.0,
+            "primary_name": "bce_loss",
+            "sek_name": "",
+            "sek_was_sanitized": False,
+        }
         return total, bce, dice
 
 
 class DiceFocalLoss(nn.Module):
-    """Dice + Focal loss.  Returns (total, focal, dice) for logging convenience.
-
-    Recommended config:
-        dice_weight: 1.0
-        focal_weight: 0.3
-        focal_gamma: 1.5
-    """
+    """Dice + Focal. Returns (total, focal, dice) for compatibility."""
 
     def __init__(
         self,
@@ -102,38 +138,149 @@ class DiceFocalLoss(nn.Module):
         focal_gamma: float = 1.5,
     ) -> None:
         super().__init__()
-        self.dice_w  = dice_w
+        self.dice_w = dice_w
         self.focal_w = focal_w
-        self.dice    = DiceLoss()
-        self.focal   = FocalLoss(gamma=focal_gamma)
+        self.dice = DiceLoss()
+        self.focal = FocalLoss(gamma=focal_gamma)
+        self.latest_stats: dict[str, float | str | bool] = {}
 
     def forward(
-        self, logits: torch.Tensor, targets: torch.Tensor
+        self,
+        logits: torch.Tensor,
+        targets: torch.Tensor,
+        valid_mask: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        dice  = self.dice(logits, targets)
-        focal = self.focal(logits, targets)
+        dice = self.dice(logits, targets, valid_mask=valid_mask)
+        focal = self.focal(logits, targets, valid_mask=valid_mask)
         total = self.dice_w * dice + self.focal_w * focal
-        # Return as (total, focal, dice) — focal takes the role of "bce" in logging
+        self.latest_stats = {
+            "total_loss": float(total.detach().item()),
+            "dice_loss": float(dice.detach().item()),
+            "focal_loss": float(focal.detach().item()),
+            "sek_loss": 0.0,
+            "soft_kappa": 0.0,
+            "primary_name": "focal_loss",
+            "sek_name": "",
+            "sek_was_sanitized": False,
+        }
+        return total, focal, dice
+
+
+class DiceFocalSeKLoss(nn.Module):
+    """Dice + Focal + SeK-inspired soft-kappa surrogate.
+
+    Binary mode uses a binary soft-kappa / SeK-inspired loss.
+    Semantic mode uses a general semantic soft-kappa surrogate and leaves
+    separated semantic SeK as a future TODO.
+    """
+
+    def __init__(
+        self,
+        *,
+        dice_w: float = 1.0,
+        focal_w: float = 0.2,
+        sek_w: float = 0.05,
+        focal_gamma: float = 1.5,
+        sek_mode: str = "binary",
+        sek_eps: float = 1e-6,
+        sek_separate_nochange: bool = False,
+        num_classes: int = 7,
+        ignore_index: int = 255,
+        safe_on_invalid: bool = True,
+    ) -> None:
+        super().__init__()
+        self.dice_w = float(dice_w)
+        self.focal_w = float(focal_w)
+        self.sek_w = float(sek_w)
+        self.sek_mode = str(sek_mode).lower()
+        self.safe_on_invalid = bool(safe_on_invalid)
+        self.dice = DiceLoss()
+        self.focal = FocalLoss(gamma=focal_gamma)
+        self.sek = SeKLoss(
+            mode=self.sek_mode,
+            num_classes=num_classes,
+            ignore_index=ignore_index,
+            eps=sek_eps,
+            separate_nochange=sek_separate_nochange,
+        )
+        self.latest_stats: dict[str, float | str | bool] = {}
+
+    def forward(
+        self,
+        logits: torch.Tensor,
+        targets: torch.Tensor,
+        valid_mask: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        use_semantic_mode = self.sek_mode == "semantic" or logits.shape[1] > 1
+        if use_semantic_mode:
+            dice = logits.new_zeros(())
+            focal = logits.new_zeros(())
+        else:
+            dice = self.dice(logits, targets, valid_mask=valid_mask)
+            focal = self.focal(logits, targets, valid_mask=valid_mask)
+        sek_result = self.sek(logits, targets, valid_mask=valid_mask)
+        sek_loss = sek_result.loss
+        soft_kappa = sek_result.soft_kappa
+        sek_was_sanitized = False
+
+        if not torch.isfinite(sek_loss) or not torch.isfinite(soft_kappa):
+            if self.safe_on_invalid:
+                sek_loss = logits.new_zeros(())
+                soft_kappa = logits.new_zeros(())
+                sek_was_sanitized = True
+            else:
+                raise FloatingPointError("SeK-inspired loss became NaN/Inf and safe_on_invalid=false.")
+
+        total = self.dice_w * dice + self.focal_w * focal + self.sek_w * sek_loss
+        self.latest_stats = {
+            "total_loss": float(total.detach().item()),
+            "dice_loss": float(dice.detach().item()),
+            "focal_loss": float(focal.detach().item()),
+            "sek_loss": float(sek_loss.detach().item()),
+            "soft_kappa": float(soft_kappa.detach().item()),
+            "sek_mode": self.sek_mode,
+            "primary_name": "focal_loss",
+            "sek_name": "binary soft-kappa / SeK-inspired loss" if self.sek_mode == "binary" else "semantic soft-kappa / SeK-style surrogate",
+            "sek_was_sanitized": sek_was_sanitized,
+            "change_agreement": (
+                None
+                if sek_result.change_agreement is None
+                else float(sek_result.change_agreement.detach().item())
+            ),
+        }
         return total, focal, dice
 
 
 def build_loss(cfg: dict) -> nn.Module:
-    """Build loss function from config.
-
-    Supported types: 'bce_dice' (default), 'dice_focal'.
-    """
-    lc   = cfg.get("loss", {})
+    """Build loss function from config."""
+    lc = cfg.get("loss", {})
+    dc = cfg.get("dataset", {})
+    mc = cfg.get("model", {})
+    tc = cfg.get("training", {})
     kind = str(lc.get("type", "bce_dice")).lower().replace("-", "_")
+
+    if kind == "dice_focal_sek":
+        return DiceFocalSeKLoss(
+            dice_w=float(lc.get("dice_weight", 1.0)),
+            focal_w=float(lc.get("focal_weight", 0.2)),
+            sek_w=float(lc.get("sek_weight", 0.05)),
+            focal_gamma=float(lc.get("focal_gamma", 1.5)),
+            sek_mode=str(lc.get("sek_mode", dc.get("mode", "binary"))),
+            sek_eps=float(lc.get("sek_eps", 1e-6)),
+            sek_separate_nochange=bool(lc.get("sek_separate_nochange", False)),
+            num_classes=int(dc.get("num_classes", mc.get("semantic_num_classes", 7))),
+            ignore_index=int(dc.get("ignore_index", 255)),
+            safe_on_invalid=bool(tc.get("skip_nan_steps", True)),
+        )
 
     if kind == "dice_focal":
         return DiceFocalLoss(
-            dice_w      = float(lc.get("dice_weight",  1.0)),
-            focal_w     = float(lc.get("focal_weight", 0.3)),
-            focal_gamma = float(lc.get("focal_gamma",  1.5)),
+            dice_w=float(lc.get("dice_weight", 1.0)),
+            focal_w=float(lc.get("focal_weight", 0.3)),
+            focal_gamma=float(lc.get("focal_gamma", 1.5)),
         )
 
-    # Default: bce_dice (backward compatible)
     return BCEDiceLoss(
-        bce_w  = float(lc.get("bce_weight",  1.0)),
-        dice_w = float(lc.get("dice_weight", 1.0)),
+        bce_w=float(lc.get("bce_weight", 1.0)),
+        dice_w=float(lc.get("dice_weight", 1.0)),
     )
