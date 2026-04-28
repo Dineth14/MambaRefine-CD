@@ -51,9 +51,15 @@ class BinaryMetrics:
             probs = preds
         pred_b = (probs > self.thr).float()
 
+        targets = targets.float()
+        if targets.numel() and targets.max() > 1:
+            targets = (targets > 127).float()
+        else:
+            targets = (targets > 0.5).float()
+
         # Flatten
         p = pred_b.view(-1)
-        t = targets.float().view(-1)
+        t = targets.view(-1)
 
         # Confusion matrix entries
         self.tp += float((p * t).sum().item())

@@ -691,6 +691,14 @@ class Evaluator:
                 w.writerow(["dataset"] + numeric_keys)
             w.writerow([dataset_name] + [result[k] for k in numeric_keys])
 
+        metrics_payload = {}
+        for key, value in result.items():
+            if isinstance(value, float):
+                metrics_payload[key] = round(value, 6)
+            elif isinstance(value, (int, bool, str)):
+                metrics_payload[key] = value
+        (self.save_dir / "metrics.json").write_text(json.dumps(metrics_payload, indent=2))
+
         # tta_results.json  (if TTA was used)
         if self.use_tta:
             tta_path = self.save_dir / "tta_results.json"

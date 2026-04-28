@@ -2,6 +2,37 @@
 
 Date: 2026-04-28
 
+## Current Update
+
+This pass re-checked the existing mismatch fix and found one remaining inconsistency:
+`src/training/final_eval.py` still allowed final held-out test evaluation to run with the normal evaluator config, which could sweep thresholds on `test` and save internal metric keys. That has now been fixed.
+
+Additional fixes applied in this pass:
+
+- final post-training test evaluation now resolves threshold as `checkpoint best_threshold -> config threshold`, disables threshold sweep on `test`, and logs threshold source.
+- final post-training test evaluation now saves and prints binary paper metrics as `Pre`, `Rec`, `F1`, `IoU`, `OA`, with threshold/EMA as metadata.
+- `scripts/test.py` and `scripts/evaluate.py` now print the final metric table with only the allowed paper metrics; threshold and EMA are printed separately as metadata.
+- checkpoint load logging now includes the stored checkpoint threshold.
+- binary metric accumulation now robustly converts masks from either `0/255` or `0/1` to binary before TP/FP/TN/FN accumulation.
+- the shared evaluator now writes `metrics.json` for validation/evaluation outputs, not only CSV and threshold JSON.
+
+Current environment verification:
+
+- `python -m py_compile` passed for the changed scripts/modules.
+- `pytest tests -q` passed: `19 passed, 9 skipped`.
+- `tools/check_splits.py --config configs/ablations/levir/a4_full.yaml` passed with no train/val/test image-ID overlap.
+- Full `scripts/test.py --split val` and `scripts/evaluate.py --split val` both reached the same shared evaluator path but could not complete in this session because CUDA is unavailable (`torch.cuda.is_available() == False`, device count `0`) and the Mamba selective-scan kernel requires CUDA tensors.
+
+Current checkpoint inspected:
+
+`outputs/levir/a4_full/run_20260428_023133_levir_a4_full_LEVIR-CD/checkpoints/best.pth`
+
+- checkpoint iteration: `50000`
+- best metric: `0.9238958813619399`
+- checkpoint best threshold: missing
+- EMA weights found: `false`
+- variant: `base`
+
 ## Scope
 
 This report tracks the validation/test mismatch investigation for `configs/ablations/levir/a4_full.yaml`.
@@ -125,7 +156,7 @@ No split leakage or raw mask format mismatch was found for the configured LEVIR 
 
 ## Verification Commands
 
-The CUDA Mamba op could not run inside the sandbox CPU path, and sandboxed multiprocessing workers were blocked. Verification was run outside the sandbox with `--num_workers 0`.
+The full model evaluation commands require CUDA because the Mamba selective-scan kernel does not run on CPU. In this session, CUDA was not available, so the commands below are the expected verification commands; syntax/unit tests and split checks were run successfully, while full metric reproduction was blocked by the CUDA requirement.
 
 ```bash
 /userhomes/keshawa17/anaconda3/envs/mamba_new/bin/python tools/check_splits.py --config configs/ablations/levir/a4_full.yaml
@@ -159,7 +190,7 @@ Additional verification:
 /userhomes/keshawa17/anaconda3/envs/mamba_new/bin/python -m pytest tests -q
 ```
 
-Result: `19 passed, 9 skipped`.
+Current unit-test result: `19 passed, 9 skipped`.
 
 ## Before And After Metrics
 
@@ -175,7 +206,7 @@ Previous separate test/evaluate path observed before the shared evaluator:
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | LEVIR test, old path | 0.50 | 85.4989 | 85.4483 | 85.4735 | 74.6322 | 98.8166 |
 
-After the shared evaluator:
+Historical after-fix metrics from the existing output files:
 
 | Split/path | Threshold source | Threshold | Pre | Rec | F1 | IoU | OA |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |

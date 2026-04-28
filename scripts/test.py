@@ -163,6 +163,7 @@ def main() -> None:
     )
     logger.info(f"Loaded checkpoint from {args.ckpt}")
     logger.info(f"Checkpoint iteration: {load_info['iteration']} | best_metric: {load_info['best_metric']}")
+    logger.info(f"Checkpoint threshold stored: {load_info['best_threshold']}")
     logger.info(f"Using threshold: {threshold:.4f}")
     logger.info(f"Threshold source: {threshold_source}")
     logger.info(f"Using EMA: {str(load_info['ema_used']).lower()}")
@@ -189,7 +190,17 @@ def main() -> None:
 
     logger.info("=" * 50)
     logger.info("Test Results:")
-    for k, v in results.items():
+    for k in allowed:
+        v = results.get(k)
+        if v is None:
+            continue
+        logger.info(f"  {k:16s}: {float(v):.4f}")
+    logger.info("-" * 50)
+    logger.info("Evaluation metadata:")
+    for k in ("threshold", "threshold_source", "ema_used", "ema_found"):
+        v = results.get(k)
+        if v is None:
+            continue
         if isinstance(v, bool):
             logger.info(f"  {k:16s}: {str(v).lower()}")
         elif isinstance(v, (int, float)):

@@ -29,6 +29,26 @@ _SEP  = "=" * 40
 _DASH = "-" * 40
 
 
+def _merged_eval_cfg(cfg: dict) -> dict:
+    merged = dict(cfg.get("evaluation", {}) or {})
+    merged.update(dict(cfg.get("eval", {}) or {}))
+    return merged
+
+
+def _paper_binary_metrics(raw: dict) -> dict:
+    return {
+        "Pre": round(float(raw.get("precision", raw.get("precision_1", 0.0))) * 100.0, 4),
+        "Rec": round(float(raw.get("recall", raw.get("recall_1", 0.0))) * 100.0, 4),
+        "F1": round(float(raw.get("f1", raw.get("f1_1", 0.0))) * 100.0, 4),
+        "IoU": round(float(raw.get("iou", raw.get("iou_1", 0.0))) * 100.0, 4),
+        "OA": round(float(raw.get("oa", 0.0)) * 100.0, 4),
+    }
+
+
+def _is_second_dataset(cfg: dict) -> bool:
+    return "SECOND" in str(cfg.get("dataset", {}).get("name", "")).upper()
+
+
 def run_final_test_evaluation(
     cfg: dict,
     model: nn.Module,
@@ -101,30 +121,70 @@ def run_final_test_evaluation(
     )
     logger.info(f"  Using EMA          : {str(load_info['ema_used']).lower()}")
     logger.info(f"  EMA weights found  : {str(load_info['ema_found']).lower()}")
+    logger.info(f"  Missing keys       : {load_info['missing_keys']}")
+    logger.info(f"  Unexpected keys    : {load_info['unexpected_keys']}")
     ema_applied = bool(load_info["ema_used"])
 
+    eval_cfg = _merged_eval_cfg(cfg)
+    if load_info.get("best_threshold") is not None:
+        threshold = float(load_info["best_threshold"])
+        threshold_source = "checkpoint"
+    else:
+        threshold = float(eval_cfg.get("threshold", 0.5))
+        threshold_source = "config"
+    logger.info(f"  Using threshold    : {threshold:.4f}")
+    logger.info(f"  Threshold source   : {threshold_source}")
+
     # ── Build test loader (force split=test) ──────────────────────────────────
-    # Temporarily override evaluation.split to guarantee "test"
+    # Temporarily override evaluation settings to guarantee held-out test eval.
+    # Test never sweeps thresholds; it uses the saved validation threshold when
+    # available, otherwise the configured default.
     ec = cfg.get("evaluation", {})
+    alias_ec = cfg.get("eval", {})
     original_split = ec.get("split", "test")
+    original_threshold = ec.get("threshold", 0.5)
+    original_sweep = ec.get("threshold_sweep", False)
+    original_alias_split = alias_ec.get("split", original_split) if isinstance(alias_ec, dict) else original_split
+    original_alias_threshold = alias_ec.get("threshold", original_threshold) if isinstance(alias_ec, dict) else original_threshold
+    original_alias_sweep = alias_ec.get("threshold_sweep", original_sweep) if isinstance(alias_ec, dict) else original_sweep
     ec["split"] = "test"
+    ec["threshold"] = threshold
+    ec["threshold_sweep"] = False
     cfg["evaluation"] = ec
+    if isinstance(alias_ec, dict):
+        alias_ec["split"] = "test"
+        alias_ec["threshold"] = threshold
+        alias_ec["threshold_sweep"] = False
+        cfg["eval"] = alias_ec
 
     try:
         test_loader = build_test_loader(cfg)
     except Exception as exc:
         logger.warning(f"[final_eval] Could not build test loader: {exc}. Skipping.")
         ec["split"] = original_split
+        ec["threshold"] = original_threshold
+        ec["threshold_sweep"] = original_sweep
         cfg["evaluation"] = ec
+        if isinstance(alias_ec, dict):
+            alias_ec["split"] = original_alias_split
+            alias_ec["threshold"] = original_alias_threshold
+            alias_ec["threshold_sweep"] = original_alias_sweep
+            cfg["eval"] = alias_ec
         return None
-    finally:
-        ec["split"] = original_split
-        cfg["evaluation"] = ec
 
     dataset_name = cfg.get("dataset", {}).get("name", "unknown")
     num_test = len(test_loader.dataset)
     if num_test == 0:
         logger.warning("[final_eval] Test dataset is empty. Skipping final evaluation.")
+        ec["split"] = original_split
+        ec["threshold"] = original_threshold
+        ec["threshold_sweep"] = original_sweep
+        cfg["evaluation"] = ec
+        if isinstance(alias_ec, dict):
+            alias_ec["split"] = original_alias_split
+            alias_ec["threshold"] = original_alias_threshold
+            alias_ec["threshold_sweep"] = original_alias_sweep
+            cfg["eval"] = alias_ec
         return None
     logger.info(f"  Test samples : {num_test}  |  Dataset : {dataset_name}")
 
@@ -136,13 +196,33 @@ def run_final_test_evaluation(
     amp = bool(cfg.get("hardware", {}).get("mixed_precision", True))
     evaluator = Evaluator(cfg, device, logger=logger, save_dir=test_results_dir)
 
-    results = evaluator.evaluate(model, test_loader, dataset_name=dataset_name, amp=amp)
+    try:
+        raw_results = evaluator.evaluate(model, test_loader, dataset_name=dataset_name, amp=amp)
+    finally:
+        ec["split"] = original_split
+        ec["threshold"] = original_threshold
+        ec["threshold_sweep"] = original_sweep
+        cfg["evaluation"] = ec
+        if isinstance(alias_ec, dict):
+            alias_ec["split"] = original_alias_split
+            alias_ec["threshold"] = original_alias_threshold
+            alias_ec["threshold_sweep"] = original_alias_sweep
+            cfg["eval"] = alias_ec
 
     # ── Augment results with metadata ────────────────────────────────────────
-    results["tta"]          = bool(cfg.get("evaluation", {}).get("use_tta", False))
-    results["threshold"]    = results.get("best_threshold", 0.5)
-    results["checkpoint"]   = str(ckpt_path)
-    results["ema_applied"]  = ema_applied
+    if _is_second_dataset(cfg):
+        results = {
+            key: raw_results.get(key)
+            for key in ("OA", "mIoU", "SeK", "Fscd")
+            if key in raw_results
+        }
+    else:
+        results = _paper_binary_metrics(raw_results)
+    results["threshold"] = threshold
+    results["threshold_source"] = threshold_source
+    results["checkpoint"] = str(ckpt_path)
+    results["ema_used"] = ema_applied
+    results["ema_found"] = bool(load_info["ema_found"])
 
     # ── Save test_metrics.json ────────────────────────────────────────────────
     json_path = test_results_dir / "test_metrics.json"
@@ -188,14 +268,6 @@ def _make_logger() -> logging.Logger:
 
 
 def _save_json(results: dict, path: Path) -> None:
-    if results.get("metric_family") == "second":
-        serialisable = {
-            key: round(float(results[key]), 6)
-            for key in ("OA", "mIoU", "SeK", "Fscd")
-            if key in results and results[key] is not None
-        }
-        path.write_text(json.dumps(serialisable, indent=2))
-        return
     serialisable = {}
     for k, v in results.items():
         if isinstance(v, float):
@@ -208,22 +280,13 @@ def _save_json(results: dict, path: Path) -> None:
 
 
 def _save_csv(results: dict, path: Path) -> None:
-    if results.get("metric_family") == "second":
-        keys = [key for key in ("OA", "mIoU", "SeK", "Fscd") if key in results]
-        with open(path, "w", newline="") as f:
-            w = csv.writer(f)
-            w.writerow(keys)
-            w.writerow([round(float(results[k]), 6) if results[k] is not None else "" for k in keys])
-        return
-    numeric_keys = [
-        k for k, v in results.items()
-        if isinstance(v, (int, float)) and k not in ("num_samples",)
-    ]
+    metric_order = ["Pre", "Rec", "F1", "IoU", "OA", "mIoU", "SeK", "Fscd"]
+    keys = [key for key in metric_order if key in results]
+    keys.extend([key for key in ("threshold", "threshold_source", "ema_used", "ema_found", "checkpoint") if key in results])
     with open(path, "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(numeric_keys)
-        w.writerow([round(results[k], 6) if isinstance(results[k], float) else results[k]
-                    for k in numeric_keys])
+        w.writerow(keys)
+        w.writerow([round(results[k], 6) if isinstance(results[k], float) else results[k] for k in keys])
 
 
 def _build_summary(results: dict) -> str:
@@ -232,13 +295,6 @@ def _build_summary(results: dict) -> str:
         "FINAL TEST RESULTS",
         _SEP,
     ]
-    if results.get("metric_family") == "second":
-        for key in ("OA", "mIoU", "SeK", "Fscd"):
-            value = results.get(key)
-            if value is not None:
-                lines.append(f"{key:<16}: {float(value):.4f}")
-        lines.append(_SEP)
-        return "\n".join(lines) + "\n"
 
     def _fmt(key: str, label: str) -> Optional[str]:
         v = results.get(key)
@@ -250,22 +306,36 @@ def _build_summary(results: dict) -> str:
             return f"{label:<16}: {v:.4f}"
         return f"{label:<16}: {v}"
 
-    ordered = [
-        ("f1",             "F1"),
-        ("iou",            "IoU"),
-        ("miou",           "mIoU"),
-        ("precision",      "Precision"),
-        ("recall",         "Recall"),
-        ("oa",             "OA"),
-        ("boundary_f1",    "Boundary F1"),
-        ("edge_iou",       "Edge IoU"),
-        ("pred_positive_ratio", "Pred Pos Ratio"),
-        ("gt_positive_ratio",   "GT Pos Ratio"),
-        ("threshold",      "Best Thresh"),
-        ("tta",            "TTA Enabled"),
-        ("ema_applied",    "EMA Applied"),
-    ]
+    if "Fscd" in results or "mIoU" in results:
+        for key in ("OA", "mIoU", "SeK", "Fscd"):
+            value = results.get(key)
+            if value is not None:
+                lines.append(f"{key:<16}: {float(value):.4f}")
+        lines.append(_DASH)
+        for key, label in [
+            ("threshold", "Threshold"),
+            ("threshold_source", "Threshold Src"),
+            ("ema_used", "EMA Used"),
+            ("ema_found", "EMA Found"),
+        ]:
+            row = _fmt(key, label)
+            if row:
+                lines.append(row)
+        lines.append(_SEP)
+        return "\n".join(lines) + "\n"
+
+    ordered = [("Pre", "Pre"), ("Rec", "Rec"), ("F1", "F1"), ("IoU", "IoU"), ("OA", "OA")]
     for key, label in ordered:
+        row = _fmt(key, label)
+        if row:
+            lines.append(row)
+    lines.append(_DASH)
+    for key, label in [
+        ("threshold", "Threshold"),
+        ("threshold_source", "Threshold Src"),
+        ("ema_used", "EMA Used"),
+        ("ema_found", "EMA Found"),
+    ]:
         row = _fmt(key, label)
         if row:
             lines.append(row)

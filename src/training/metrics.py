@@ -44,6 +44,10 @@ class StreamingMetrics:
         if pred_b.dim() == 3:
             pred_b = pred_b.unsqueeze(1)
         tgt = targets.float()
+        if tgt.numel() and tgt.max() > 1:
+            tgt = (tgt > 127).float()
+        else:
+            tgt = (tgt > 0.5).float()
         if tgt.dim() == 3:
             tgt = tgt.unsqueeze(1)
 
