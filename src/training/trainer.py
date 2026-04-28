@@ -36,6 +36,7 @@ from training.boundary_metrics import BoundaryMetrics
 from training.checkpoint       import save as save_ckpt, peek as peek_ckpt
 from training.logger           import log_table
 from training.ema              import EMA
+from training.model_outputs    import normalize_model_output
 from utils.visualization       import save_prediction_grid
 
 
@@ -154,6 +155,13 @@ class Trainer:
         self.bnd_width     = int(bm_cfg.get("boundary_width", 3))
         self.bnd_tol       = int(bm_cfg.get("tolerance", 2))
         self.dataset_name  = cfg.get("dataset", {}).get("name", "unknown")
+        self.model_output_mode = str(cfg.get("model", {}).get("output_mode", "binary")).lower()
+        self.dataset_mode = str(cfg.get("dataset", {}).get("mode", "binary")).lower()
+        self.second_semantic_mode = (
+            str(self.dataset_name).upper() == "SECOND"
+            and self.model_output_mode == "semantic_change"
+            and self.dataset_mode == "semantic"
+        )
 
         # NaN detection / diagnostics
         self.skip_nan_steps   = bool(tc.get("skip_nan_steps", True))
@@ -264,12 +272,23 @@ class Trainer:
     def _step(self, batch: dict):
         ia = batch["image_a"].to(self.device, non_blocking=self.non_blocking_transfer)
         ib = batch["image_b"].to(self.device, non_blocking=self.non_blocking_transfer)
-        lb = batch["label"].to(self.device, non_blocking=self.non_blocking_transfer)
         ignore_mask = batch.get("ignore_mask")
         valid_mask = None
         if ignore_mask is not None and torch.is_tensor(ignore_mask):
             ignore_mask = ignore_mask.to(self.device, non_blocking=self.non_blocking_transfer)
             valid_mask = (ignore_mask <= 0.5).float()
+        if self.second_semantic_mode:
+            lb = batch["change_mask"].to(self.device, non_blocking=self.non_blocking_transfer)
+            if "valid_mask" in batch and torch.is_tensor(batch["valid_mask"]):
+                valid_mask = batch["valid_mask"].to(self.device, non_blocking=self.non_blocking_transfer).float()
+            semantic_batch = {
+                "change_mask": lb,
+                "label_a": batch["label_a"].to(self.device, non_blocking=self.non_blocking_transfer),
+                "label_b": batch["label_b"].to(self.device, non_blocking=self.non_blocking_transfer),
+                "valid_mask": valid_mask,
+            }
+        else:
+            lb = batch["label"].to(self.device, non_blocking=self.non_blocking_transfer)
 
         # Collect D-RBI debug tensors every nan_diag_every iterations
         iteration   = getattr(self, "_current_iter", 0)
@@ -281,24 +300,43 @@ class Trainer:
             debug_info["f2"] = ib
 
         with torch.amp.autocast("cuda", enabled=self.amp and self.device.type == "cuda"):
-            logits, aux = self.model(ia, ib)
-            # Clamp logits before loss to prevent BCE/Dice from receiving inf values.
-            logits = torch.clamp(logits, -20.0, 20.0)
-            total, primary_loss, dice = self.loss_fn(logits, lb, valid_mask=valid_mask)
-            loss_stats = dict(getattr(self.loss_fn, "latest_stats", {}))
+            outputs = normalize_model_output(self.model(ia, ib))
+            logits = torch.clamp(outputs["change_logits"], -20.0, 20.0)
+            outputs["change_logits"] = logits
+            aux = outputs.get("aux_logits")
             if aux is not None:
-                aux = torch.clamp(aux, -20.0, 20.0)
-                aux_total, _, _ = self.loss_fn(aux, lb, valid_mask=valid_mask)
-                total = total + self.aux_weight * aux_total
-            if not loss_stats:
-                loss_stats = {
-                    "total_loss": float(total.detach().item()),
-                    "dice_loss": float(dice.detach().item()),
-                    "focal_loss": float(primary_loss.detach().item()),
-                    "sek_loss": 0.0,
-                    "soft_kappa": 0.0,
-                    "sek_was_sanitized": False,
-                }
+                outputs["aux_logits"] = torch.clamp(aux, -20.0, 20.0)
+
+            if self.second_semantic_mode:
+                total = self.loss_fn(outputs, semantic_batch)
+                loss_stats = dict(getattr(self.loss_fn, "latest_stats", {}))
+                if not loss_stats:
+                    loss_stats = {
+                        "total_loss": float(total.detach().item()),
+                        "change_loss": 0.0,
+                        "semantic_ce_loss": 0.0,
+                        "consistency_loss": 0.0,
+                        "sek_loss": 0.0,
+                        "dice_loss": 0.0,
+                        "focal_loss": 0.0,
+                        "soft_kappa": 0.0,
+                        "sek_was_sanitized": False,
+                    }
+            else:
+                total, primary_loss, dice = self.loss_fn(logits, lb, valid_mask=valid_mask)
+                loss_stats = dict(getattr(self.loss_fn, "latest_stats", {}))
+                if aux is not None:
+                    aux_total, _, _ = self.loss_fn(outputs["aux_logits"], lb, valid_mask=valid_mask)
+                    total = total + self.aux_weight * aux_total
+                if not loss_stats:
+                    loss_stats = {
+                        "total_loss": float(total.detach().item()),
+                        "dice_loss": float(dice.detach().item()),
+                        "focal_loss": float(primary_loss.detach().item()),
+                        "sek_loss": 0.0,
+                        "soft_kappa": 0.0,
+                        "sek_was_sanitized": False,
+                    }
 
         # ------ Fail-fast NaN/Inf detection --------------------------------
         loss_val = total.item()
@@ -313,6 +351,11 @@ class Trainer:
                 "logits": logits,
                 "loss":   total,
             }
+            if self.second_semantic_mode:
+                if outputs.get("sem_logits_t1") is not None:
+                    tensor_checks["sem_logits_t1"] = outputs["sem_logits_t1"]
+                if outputs.get("sem_logits_t2") is not None:
+                    tensor_checks["sem_logits_t2"] = outputs["sem_logits_t2"]
             for name, t in tensor_checks.items():
                 if not torch.isfinite(t).all():
                     self.logger.warning(
@@ -334,6 +377,9 @@ class Trainer:
                     "sek_loss": float("nan"),
                     "soft_kappa": float("nan"),
                     "bce_loss": float("nan"),
+                    "change_loss": float("nan"),
+                    "semantic_ce_loss": float("nan"),
+                    "consistency_loss": float("nan"),
                 }
         # ------ End NaN detection ------------------------------------------
 
@@ -360,11 +406,14 @@ class Trainer:
 
         return {
             "loss": loss_val,
-            "dice_loss": float(loss_stats.get("dice_loss", float(dice.detach().item()))),
+            "dice_loss": float(loss_stats.get("dice_loss", 0.0 if self.second_semantic_mode else float(dice.detach().item()))),
             "focal_loss": float(loss_stats.get("focal_loss", 0.0)),
             "sek_loss": float(loss_stats.get("sek_loss", 0.0)),
             "soft_kappa": float(loss_stats.get("soft_kappa", 0.0)),
             "bce_loss": float(loss_stats.get("bce_loss", 0.0)),
+            "change_loss": float(loss_stats.get("change_loss", 0.0)),
+            "semantic_ce_loss": float(loss_stats.get("semantic_ce_loss", 0.0)),
+            "consistency_loss": float(loss_stats.get("consistency_loss", 0.0)),
         }
 
     # ------------------------------------------------------------------
@@ -375,6 +424,17 @@ class Trainer:
         # Apply EMA weights for validation if enabled
         if self.ema is not None:
             self.ema.apply_shadow(self.model)
+
+        if self.second_semantic_mode:
+            from training.evaluator import Evaluator
+
+            evaluator = Evaluator(self.cfg, self.device, logger=self.logger, save_dir=self.val_dir)
+            result = evaluator.evaluate(self.model, self.val_loader, dataset_name=self.dataset_name, amp=self.amp)
+            if self.ema is not None:
+                self.ema.restore(self.model)
+            self.model.train()
+            result["ema_enabled"] = self.ema is not None
+            return result
 
         self.model.eval()
         pix_metrics = StreamingMetrics(threshold=self.threshold)
@@ -391,7 +451,7 @@ class Trainer:
             ib = batch["image_b"].to(self.device, non_blocking=self.non_blocking_transfer)
             lbl_key = "label" if "label" in batch else "mask"
             lb = batch[lbl_key].to(self.device, non_blocking=self.non_blocking_transfer)
-            logits, _ = self.model(ia, ib)
+            logits = normalize_model_output(self.model(ia, ib))["change_logits"]
             pix_metrics.update(logits, lb)
             bnd_metrics.update(logits, lb)
 
@@ -453,13 +513,18 @@ class Trainer:
         except Exception as _e:
             self.logger.warning(f"Dataset stats logging skipped: {_e}")
 
-        csv_cols = [
-            "iteration", "dataset",
-            "f1", "iou", "miou", "precision", "recall", "oa",
-            "boundary_f1", "edge_iou",
-            "pred_positive_ratio", "gt_positive_ratio",
-            "best_threshold",
-        ]
+        if self.second_semantic_mode:
+            csv_cols = [
+                "iteration", "dataset", "OA", "mIoU", "SeK", "Fscd",
+            ]
+        else:
+            csv_cols = [
+                "iteration", "dataset",
+                "f1", "iou", "miou", "precision", "recall", "oa",
+                "boundary_f1", "edge_iou",
+                "pred_positive_ratio", "gt_positive_ratio",
+                "best_threshold",
+            ]
         if not self.val_csv.exists():
             with open(self.val_csv, "w", newline="") as f:
                 csv.writer(f).writerow(csv_cols)
@@ -492,7 +557,16 @@ class Trainer:
                 def _fmt(v):
                     return f"{v:.4f}" if isinstance(v, float) and not (v != v) else "NaN"
                 loss_type = str(self.cfg.get("loss", {}).get("type", "bce_dice")).lower().replace("-", "_")
-                if loss_type == "bce_dice":
+                if self.second_semantic_mode:
+                    msg = (
+                        f"[{iteration+1}/{self.max_iter}] "
+                        f"loss={_fmt(step_stats['loss'])} "
+                        f"change={_fmt(step_stats['change_loss'])} "
+                        f"sem_ce={_fmt(step_stats['semantic_ce_loss'])} "
+                        f"cons={_fmt(step_stats['consistency_loss'])} "
+                        f"sek={_fmt(step_stats['sek_loss'])} lr={lr:.2e}"
+                    )
+                elif loss_type == "bce_dice":
                     msg = (
                         f"[{iteration+1}/{self.max_iter}] "
                         f"loss={_fmt(step_stats['loss'])} "
@@ -518,6 +592,10 @@ class Trainer:
                     self.writer.add_scalar("train/sek_loss", step_stats["sek_loss"], iteration)
                     self.writer.add_scalar("train/soft_kappa", step_stats["soft_kappa"], iteration)
                     self.writer.add_scalar("train/bce", step_stats["bce_loss"], iteration)
+                    if self.second_semantic_mode:
+                        self.writer.add_scalar("train/change_loss", step_stats["change_loss"], iteration)
+                        self.writer.add_scalar("train/semantic_ce_loss", step_stats["semantic_ce_loss"], iteration)
+                        self.writer.add_scalar("train/consistency_loss", step_stats["consistency_loss"], iteration)
                     self.writer.add_scalar("train/lr", lr, iteration)
 
             if pbar:
@@ -543,6 +621,8 @@ class Trainer:
                     csv.writer(f).writerow(row)
 
                 monitor_val = vm.get(self.monitor, vm.get("f1", 0.0))
+                if monitor_val is None:
+                    monitor_val = float("-inf") if self.monitor_mode == "max" else float("inf")
                 is_best = (
                     monitor_val > self.best_metric
                     if self.monitor_mode == "max"
@@ -569,6 +649,14 @@ class Trainer:
         sep = "-" * 42
         self.logger.info(sep)
         self.logger.info(f"Validation Results  (iter {iteration})")
+        if self.second_semantic_mode:
+            self.logger.info(f"  OA              : {vm.get('OA', 0.0):.4f}")
+            self.logger.info(f"  mIoU            : {vm.get('mIoU', 0.0):.4f}")
+            sek_val = vm.get('SeK')
+            self.logger.info(f"  SeK             : {'N/A' if sek_val is None else f'{sek_val:.4f}'}")
+            self.logger.info(f"  Fscd            : {vm.get('Fscd', 0.0):.4f}")
+            self.logger.info(sep)
+            return
         self.logger.info(f"  Best Threshold  : {vm.get('best_threshold', self.threshold):.2f}")
         self.logger.info(f"  F1              : {vm.get('f1', 0.0):.4f}")
         self.logger.info(f"  IoU (change)    : {vm.get('iou', 0.0):.4f}")

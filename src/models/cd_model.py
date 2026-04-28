@@ -14,7 +14,7 @@ decoder.dilation_rates : [1,2,4,8] — only used by adaptive_rf decoder
 """
 from __future__ import annotations
 
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -22,6 +22,7 @@ import torch.nn.functional as F
 
 from models.backbone.mambavision_builder import build as build_backbone
 from models.decoders import DECODER_REGISTRY
+from models.decoders.semantic_heads import LightweightSemanticHead
 
 
 class SiameseMambaCD(nn.Module):
@@ -132,20 +133,44 @@ class DRBISiameseMambaCD(nn.Module):
     def __init__(self, cfg: dict) -> None:
         super().__init__()
         from models.modules.differential_region_boundary import DifferentialRegionBoundaryInteraction
+        from models.modules.cram_lite import CRAMLiteBank
 
         model_cfg  = cfg["model"]
         dec_cfg    = cfg.get("decoder", {})
         diff_cfg   = cfg.get("difference", {})
+        cram_cfg   = cfg.get("model", {}).get("cram_lite", {})
+        dataset_cfg = cfg.get("dataset", {})
 
         variant    = model_cfg.get("variant", "tiny2")
         pretrained = bool(model_cfg.get("pretrained", True))
         dec_name   = model_cfg.get("decoder", "adaptive_rf")
         out_ch     = int(dec_cfg.get("channels", 256))
+        self.output_mode = str(model_cfg.get("output_mode", "binary")).lower()
+        self.enable_semantic_heads = bool(model_cfg.get("enable_semantic_heads", False))
+        self.semantic_head_type = str(model_cfg.get("semantic_head_type", "lightweight")).lower()
+        self.semantic_num_classes = int(model_cfg.get("semantic_num_classes", dataset_cfg.get("num_classes", 7)))
 
         # ── Shared encoder ─────────────────────────────────────────────
         self.encoder = build_backbone(variant, pretrained=pretrained)
         self.variant = getattr(self.encoder, "model_name", variant)
         channels: List[int] = self.encoder.channels   # e.g. [80, 160, 320, 640]
+
+        if self.output_mode == "semantic_change":
+            if not self.enable_semantic_heads:
+                raise ValueError(
+                    "model.output_mode=semantic_change requires model.enable_semantic_heads=true."
+                )
+            if self.semantic_head_type != "lightweight":
+                raise ValueError(
+                    f"Unsupported semantic_head_type={self.semantic_head_type!r}. Only 'lightweight' is implemented."
+                )
+            self.semantic_head = LightweightSemanticHead(
+                channels=channels,
+                num_classes=self.semantic_num_classes,
+                hidden_channels=int(model_cfg.get("semantic_head_channels", out_ch)),
+            )
+        else:
+            self.semantic_head = None
 
         # ── D-RBI fusion (one per encoder scale) ───────────────────────
         self.use_drbi = bool(diff_cfg.get("enabled", True))
@@ -164,6 +189,7 @@ class DRBISiameseMambaCD(nn.Module):
                     use_product       = bool(diff_cfg.get("use_product",  False)),
                     product_scale     = float(diff_cfg.get("product_scale", 0.25)),
                     use_absdiff       = bool(diff_cfg.get("use_absdiff",  True)),
+                    use_signed_diff   = bool(diff_cfg.get("use_signed_diff", False)),
                     pre_norm          = bool(diff_cfg.get("pre_norm",     True)),
                     use_region_gate   = bool(diff_cfg.get("use_region_gate",   True)),
                     use_boundary_gate = bool(diff_cfg.get("use_boundary_gate", True)),
@@ -190,6 +216,21 @@ class DRBISiameseMambaCD(nn.Module):
             dec_kwargs["residual_scale"]        = float(dec_cfg.get("residual_scale", 0.1))
             dec_kwargs["use_depthwise"]         = bool(dec_cfg.get("use_depthwise", True))
         self.decoder = decoder_cls(**dec_kwargs)
+        self._decoder_accepts_boundary_features = dec_name == "adaptive_rf"
+
+        # ── Optional CRAMLite attention on D-RBI region features ───────
+        cram_enabled = bool(cram_cfg.get("enabled", False))
+        if cram_enabled and self.use_drbi:
+            drbi_ch = int(diff_cfg.get("out_channels", out_ch))
+            apply_stages = list(cram_cfg.get("apply_stages", [0, 1, 2]))
+            alpha_init   = float(cram_cfg.get("alpha", 0.5))
+            self.cram_lite = CRAMLiteBank(
+                channels_list=[drbi_ch] * len(channels),
+                apply_stages=apply_stages,
+                alpha_init=alpha_init,
+            )
+        else:
+            self.cram_lite = None
 
     # ------------------------------------------------------------------
     def forward(
@@ -197,7 +238,7 @@ class DRBISiameseMambaCD(nn.Module):
         img_a: torch.Tensor,
         img_b: torch.Tensor,
         **_,
-    ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+    ) -> Any:
         out_size = img_a.shape[-2:]
 
         feats_a = self.encoder(img_a)   # List[[B, C_i, H_i, W_i]]
@@ -210,9 +251,31 @@ class DRBISiameseMambaCD(nn.Module):
                 out = dm(fa, fb)
                 region_feats.append(out["region"])
                 boundary_feats.append(out["boundary"])
-            return self.decoder(region_feats, None, out_size, boundary_features=boundary_feats)
+            # Apply CRAMLite spatial attention to region features if enabled
+            if self.cram_lite is not None:
+                region_feats = self.cram_lite.apply(region_feats)
+            if self._decoder_accepts_boundary_features:
+                change_logits, aux_logits = self.decoder(region_feats, None, out_size, boundary_features=boundary_feats)
+            else:
+                zero_feats = [torch.zeros_like(feat) for feat in region_feats]
+                change_logits, aux_logits = self.decoder(region_feats, zero_feats, out_size)
         else:
-            return self.decoder(feats_a, feats_b, out_size)
+            change_logits, aux_logits = self.decoder(feats_a, feats_b, out_size)
+
+        if self.output_mode != "semantic_change":
+            return change_logits, aux_logits
+
+        if self.semantic_head is None:
+            raise RuntimeError("semantic_change output requested but semantic_head is not initialized.")
+
+        sem_logits_t1 = self.semantic_head(feats_a, out_size)
+        sem_logits_t2 = self.semantic_head(feats_b, out_size)
+        return {
+            "change_logits": change_logits,
+            "sem_logits_t1": sem_logits_t1,
+            "sem_logits_t2": sem_logits_t2,
+            "aux_logits": aux_logits,
+        }
 
 
 def build_model(cfg: dict) -> nn.Module:
@@ -233,11 +296,13 @@ def build_model(cfg: dict) -> nn.Module:
     output_mode = str(model_cfg.get("output_mode", "binary")).lower()
     dataset_mode = str(dataset_cfg.get("mode", "binary")).lower()
 
-    if output_mode == "semantic":
-        raise NotImplementedError(
-            "model.output_mode=semantic is reserved for future semantic change detection. "
-            "The current model only supports binary logits. "
-            "For SECOND semantic-label training today, set dataset.mode=semantic and keep model.output_mode=binary."
+    if output_mode not in {"binary", "semantic_change"}:
+        raise ValueError(
+            f"Unsupported model.output_mode={output_mode!r}. Valid options: 'binary' or 'semantic_change'."
+        )
+    if output_mode == "semantic_change" and dataset_mode != "semantic":
+        raise ValueError(
+            "model.output_mode=semantic_change requires dataset.mode=semantic."
         )
 
     mode = str(model_cfg.get("mode", "dual")).lower()
@@ -253,4 +318,3 @@ def build_model(cfg: dict) -> nn.Module:
         # or always — it handles the fallback internally
         return DRBISiameseMambaCD(cfg)
     raise ValueError(f"Unknown model.mode: {mode!r}. Valid options: dual")
-

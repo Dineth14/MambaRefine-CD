@@ -1,0 +1,68 @@
+experiment:
+  name: ablation_mambarefinecd
+  output_root: outputs/ablation/
+
+datasets:
+  active:
+    - WHU-CD
+
+training:
+  max_iter: 50000
+  val_every: 5000
+  batch_size: 8
+  lr: 1e-4
+  amp: true
+  ema: true
+
+ablation:
+  enable: true
+  experiments:
+    baseline:
+      description: Full model
+
+    no_drbi:
+      model:
+        disable_drbi: true
+
+    no_boundary_branch:
+      model:
+        disable_boundary: true
+
+    no_rf_decoder:
+      model:
+        decoder_type: simple
+
+    no_boundary_refinement:
+      model:
+        disable_boundary_refinement: true
+
+    no_difference_features:
+      model:
+        disable_diff_features: true
+
+    alpha_zero:
+      decoder:
+        alpha: 0.0
+
+    alpha_high:
+      decoder:
+        alpha: 0.1
+
+    fixed_dilation:
+      decoder:
+        dilation_rates: [1]
+
+    bce_only:
+      loss:
+        use_dice: false
+        use_boundary: false
+
+    bce_dice:
+      loss:
+        use_dice: true
+        use_boundary: false
+
+    full_loss:
+      loss:
+        use_dice: true
+        use_boundary: true

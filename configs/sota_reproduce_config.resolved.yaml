@@ -52,8 +52,8 @@ external_models:
   ChangeFormer:
     enabled: true
     repo_url: https://github.com/wgcban/ChangeFormer.git
-    repo_dir: external/ChangeFormer
-    weights_dir: external_weights/ChangeFormer
+    repo_dir: ../mercon_cd/external/ChangeFormer
+    weights_dir: ../mercon_cd/external_weights/ChangeFormer
     adapter: changeformer
     official_weights:
       LEVIR-CD:
@@ -65,14 +65,14 @@ external_models:
       WHU-CD:
         type: missing
     resolved_checkpoints:
-      LEVIR-CD: external_weights/ChangeFormer/LEVIR-CD/CD_ChangeFormerV6_LEVIR_b16_lr0.0001_adamw_train_test_200_linear_ce_multi_train_True_multi_infer_False_shuffle_AB_False_embed_dim_256/best_ckpt.pt
+      LEVIR-CD: null
       WHU-CD: null
-      DSIFN-CD: external_weights/ChangeFormer/DSIFN-CD/CD_ChangeFormerV6_DSIFN_b16_lr0.00006_adamw_train_test_200_linear_ce_multi_train_True_multi_infer_False_shuffle_AB_False_embed_dim_256/best_ckpt.pt
+      DSIFN-CD: null
   BIT:
     enabled: true
     repo_url: https://github.com/justchenhao/BIT_CD.git
-    repo_dir: external/BIT_CD
-    weights_dir: external_weights/BIT
+    repo_dir: ../mercon_cd/external/BIT_CD
+    weights_dir: ../mercon_cd/external_weights/BIT
     adapter: bit
     official_weights:
       LEVIR-CD:
@@ -85,14 +85,14 @@ external_models:
       DSIFN-CD:
         type: missing
     resolved_checkpoints:
-      LEVIR-CD: external/BIT_CD/checkpoints/BIT_LEVIR/best_ckpt.pt
+      LEVIR-CD: null
       WHU-CD: null
       DSIFN-CD: null
   SNUNet:
     enabled: true
     repo_url: https://github.com/likyoo/Siam-NestedUNet.git
-    repo_dir: external/Siam-NestedUNet
-    weights_dir: external_weights/SNUNet
+    repo_dir: ../mercon_cd/external/Siam-NestedUNet
+    weights_dir: ../mercon_cd/external_weights/SNUNet
     adapter: snunet
     official_weights:
       LEVIR-CD:
@@ -108,8 +108,8 @@ external_models:
   STANet:
     enabled: true
     repo_url: https://github.com/justchenhao/STANet.git
-    repo_dir: external/STANet
-    weights_dir: external_weights/STANet
+    repo_dir: ../mercon_cd/external/STANet
+    weights_dir: ../mercon_cd/external_weights/STANet
     adapter: stanet
     official_weights:
       LEVIR-CD:
@@ -125,8 +125,8 @@ external_models:
   Mamba-CD:
     enabled: true
     repo_url: https://github.com/JayParanjape/M-CD.git
-    repo_dir: external/M-CD
-    weights_dir: external_weights/M-CD
+    repo_dir: ../mercon_cd/external/M-CD
+    weights_dir: ../mercon_cd/external_weights/M-CD
     adapter: mcd
     official_weights:
       LEVIR-CD:
@@ -145,4 +145,4 @@ our_model:
   checkpoint_paths:
     LEVIR-CD: outputs/run_20260425_213731_refine_mamba_cd/checkpoints/best.pth
     WHU-CD: outputs/whu_experiment/run_20260426_015454_WHU-CD/checkpoints/best.pth
-    DSIFN-CD: null
+    DSIFN-CD: outputs/dsifn_experiment/run_20260426_100846_DSIFN_experiment/checkpoints/best.pth

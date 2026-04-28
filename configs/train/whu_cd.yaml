@@ -1,0 +1,88 @@
+experiment:
+  name: WHU_experiment
+  output_root: outputs/whu_experiment
+
+hardware:
+  device: cuda
+  gpu_ids: [1]
+  mixed_precision: true
+
+model:
+  mode: dual
+  backbone: mambavision
+  variant: base
+  decoder: adaptive_rf
+  pretrained: true
+  output_mode: binary
+  enable_semantic_heads: false
+  semantic_head_type: lightweight
+  semantic_num_classes: 7
+  num_classes: 1
+  return_features: false
+  freeze_backbone: false
+
+training:
+  max_iterations: 50000
+  batch_size: 8
+  lr: 5e-5
+  optimizer: adamw
+  scheduler: cosine
+  warmup_iterations: 2500
+  validate_every: 5000
+  log_every: 20
+  gradient_clip: 0.5
+  weight_decay: 0.01
+  skip_nan_steps: true
+  nan_diag_every: 50
+  non_blocking_transfer: true
+
+dataset:
+  name: WHU-CD
+  task_type: binary_change
+  mode: binary
+  binary: true
+  image_size: 256
+  num_workers: 8
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 4
+  val_ratio: 0.2
+  augment: true
+  split: train
+  ignore_index: 255
+
+validation:
+  batch_size: 4
+  save_samples: true
+  sample_count: 16
+  split: val
+
+evaluation:
+  split: test
+  threshold: 0.5
+  threshold_sweep: true
+  threshold_list: [0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60]
+  threshold_select_metric: F1_1
+  second_metrics: false
+  compute_SeK: false
+  sek_binary_fallback: false
+  use_tta: false
+  tta_augmentations: [original, hflip, vflip, rot90]
+  save_predictions: false
+
+loss:
+  type: dice_focal_sek
+  dice_weight: 1.0
+  focal_weight: 0.2
+  focal_gamma: 1.5
+  sek_weight: 0.05
+  sek_mode: binary
+  sek_eps: 1e-6
+  sek_separate_nochange: true
+  bce_weight: 1.0
+
+checkpoint:
+  path: null
+  monitor: f1
+  mode: max
+  save_best_only: true

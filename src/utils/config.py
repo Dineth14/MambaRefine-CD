@@ -3,10 +3,14 @@
 All entry scripts load a single config file:
     configs/global_config.yaml
 
+Training can optionally layer a dataset-specific override config on top of the
+global base config.
+
 The returned object supports both dict-style and dot-style access.
 """
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +18,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 GLOBAL_CONFIG_PATH = ROOT / "configs" / "global_config.yaml"
+TRAIN_CONFIG_DIR = ROOT / "configs" / "train"
 
 
 class Config(dict):
@@ -69,6 +74,108 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
         else:
             result[key] = value
     return result
+
+
+def _plain_dict(data: dict[str, Any] | Config) -> dict[str, Any]:
+    if isinstance(data, Config):
+        return data.to_dict()
+    return deepcopy(dict(data))
+
+
+def _apply_ablation_aliases(merged: dict[str, Any], override: dict[str, Any]) -> None:
+    """Translate paper-facing ablation switches to runtime config keys."""
+    training_override = override.get("training", {}) if isinstance(override.get("training", {}), dict) else {}
+    model_override = override.get("model", {}) if isinstance(override.get("model", {}), dict) else {}
+    decoder_override = override.get("decoder", {}) if isinstance(override.get("decoder", {}), dict) else {}
+    loss_override = override.get("loss", {}) if isinstance(override.get("loss", {}), dict) else {}
+
+    merged.setdefault("training", {})
+    merged.setdefault("hardware", {})
+    merged.setdefault("ema", {})
+    merged.setdefault("model", {})
+    merged.setdefault("difference", {})
+    merged.setdefault("decoder", {})
+    merged.setdefault("loss", {})
+    merged.setdefault("boundary_metrics", {})
+
+    if "max_iter" in training_override:
+        merged["training"]["max_iterations"] = training_override["max_iter"]
+    if "val_every" in training_override:
+        merged["training"]["validate_every"] = training_override["val_every"]
+    if "amp" in training_override:
+        merged["hardware"]["mixed_precision"] = bool(training_override["amp"])
+    if "ema" in training_override:
+        merged["ema"]["enabled"] = bool(training_override["ema"])
+
+    if bool(model_override.get("disable_drbi", False)):
+        merged["difference"]["enabled"] = False
+
+    if bool(model_override.get("disable_boundary", False)):
+        merged["difference"]["use_boundary_gate"] = False
+
+    if bool(model_override.get("disable_boundary_refinement", False)):
+        merged["decoder"]["use_boundary_residual"] = False
+
+    if bool(model_override.get("disable_diff_features", False)):
+        merged["difference"]["use_absdiff"] = False
+        merged["difference"]["use_product"] = False
+
+    decoder_type = model_override.get("decoder_type")
+    if decoder_type is not None:
+        decoder_name = "baseline" if str(decoder_type).lower() == "simple" else str(decoder_type)
+        merged["model"]["decoder"] = decoder_name
+        merged["decoder"]["type"] = decoder_name
+
+    if "alpha" in decoder_override:
+        merged["decoder"]["residual_scale"] = decoder_override["alpha"]
+
+    if loss_override:
+        use_dice = loss_override.get("use_dice")
+        use_boundary = loss_override.get("use_boundary")
+        if use_dice is False and use_boundary is False:
+            merged["loss"]["type"] = "bce_dice"
+            merged["loss"]["bce_weight"] = 1.0
+            merged["loss"]["dice_weight"] = 0.0
+            merged["loss"]["boundary_weight"] = 0.0
+            merged["loss"]["focal_weight"] = 0.0
+            merged["loss"]["sek_weight"] = 0.0
+        elif use_dice is True and use_boundary is False:
+            merged["loss"]["type"] = "bce_dice"
+            merged["loss"]["bce_weight"] = 1.0
+            merged["loss"]["dice_weight"] = 1.0
+            merged["loss"]["boundary_weight"] = 0.0
+            merged["loss"]["focal_weight"] = 0.0
+            merged["loss"]["sek_weight"] = 0.0
+        elif use_dice is True and use_boundary is True:
+            merged["loss"]["type"] = merged["loss"].get("full_type", "dice_focal_sek")
+            merged["loss"]["dice_weight"] = 1.0
+            merged["loss"].setdefault("focal_weight", 0.2)
+            merged["loss"].setdefault("sek_weight", 0.05)
+
+
+def apply_ablation(cfg: dict[str, Any] | Config, ablation_cfg: dict[str, Any] | Config) -> Config:
+    """Return a config with ablation overrides recursively applied.
+
+    The merge is non-destructive for the input objects and preserves Config
+    dot-access semantics on the returned object.
+    """
+    base = _plain_dict(cfg)
+    override = _plain_dict(ablation_cfg)
+    merged = _deep_merge(base, override)
+    _apply_ablation_aliases(merged, override)
+    return Config(_normalize_config(merged))
+
+
+def _resolve_config_path(path: str | Path) -> Path:
+    config_path = Path(path)
+    if not config_path.is_absolute():
+        config_path = (ROOT / config_path).resolve()
+    return config_path
+
+
+def _read_yaml(path: Path) -> dict[str, Any]:
+    with path.open("r", encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
 
 
 def _match_dataset_entry(catalog: dict[str, Any], dataset_name: str) -> dict[str, Any] | None:
@@ -137,6 +244,8 @@ def _normalize_config(data: dict[str, Any]) -> dict[str, Any]:
     model.setdefault("output_mode", "binary")
     model.setdefault("num_classes", 1)
     model.setdefault("semantic_num_classes", int(data.get("dataset", {}).get("num_classes", 7)))
+    model.setdefault("enable_semantic_heads", False)
+    model.setdefault("semantic_head_type", "lightweight")
     data["model"] = model
 
     # Preserve checkpoint path for eval/validate in one place.
@@ -159,10 +268,12 @@ def _normalize_config(data: dict[str, Any]) -> dict[str, Any]:
     dataset_cfg.setdefault("pin_memory", True)
     dataset_cfg.setdefault("persistent_workers", True)
     dataset_cfg.setdefault("prefetch_factor", 4)
+    dataset_cfg.setdefault("task_type", "semantic_change" if str(dataset_cfg.get("mode", "binary")).lower() == "semantic" else "binary_change")
     dataset_cfg.setdefault("precompute_second_binary_masks", False)
     dataset_cfg.setdefault("second_binary_cache_dir", "outputs/second_binary_masks")
     dataset_cfg.setdefault("cache_images_in_ram", False)
     dataset_cfg.setdefault("cache_masks_in_ram", False)
+    dataset_cfg.setdefault("second_label_palette", None)
     data["dataset"] = dataset_cfg
 
     evaluation = data.get("evaluation", {})
@@ -178,13 +289,21 @@ def _normalize_config(data: dict[str, Any]) -> dict[str, Any]:
     loss_cfg = data.get("loss", {})
     loss_cfg.setdefault("type", "bce_dice")
     loss_cfg.setdefault("dice_weight", 1.0)
+    loss_cfg.setdefault("boundary_weight", 0.0)
     loss_cfg.setdefault("focal_weight", 0.3)
     loss_cfg.setdefault("focal_gamma", 1.5)
     loss_cfg.setdefault("bce_weight", 1.0)
     loss_cfg.setdefault("sek_weight", 0.05)
+    loss_cfg.setdefault("change_loss_weight", 1.0)
+    loss_cfg.setdefault("semantic_loss_weight", 0.5)
+    loss_cfg.setdefault("consistency_loss_weight", 0.2)
+    loss_cfg.setdefault("sek_loss_weight", 0.3)
+    loss_cfg.setdefault("ce_weight", 1.0)
     loss_cfg.setdefault("sek_mode", str(dataset_cfg.get("mode", "binary")))
     loss_cfg.setdefault("sek_eps", 1e-6)
     loss_cfg.setdefault("sek_separate_nochange", False)
+    loss_cfg.setdefault("consistency_detach_semantic", True)
+    loss_cfg.setdefault("consistency_loss_type", "bce")
     data["loss"] = loss_cfg
 
     debug = data.get("debug", {})
@@ -226,7 +345,10 @@ def _normalize_config(data: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
-def load_config() -> Config:
-    with GLOBAL_CONFIG_PATH.open("r", encoding="utf-8") as f:
-        raw = yaml.safe_load(f) or {}
+def load_config(path: str | Path | None = None) -> Config:
+    config_path = GLOBAL_CONFIG_PATH if path is None else _resolve_config_path(path)
+    if config_path == GLOBAL_CONFIG_PATH:
+        raw = _read_yaml(config_path)
+    else:
+        raw = _deep_merge(_read_yaml(GLOBAL_CONFIG_PATH), _read_yaml(config_path))
     return Config(_normalize_config(raw))

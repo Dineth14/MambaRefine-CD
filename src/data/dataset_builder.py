@@ -139,6 +139,7 @@ def build_dataset(
             "cache_images_in_ram": bool(dataset_cfg.get("cache_images_in_ram", False)),
             "cache_masks_in_ram": bool(dataset_cfg.get("cache_masks_in_ram", False)),
             "profile_enabled": bool(dataset_cfg.get("profile_enabled", False)),
+            "second_label_palette": dataset_cfg.get("second_label_palette"),
         })
     else:
         if "image_a_dir_candidates" in dataset_cfg:

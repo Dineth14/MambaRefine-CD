@@ -134,6 +134,7 @@ class DifferentialRegionBoundaryInteraction(nn.Module):
         use_product       : include F1n*F2n in input (default False -- numerically risky)
         product_scale     : scale factor applied to product term (default 0.25)
         use_absdiff       : include |F2n-F1n| in input (default True)
+        use_signed_diff   : include F2n-F1n (signed) in input (default False)
         pre_norm          : apply GroupNorm to F1,F2 before diff/product (default True)
         use_region_gate   : apply learnable region gate G_r (ablation switch)
         use_boundary_gate : apply Sobel-conditioned gate G_b (ablation switch)
@@ -153,6 +154,7 @@ class DifferentialRegionBoundaryInteraction(nn.Module):
         use_product       : bool  = False,
         product_scale     : float = 0.25,
         use_absdiff       : bool  = True,
+        use_signed_diff   : bool  = False,
         pre_norm          : bool  = True,
         use_region_gate   : bool  = True,
         use_boundary_gate : bool  = True,
@@ -168,6 +170,7 @@ class DifferentialRegionBoundaryInteraction(nn.Module):
         self.use_product       = use_product
         self.product_scale     = product_scale
         self.use_absdiff       = use_absdiff
+        self.use_signed_diff   = use_signed_diff
         self.pre_norm          = pre_norm
         self.use_region_gate   = use_region_gate
         self.use_boundary_gate = use_boundary_gate
@@ -178,8 +181,8 @@ class DifferentialRegionBoundaryInteraction(nn.Module):
             self.norm_f1 = _group_norm(in_channels)
             self.norm_f2 = _group_norm(in_channels)
 
-        # Number of input streams: always F1n, F2n; optionally |diff|, product
-        n_streams   = 2 + int(use_absdiff) + int(use_product)
+        # Number of input streams: always F1n, F2n; optionally |diff|, signed diff, product
+        n_streams   = 2 + int(use_absdiff) + int(use_signed_diff) + int(use_product)
         in_ch_total = in_channels * n_streams
 
         # Step 1: bottleneck compression
@@ -237,6 +240,9 @@ class DifferentialRegionBoundaryInteraction(nn.Module):
         parts = [f1n, f2n]
         if self.use_absdiff:
             parts.append(torch.abs(f2n - f1n))
+        if self.use_signed_diff:
+            # Signed temporal difference captures directionality of change
+            parts.append(f2n - f1n)
         if self.use_product:
             parts.append(self.product_scale * f1n * f2n)
         x = torch.cat(parts, dim=1)   # [B, n*C, H, W]

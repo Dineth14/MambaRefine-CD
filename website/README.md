@@ -13,6 +13,7 @@ Then open `http://localhost:8000`.
 
 ```bash
 python scripts/extract_all_results_for_website.py
+python scripts/extract_mambacd_protocol_results.py
 ```
 
 Outputs:
@@ -20,6 +21,11 @@ Outputs:
 - `website/assets/data/ours_results.json`
 - `website/assets/data/ours_results.csv`
 - `website/assets/data/ours_results_all_candidates.json`
+- `website/assets/data/mambacd_protocol_ours.json`
+- `website/assets/data/mambacd_protocol_ours.csv`
+- `website/assets/data/mambacd_protocol_ours_all_candidates.json`
+- `website/assets/data/mambacd_paper_comparison.json`
+- `website/assets/data/mambacd_paper_comparison.csv`
 
 ## Reproduce SOTA evaluations
 
@@ -70,11 +76,14 @@ Outputs:
 ## Validate website
 
 ```bash
+python scripts/validate_mambacd_protocol_tables.py
 python scripts/validate_website.py
 ```
 
 Outputs:
 
+- `outputs/website_validation/mambacd_protocol_validation.json`
+- `outputs/website_validation/mambacd_protocol_validation.md`
 - `outputs/website_validation/website_validation_report.json`
 - `outputs/website_validation/website_validation_report.md`
 
@@ -89,8 +98,27 @@ Outputs:
 ## Where to edit values manually
 
 - Verified local results: `website/assets/data/ours_results.json`
+- Mamba-CD protocol local results: `website/assets/data/mambacd_protocol_ours.json`
+- Mamba-CD paper comparison rows: `website/assets/data/mambacd_paper_comparison.json`
 - Reproduced comparison rows: `website/assets/data/reproduced_sota_results.json`
 - External local-source results: `website/assets/data/external_sota_results.json`
 - Efficiency values: `website/assets/data/ours_efficiency.json`
 - Qualitative manifest: `website/assets/qualitative/manifest.json`
 - Static content and section text: `website/index.html`
+
+## Mamba-CD protocol note
+
+- The Mamba-CD protocol table has been added to the website.
+- Paper F1 corresponds to change-class `F1_1`, not `mF1`.
+- MambaRefine-CD maps paper metrics to `precision_1`, `recall_1`, `F1_1`, `IoU_1`, and `OA`.
+- Literature values are copied from the Mamba-CD paper tables.
+- Our values are extracted from local evaluation logs and result files.
+
+## SECOND semantic outputs
+
+True semantic SECOND evaluations are emitted under the normal eval directory as:
+
+- `second_metrics.json` / `second_metrics.csv`
+- `second_semantic_metrics.json` / `second_semantic_metrics.csv`
+
+The website should treat `SeK` as valid only when those semantic outputs come from `model.output_mode: semantic_change` with timestamp-wise semantic predictions enabled.

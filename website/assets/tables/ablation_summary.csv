@@ -1,0 +1,1 @@
+dataset,experiment,method,F1_1,IoU_1,OA,Precision_1,Recall_1,Boundary_F1,best_threshold,delta_F1,eval_file

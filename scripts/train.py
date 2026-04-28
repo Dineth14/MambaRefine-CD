@@ -1,173 +1,164 @@
-"""Training entry point.
+"""Training script for MambaRefineCD.
 
-Configuration is loaded only from configs/global_config.yaml.
-No CLI arguments needed.
+Supports all four datasets with metric restriction per dataset:
+  - LEVIR-CD / WHU-CD / DSIFN-CD: Pre, Rec, F1, IoU, OA
+  - SECOND:                        OA, mIoU, SeK, Fscd
 
 Usage:
-    conda activate mamba_new
-    cd mercon_cd_clean
-    python scripts/train.py
+    python scripts/train.py --config configs/ablations/levir/a4_full.yaml
+    python scripts/train.py --config configs/ablations/second/a4_full.yaml
+    python scripts/train.py --config configs/ablations/levir/a4_full.yaml --dry_run
+    python scripts/train.py --config configs/train/levir_cd.yaml  # old-style config
 """
 from __future__ import annotations
 
-import json
-import math
-import shutil
+import argparse
+import logging
 import sys
-from datetime import datetime
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
+# Ensure repo root and src are on path
+_REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(_REPO / "src"))
+sys.path.insert(0, str(_REPO))
 
-import torch
-from torch.utils.tensorboard import SummaryWriter
-
-from utils.config         import GLOBAL_CONFIG_PATH, load_config
-from utils.seed           import set_seed
-from data.factory         import build_dataloaders
-from models.cd_model      import build_model
-from training.losses      import build_loss
-from training.trainer     import Trainer
-from training.logger      import get_logger
-from training.checkpoint  import find_latest, peek as peek_ckpt
-from training.final_eval  import run_final_test_evaluation
+from utils.config import load_config
 
 
-def _dataset_run_label(exp_name: str, dataset_name: str) -> str:
-    dataset_slug = dataset_name.replace("/", "-").replace(" ", "_")
-    if dataset_slug.lower() in exp_name.lower():
-        return exp_name
-    return f"{exp_name}_{dataset_slug}"
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s  %(levelname)-8s  %(message)s",
+    datefmt="%H:%M:%S",
+)
+logger = logging.getLogger(__name__)
 
 
-def _cosine_schedule(optimizer, max_iter: int, warmup: int, eta_min: float = 1e-5):
-    def lr_fn(it: int) -> float:
-        if it < warmup:
-            return max(it / max(warmup, 1), 1e-4)
-        prog = (it - warmup) / max(max_iter - warmup, 1)
-        return eta_min + 0.5 * (1.0 - eta_min) * (1.0 + math.cos(math.pi * prog))
-    return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_fn)
+# --------------------------------------------------------------------------
+# Metric restrictions
+# --------------------------------------------------------------------------
+_BINARY_ALLOWED = {"Pre", "Rec", "F1", "IoU", "OA"}
+_SECOND_ALLOWED = {"OA", "mIoU", "SeK", "Fscd"}
 
+
+def _get_allowed_metrics(cfg: dict) -> list[str]:
+    """Return the set of allowed metric names for this config."""
+    explicit = cfg.get("metrics", {}).get("allowed", None)
+    if explicit is not None:
+        return list(explicit)
+    task = str(cfg.get("task", cfg.get("dataset", {}).get("task_type", "binary_cd"))).lower()
+    if "SECOND" in str(cfg.get("dataset", {}).get("name", "")).upper() or task == "semantic_cd":
+        return ["OA", "mIoU", "SeK", "Fscd"]
+    return ["Pre", "Rec", "F1", "IoU", "OA"]
+
+
+def _filter_metrics(raw: dict, allowed: list[str]) -> dict:
+    """Return only the keys in `allowed` from `raw`."""
+    return {k: v for k, v in raw.items() if k in allowed}
+
+
+# --------------------------------------------------------------------------
+# Main
+# --------------------------------------------------------------------------
 
 def main() -> None:
-    cfg = load_config()
-    exp = cfg.experiment
-    tc  = cfg.training
-    hw  = cfg.hardware
-    ds  = cfg.dataset
+    parser = argparse.ArgumentParser(description="Train MambaRefineCD.")
+    parser.add_argument("--config", required=True, help="Path to training config YAML.")
+    parser.add_argument("--dry_run", action="store_true",
+                        help="Build model and run one batch; do not train.")
+    parser.add_argument("--resume", type=str, default=None,
+                        help="Path to checkpoint to resume from.")
+    args = parser.parse_args()
 
-    set_seed(int(exp.seed))
+    config_path = Path(args.config)
+    if not config_path.exists():
+        logger.error(f"Config not found: {config_path}")
+        sys.exit(1)
 
-    # ── Output directory ──────────────────────────────────────────────────────
-    ts       = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_label = _dataset_run_label(str(exp.name), str(ds.name))
-    run_name = f"run_{ts}_{run_label}"
-    out_dir  = ROOT / exp.output_root / run_name
-    out_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy(GLOBAL_CONFIG_PATH, out_dir / "config.yaml")
+    cfg = load_config(str(config_path))
+    allowed = _get_allowed_metrics(cfg)
 
-    # ── Logger ────────────────────────────────────────────────────────────────
-    logger = get_logger(exp.name, out_dir / "logs")
-    logger.info(f"Experiment : {exp.name}")
-    logger.info(f"Dataset    : {ds.name}  mode={ds.get('mode', 'binary')}")
-    logger.info(f"Output dir : {out_dir}")
+    logger.info(f"Config: {config_path}")
+    logger.info(f"Dataset: {cfg.get('dataset', {}).get('name', 'unknown')}")
+    logger.info(f"Allowed metrics: {allowed}")
 
-    # ── Resume pre-processing ─────────────────────────────────────────────────
-    resume_cfg = cfg.resume
-    if resume_cfg.enabled:
-        raw = resume_cfg.checkpoint_path
-        if not raw:
-            found = find_latest(ROOT / exp.output_root)
-            if found is None:
-                raise FileNotFoundError("resume.checkpoint_path is null and no run_*/best.pth found.")
-            raw = str(found)
-            logger.info(f"Auto-found checkpoint: {raw}")
-            cfg.resume.checkpoint_path = raw
-        # Resolve relative path
-        p = Path(raw)
-        if not p.is_absolute():
-            p = (ROOT / p).resolve()
-            cfg.resume.checkpoint_path = str(p)
-        meta = peek_ckpt(p)
-        resume_info = {
-            "source": str(p),
-            "resume_iteration": meta.get("iteration", 0),
-            "best_metric_at_resume": meta.get("best_metric", 0.0),
-        }
-        (out_dir / "resume_info.json").write_text(json.dumps(resume_info, indent=2))
-        logger.info(f"Resuming from iter {meta.get('iteration', 0)}, best={meta.get('best_metric', 0):.4f}")
+    if args.resume:
+        cfg.setdefault("resume", {})
+        cfg["resume"]["enabled"] = True
+        cfg["resume"]["checkpoint_path"] = args.resume
 
-    # ── Device ────────────────────────────────────────────────────────────────
-    device_str = hw.device
-    device     = torch.device(device_str if torch.cuda.is_available() else "cpu")
-    if device.type == "cuda" and device.index is not None:
-        torch.cuda.set_device(device.index)
-    logger.info(f"Device : {device}")
+    if args.dry_run:
+        logger.info("=== DRY RUN MODE ===")
+        _dry_run(cfg, allowed)
+        return
 
-    # ── Data ──────────────────────────────────────────────────────────────────
-    train_loader, val_loader = build_dataloaders(cfg)
-    logger.info(f"Train samples : {len(train_loader.dataset)} | Val tiles : {len(val_loader.dataset)}")
+    # Run full training pipeline
+    from training.pipeline import run_training_pipeline
 
-    # ── Model ─────────────────────────────────────────────────────────────────
+    # Patch allowed metrics into cfg so the pipeline can filter logs
+    cfg.setdefault("metrics", {})["allowed"] = list(allowed)
+
+    run_training_pipeline(cfg)
+
+
+def _dry_run(cfg: dict, allowed: list[str]) -> None:
+    """Build model + dataset, run one forward pass; verify metric restriction."""
+    import torch
+    from models.mambarefinecd import build_model
+    from datasets import build_dataset
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    logger.info(f"Device: {device}")
+
+    # Build model
     model = build_model(cfg).to(device)
-    total_p     = sum(p.numel() for p in model.parameters())
-    trainable_p = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    variant     = cfg.model.variant
-    logger.info(f"Variant          : {variant}")
-    logger.info(f"Total params     : {total_p / 1e6:.2f}M")
-    logger.info(f"Trainable params : {trainable_p / 1e6:.2f}M")
-    (out_dir / "model_info.json").write_text(json.dumps({
-        "variant": variant,
-        "total_params": total_p,
-        "trainable_params": trainable_p,
-        "encoder_channels": model.encoder.channels,
-    }, indent=2))
+    n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    logger.info(f"Model parameters: {n_params / 1e6:.2f}M")
 
-    if bool(cfg.model.freeze_backbone):
-        for p in model.encoder.parameters():
-            p.requires_grad_(False)
-        logger.info("Backbone frozen.")
+    # Build dataset
+    ds = build_dataset(cfg, split="train")
+    logger.info(f"Dataset size (train): {len(ds)}")
 
-    # ── Optimizer + Scheduler ─────────────────────────────────────────────────
-    lr        = float(tc.lr)
-    wd        = float(tc.weight_decay)
-    opt_name  = tc.optimizer
-    optimizer = getattr(torch.optim, opt_name)(
-        filter(lambda p: p.requires_grad, model.parameters()), lr=lr, weight_decay=wd
-    )
-    max_iter = int(tc.max_iterations)
-    warmup   = int(tc.warmup_iterations)
-    scheduler = _cosine_schedule(optimizer, max_iter, warmup)
+    # One forward pass
+    sample = ds[0]
+    img_a = sample["image_a"].unsqueeze(0).to(device)
+    img_b = sample["image_b"].unsqueeze(0).to(device)
 
-    # ── Loss ──────────────────────────────────────────────────────────────────
-    loss_fn = build_loss(cfg)
+    model.eval()
+    with torch.no_grad():
+        out = model(img_a, img_b)
+    logger.info(f"Forward pass OK. Output type: {type(out)}")
 
-    # ── TensorBoard ───────────────────────────────────────────────────────────
-    writer = SummaryWriter(log_dir=str(out_dir / "tensorboard"))
+    # Compute metrics (binary CD)
+    is_second = "SECOND" in str(cfg.get("dataset", {}).get("name", "")).upper()
+    if is_second:
+        from metrics.second_scd_metrics import SECONDSCDMetrics
+        logger.info(f"Metric class: SECONDSCDMetrics")
+        from training.model_outputs import normalize_model_output
+        outputs = normalize_model_output(out)
+        missing = [key for key in ("sem_logits_t1", "sem_logits_t2") if outputs.get(key) is None]
+        if missing:
+            raise RuntimeError(f"SECOND dry run missing semantic outputs: {missing}")
+        logger.info(
+            "SECOND output shapes: sem_logits_t1=%s sem_logits_t2=%s change_logits=%s",
+            tuple(outputs["sem_logits_t1"].shape),
+            tuple(outputs["sem_logits_t2"].shape),
+            tuple(outputs["change_logits"].shape),
+        )
+    else:
+        from metrics.binary_cd_metrics import BinaryMetrics
+        m = BinaryMetrics()
+        # Fake forward
+        fake_logits = torch.zeros(1, 1, 256, 256)
+        fake_gt     = torch.zeros(1, 256, 256, dtype=torch.long)
+        m.update(fake_logits, fake_gt)
+        results = m.compute()
+        results_filtered = _filter_metrics(results, allowed)
+        logger.info(f"Metric keys (allowed only): {list(results_filtered.keys())}")
+        assert set(results_filtered.keys()) <= set(allowed), \
+            f"Metric keys {set(results_filtered.keys())} not subset of {allowed}"
 
-    # ── Trainer ───────────────────────────────────────────────────────────────
-    trainer = Trainer(
-        cfg=cfg, model=model, loss_fn=loss_fn,
-        optimizer=optimizer, scheduler=scheduler,
-        train_loader=train_loader, val_loader=val_loader,
-        device=device, output_dir=out_dir,
-        logger=logger, writer=writer,
-    )
-    trainer.train()
-    writer.close()
-
-    # ── Post-training: automatic test evaluation ──────────────────────────────
-    run_final_test_evaluation(
-        cfg        = cfg,
-        model      = model,
-        output_dir = out_dir,
-        device     = device,
-        ema        = trainer.ema,
-        logger     = logger,
-    )
-
-    logger.info("Done.")
+    logger.info("=== DRY RUN PASSED ===")
+    logger.info(f"Confirmed log will contain only: {allowed}")
 
 
 if __name__ == "__main__":

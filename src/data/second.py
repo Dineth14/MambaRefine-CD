@@ -42,6 +42,16 @@ _B_CANDS = ["B", "im2", "img2", "imageB", "T2", "time2"]
 _LABEL_A_CANDS = ["label1", "labelA", "label_t1", "semantic1", "sem1"]
 _LABEL_B_CANDS = ["label2", "labelB", "label_t2", "semantic2", "sem2"]
 _BINARY_LABEL_CANDS = ["label", "change", "change_label", "mask", "binary"]
+_SECOND_DEFAULT_COLOR_MAP = {
+    (0, 0, 0): 0,
+    (255, 255, 255): 0,
+    (0, 128, 0): 1,
+    (128, 128, 128): 2,
+    (0, 255, 0): 3,
+    (0, 0, 255): 4,
+    (128, 0, 0): 5,
+    (255, 0, 0): 6,
+}
 
 _SPLIT_ALIASES = {
     "train": ["train", "trainset", "training", "Train"],
@@ -215,6 +225,18 @@ def _build_semantic_lookup_arrays(
     return keys, values
 
 
+def _normalize_palette(palette: Optional[dict[Any, Any] | list[Any]]) -> dict[tuple[int, int, int], int]:
+    if not palette:
+        return {}
+    normalized: dict[tuple[int, int, int], int] = {}
+    items = palette.items() if isinstance(palette, dict) else enumerate(palette)
+    for class_id, color in items:
+        if not isinstance(color, (list, tuple)) or len(color) < 3:
+            continue
+        normalized[tuple(int(v) for v in color[:3])] = int(class_id)
+    return normalized
+
+
 def _decode_semantic_label(
     arr: np.ndarray,
     color_map: dict[tuple[int, int, int], int],
@@ -378,6 +400,7 @@ class SECONDDataset(Dataset):
         cache_images_in_ram: bool = False,
         cache_masks_in_ram: bool = False,
         profile_enabled: bool = False,
+        second_label_palette: Optional[dict[Any, Any]] = None,
     ) -> None:
         self.root = Path(root)
         self.split = split
@@ -395,6 +418,7 @@ class SECONDDataset(Dataset):
         self.cache_images_in_ram = bool(cache_images_in_ram)
         self.cache_masks_in_ram = bool(cache_masks_in_ram)
         self.profile_enabled = bool(profile_enabled)
+        self.second_label_palette = _normalize_palette(second_label_palette)
         self.profile_stats = {
             "getitem_calls": 0,
             "io_time": 0.0,
@@ -449,6 +473,7 @@ class SECONDDataset(Dataset):
         self._log_size_summary()
         self._prime_ram_cache()
         self._warn_unexpected_class_ids()
+        self._log_class_histogram()
 
     def _resolve_base_dir(self) -> Path:
         base = self.split_dir if self.split_dir is not None else self.root
@@ -471,6 +496,10 @@ class SECONDDataset(Dataset):
             "mode": self.mode,
             "ignore_index": self.ignore_index,
             "num_classes": self.num_classes,
+            "second_label_palette": {
+                str(class_id): list(color)
+                for color, class_id in self.semantic_color_map.items()
+            },
             "a_candidates": list(self.a_candidates),
             "b_candidates": list(self.b_candidates),
             "label_a_candidates": list(self.label_a_candidates),
@@ -482,13 +511,9 @@ class SECONDDataset(Dataset):
         return _INDEX_CACHE_DIR / f"SECOND_index_{self.split}.json"
 
     def _build_semantic_color_map(self) -> dict[tuple[int, int, int], int]:
-        palette_dirs: list[Optional[Path]] = [self.label_a_dir, self.label_b_dir]
-        for split_name in ("train", "val", "test"):
-            split_base = _find_split_dir(self.root, split_name, self.split_names.get(split_name))
-            base = split_base if split_base is not None else self.root
-            palette_dirs.append(_detect_dir(base, self.label_a_candidates))
-            palette_dirs.append(_detect_dir(base, self.label_b_candidates))
-        return _discover_semantic_color_map(palette_dirs, self.num_classes)
+        if self.second_label_palette:
+            return self.second_label_palette
+        return dict(_SECOND_DEFAULT_COLOR_MAP)
 
     def _load_or_build_entries(self) -> list[dict[str, Any]]:
         signature = _config_signature(self._index_signature_payload())
@@ -720,6 +745,39 @@ class SECONDDataset(Dataset):
         if unexpected:
             warnings.warn(f"SECONDDataset [{self.split}] observed unexpected class IDs: {unexpected}", stacklevel=2)
 
+    def _log_class_histogram(self) -> None:
+        if self.label_a_dir is None or self.label_b_dir is None:
+            return
+        hist_a = Counter()
+        hist_b = Counter()
+        valid_pixels = 0
+        changed_pixels = 0
+        for entry in self.entries:
+            if not entry.get("valid", False) or not entry.get("label_a_path") or not entry.get("label_b_path"):
+                continue
+            label_a = self._load_semantic_label(Path(entry["label_a_path"]))
+            label_b = self._load_semantic_label(Path(entry["label_b_path"]))
+            valid = (label_a != self.ignore_index) & (label_b != self.ignore_index)
+            changed = valid & (label_a != label_b)
+            valid_pixels += int(valid.sum())
+            changed_pixels += int(changed.sum())
+            if valid.any():
+                classes_a, counts_a = np.unique(label_a[valid], return_counts=True)
+                classes_b, counts_b = np.unique(label_b[valid], return_counts=True)
+                hist_a.update({int(cls): int(cnt) for cls, cnt in zip(classes_a.tolist(), counts_a.tolist())})
+                hist_b.update({int(cls): int(cnt) for cls, cnt in zip(classes_b.tolist(), counts_b.tolist())})
+        if valid_pixels == 0:
+            logger.warning("SECOND [%s] class histogram skipped because no valid semantic pixels were found.", self.split)
+            return
+        logger.info(
+            "SECOND [%s] semantic histogram | valid_pixels=%s | changed_ratio=%.4f | t1=%s | t2=%s",
+            self.split,
+            valid_pixels,
+            float(changed_pixels / valid_pixels),
+            dict(sorted(hist_a.items())),
+            dict(sorted(hist_b.items())),
+        )
+
     def __len__(self) -> int:
         return len(self.entries) if self.split == "train" else len(self.tiles or [])
 
@@ -896,11 +954,14 @@ class SECONDDataset(Dataset):
             "id": entry["sample_id"],
             "name": entry["sample_id"],
             "ignore_mask": tensor_ignore,
+            "valid_mask": (1.0 - tensor_ignore),
         }
         if self.mode == "semantic":
             sample.update({
                 "label_a": tensor_label_a,
                 "label_b": tensor_label_b,
+                "label_t1": tensor_label_a,
+                "label_t2": tensor_label_b,
                 "change_mask": tensor_change,
                 "mask": tensor_change,
                 "label": tensor_change,

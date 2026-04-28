@@ -13,6 +13,41 @@
     return String(value);
   }
 
+  function toNumeric(value) {
+    if (value === null || value === undefined || value === "" || value === "TBD") {
+      return null;
+    }
+    if (typeof value === "number") {
+      return Number.isFinite(value) ? value : null;
+    }
+    var parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function safePercent(value) {
+    var numeric = toNumeric(value);
+    if (numeric === null) {
+      return "TBD";
+    }
+    return (numeric * 100).toFixed(2);
+  }
+
+  function safePercentCell(value) {
+    var numeric = toNumeric(value);
+    if (numeric === null) {
+      return "TBD";
+    }
+    return numeric.toFixed(2);
+  }
+
+  function safeThreshold(value) {
+    var numeric = toNumeric(value);
+    if (numeric === null) {
+      return "TBD";
+    }
+    return numeric.toFixed(2);
+  }
+
   function renderSourceBadge(sourceKind) {
     var cls = "badge-missing";
     var label = "Pending";
@@ -42,7 +77,31 @@
     return '<span class="badge ' + cls + '">' + label + "</span>";
   }
 
-  function makeMetricTable(data) {
+  function makeMetricSummary(dataset, data) {
+    if (dataset === "SECOND") {
+      return "";
+    }
+    var protocolKeys = [
+      ["Pre", safePercent(data.Precision_1)],
+      ["Rec", safePercent(data.Recall_1)],
+      ["F1", safePercent(data.F1_1)],
+      ["IoU", safePercent(data.IoU_1)],
+      ["OA", safePercent(data.OA)],
+      ["Threshold", safeThreshold(data.threshold)]
+    ];
+    var hasAnyMetric = protocolKeys.some(function (item) {
+      return item[1] !== "TBD";
+    });
+    if (!hasAnyMetric) {
+      return '<p class="status-note">Pending evaluation</p>';
+    }
+    var cards = protocolKeys.map(function (item) {
+      return '<article class="metric-card"><span class="metric-card-label">' + item[0] + '</span><strong class="metric-card-value">' + item[1] + '</strong></article>';
+    }).join("");
+    return '<div class="metric-card-grid">' + cards + "</div>";
+  }
+
+  function makeMetricTable(dataset, data) {
     var metrics = [
       "mF1", "F1_1", "F1_0", "mIoU", "IoU_1", "IoU_0",
       "Precision_1", "Recall_1", "OA", "Boundary F1", "Edge IoU", "threshold"
@@ -53,7 +112,8 @@
     rows += "<tr><td>Source</td><td>" + renderSourceBadge(data.source_kind) + "</td></tr>";
     rows += "<tr><td>Source file</td><td>" + safeText(data.source_file) + "</td></tr>";
     rows += "<tr><td>Run directory</td><td>" + safeText(data.run_directory) + "</td></tr>";
-    return '<table class="data-table"><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody>' + rows + "</tbody></table>";
+    return makeMetricSummary(dataset, data) +
+      '<div class="table-scroll"><table class="data-table"><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody>' + rows + "</tbody></table></div>";
   }
 
   function renderOursResults(payload) {
@@ -65,7 +125,7 @@
       var data = payload.results[dataset] || { source_kind: "missing" };
       return '<section class="surface-card tab-panel' + (index === 0 ? " is-active" : "") + '" id="ours-' + dataset + '">' +
         "<h3>" + dataset + "</h3>" +
-        makeMetricTable(data) +
+        makeMetricTable(dataset, data) +
         "</section>";
     }).join("");
 
@@ -143,6 +203,92 @@
     container.innerHTML = panels.join("");
   }
 
+  function distinctDescending(values) {
+    var out = [];
+    values.slice().sort(function (a, b) { return b - a; }).forEach(function (value) {
+      if (!out.some(function (item) { return Math.abs(item - value) < 1e-9; })) {
+        out.push(value);
+      }
+    });
+    return out;
+  }
+
+  function metricRankMap(rows, metricKey) {
+    var values = rows.map(function (row) { return toNumeric(row[metricKey]); }).filter(function (value) {
+      return value !== null;
+    });
+    var unique = distinctDescending(values);
+    return {
+      best: unique.length > 0 ? unique[0] : null,
+      second: unique.length > 1 ? unique[1] : null
+    };
+  }
+
+  function protocolCellClass(value, rankInfo) {
+    var numeric = toNumeric(value);
+    if (numeric === null) {
+      return "";
+    }
+    if (rankInfo.best !== null && Math.abs(numeric - rankInfo.best) < 1e-9) {
+      return "metric-best";
+    }
+    if (rankInfo.second !== null && Math.abs(numeric - rankInfo.second) < 1e-9) {
+      return "metric-second";
+    }
+    return "";
+  }
+
+  function renderProtocolComparison(payload) {
+    var container = byId("mambacd-protocol-panels");
+    if (!container || !payload || !payload.datasets) return;
+    var datasets = ["LEVIR-CD", "WHU-CD", "DSIFN-CD"];
+    container.innerHTML = datasets.map(function (dataset, index) {
+      var rows = payload.datasets[dataset] || [];
+      var preRanks = metricRankMap(rows, "Pre (%)");
+      var recRanks = metricRankMap(rows, "Rec (%)");
+      var f1Ranks = metricRankMap(rows, "F1 (%)");
+      var iouRanks = metricRankMap(rows, "IoU (%)");
+      var oaRanks = metricRankMap(rows, "OA (%)");
+      var tableRows = rows.map(function (row) {
+        var rowClass = "";
+        if (row.Method === "MambaRefine-CD") {
+          rowClass = " protocol-row-ours";
+        } else if (row.Method === "Mamba-CD") {
+          rowClass = " protocol-row-mambacd";
+        }
+        return '<tr class="' + rowClass.trim() + '">' +
+          "<td>" + safeText(row.Method) + "</td>" +
+          "<td>" + safeText(row.Year) + "</td>" +
+          '<td class="' + protocolCellClass(row["Pre (%)"], preRanks) + '">' + safePercentCell(row["Pre (%)"]) + "</td>" +
+          '<td class="' + protocolCellClass(row["Rec (%)"], recRanks) + '">' + safePercentCell(row["Rec (%)"]) + "</td>" +
+          '<td class="' + protocolCellClass(row["F1 (%)"], f1Ranks) + '">' + safePercentCell(row["F1 (%)"]) + "</td>" +
+          '<td class="' + protocolCellClass(row["IoU (%)"], iouRanks) + '">' + safePercentCell(row["IoU (%)"]) + "</td>" +
+          '<td class="' + protocolCellClass(row["OA (%)"], oaRanks) + '">' + safePercentCell(row["OA (%)"]) + "</td>" +
+          "<td>" + safeText(row.Source) + "</td>" +
+          "</tr>";
+      }).join("");
+      return '<section class="surface-card tab-panel' + (index === 0 ? " is-active" : "") + '" id="protocol-' + dataset + '">' +
+        "<h3>" + dataset + "</h3>" +
+        '<div class="table-scroll"><table class="data-table"><thead><tr><th>Method</th><th>Year</th><th>Pre (%)</th><th>Rec (%)</th><th>F1 (%)</th><th>IoU (%)</th><th>OA (%)</th><th>Source</th></tr></thead><tbody>' + tableRows + "</tbody></table></div>" +
+        "</section>";
+    }).join("");
+  }
+
+  function renderProtocolNotes(payload) {
+    var container = byId("mambacd-protocol-notes");
+    if (!container || !payload || !payload.datasets) return;
+    var dsifnRows = payload.datasets["DSIFN-CD"] || [];
+    var oursDsifn = dsifnRows.find(function (row) { return row.Method === "MambaRefine-CD"; }) || {};
+    var dsifnText = toNumeric(oursDsifn["F1 (%)"]) === null
+      ? "DSIFN-CD is pending until a local protocol evaluation result is available."
+      : "DSIFN-CD local protocol metrics were extracted from local evaluation logs.";
+    container.innerHTML = [
+      "<li>WHU-CD result is competitive and close to Mamba-CD.</li>",
+      "<li>LEVIR-CD is below Mamba-CD in change F1/IoU.</li>",
+      "<li>" + dsifnText + "</li>"
+    ].join("");
+  }
+
   function renderQualitative(payload) {
     var container = byId("qualitative-grid");
     if (!container) return;
@@ -161,6 +307,100 @@
         "<p>Qualitative result pending. Run scripts/collect_website_qualitative.py after evaluation.</p>" +
         "</article>";
     }).join("");
+  }
+
+  function parseCsv(text) {
+    if (!text) return [];
+    var rows = [];
+    var row = [];
+    var cell = "";
+    var inQuotes = false;
+    for (var i = 0; i < text.length; i += 1) {
+      var ch = text[i];
+      var next = text[i + 1];
+      if (ch === '"' && inQuotes && next === '"') {
+        cell += '"';
+        i += 1;
+      } else if (ch === '"') {
+        inQuotes = !inQuotes;
+      } else if (ch === "," && !inQuotes) {
+        row.push(cell);
+        cell = "";
+      } else if ((ch === "\n" || ch === "\r") && !inQuotes) {
+        if (ch === "\r" && next === "\n") i += 1;
+        row.push(cell);
+        if (row.some(function (item) { return item !== ""; })) rows.push(row);
+        row = [];
+        cell = "";
+      } else {
+        cell += ch;
+      }
+    }
+    row.push(cell);
+    if (row.some(function (item) { return item !== ""; })) rows.push(row);
+    if (rows.length < 2) return [];
+    var header = rows[0];
+    return rows.slice(1).map(function (values) {
+      var record = {};
+      header.forEach(function (key, index) {
+        record[key] = values[index] || "";
+      });
+      return record;
+    });
+  }
+
+  function renderAblation(csvText) {
+    var tableContainer = byId("ablation-table-container");
+    var highlights = byId("ablation-highlights");
+    if (!tableContainer || !highlights) return;
+
+    var rows = parseCsv(csvText).filter(function (row) {
+      return row.experiment && row.F1_1 !== "";
+    });
+    if (!rows.length) {
+      tableContainer.innerHTML = '<p class="status-note">Ablation table pending. Run scripts/extract_ablation_results.py after experiments finish.</p>';
+      highlights.innerHTML = '<p class="status-note">No completed ablation summary is available yet.</p>';
+      return;
+    }
+
+    var datasets = [];
+    rows.forEach(function (row) {
+      if (datasets.indexOf(row.dataset) === -1) {
+        datasets.push(row.dataset);
+      }
+    });
+
+    tableContainer.innerHTML = datasets.map(function (dataset) {
+      var datasetRows = rows.filter(function (row) { return row.dataset === dataset; });
+      var tableRows = datasetRows.map(function (row) {
+        return "<tr>" +
+          "<td>" + safeText(row.method || row.experiment) + "</td>" +
+          "<td>" + safeText(row.F1_1) + "</td>" +
+          "<td>" + safeText(row.IoU_1) + "</td>" +
+          "<td>" + safeText(row.OA) + "</td>" +
+          "<td>" + (row.experiment === "baseline" ? "—" : safeText(row.delta_F1)) + "</td>" +
+          "</tr>";
+      }).join("");
+      return '<section class="ablation-dataset-block"><h4>' + dataset + '</h4><table class="data-table"><thead><tr><th>Method</th><th>F1</th><th>IoU</th><th>OA</th><th>ΔF1</th></tr></thead><tbody>' + tableRows + '</tbody></table></section>';
+    }).join("");
+
+    var highlightHtml = [];
+    datasets.forEach(function (dataset) {
+      var datasetRows = rows.filter(function (row) {
+        return row.dataset === dataset && row.experiment !== "baseline" && toNumeric(row.delta_F1) !== null;
+      });
+      datasetRows.sort(function (a, b) {
+        return toNumeric(a.delta_F1) - toNumeric(b.delta_F1);
+      });
+      if (!datasetRows.length) {
+        return;
+      }
+      var biggest = datasetRows[0];
+      var least = datasetRows[datasetRows.length - 1];
+      highlightHtml.push('<article class="ablation-highlight"><span>' + dataset + ' most important module</span><strong>' + safeText(biggest.method || biggest.experiment) + '</strong></article>');
+      highlightHtml.push('<article class="ablation-highlight"><span>' + dataset + ' least important module</span><strong>' + safeText(least.method || least.experiment) + '</strong></article>');
+    });
+    highlights.innerHTML = highlightHtml.join("");
   }
 
   function renderEfficiency(payload) {
@@ -283,16 +523,30 @@
     });
   }
 
+  function fetchText(path) {
+    return fetch(path).then(function (response) {
+      if (!response.ok) throw new Error("Failed to load " + path);
+      return response.text();
+    }).catch(function () {
+      return "";
+    });
+  }
+
   Promise.all([
     fetchJson("assets/data/ours_results.json"),
     fetchJson("assets/data/reproduced_sota_results.json"),
     fetchJson("assets/qualitative/manifest.json"),
-    fetchJson("assets/data/ours_efficiency.json")
+    fetchJson("assets/data/ours_efficiency.json"),
+    fetchJson("assets/data/mambacd_paper_comparison.json"),
+    fetchText("assets/tables/ablation_summary.csv")
   ]).then(function (payloads) {
     renderOursResults(payloads[0]);
     renderComparison(payloads[0], payloads[1]);
     renderQualitative(payloads[2]);
     renderEfficiency(payloads[3]);
+    renderProtocolComparison(payloads[4]);
+    renderProtocolNotes(payloads[4]);
+    renderAblation(payloads[5]);
     initTabs();
     initQualitativeFilter();
     initDisclosure();

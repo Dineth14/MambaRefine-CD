@@ -1,202 +1,226 @@
-"""Standalone model evaluation script.
+"""Evaluation script for MambaRefineCD.
 
-Uses only configs/global_config.yaml.
-No CLI arguments needed.
+Loads a checkpoint and evaluates on val or test split.
+Saves metrics.json and metrics.csv.
 
-Outputs:
-    outputs/eval_runs/<name>/eval_metrics.json
-    outputs/eval_runs/<name>/eval_metrics.csv
-    (+ predictions if evaluation.save_predictions: true)
+Metric restriction:
+  - LEVIR-CD / WHU-CD / DSIFN-CD: Pre, Rec, F1, IoU, OA
+  - SECOND:                        OA, mIoU, SeK, Fscd
 
-Run:
-    conda activate mamba_new
-    cd MambaRefine-CD
-    python scripts/evaluate.py
+Usage:
+    python scripts/evaluate.py --config configs/ablations/levir/a4_full.yaml \\
+                                --ckpt outputs/levir/a4_full/checkpoints/best.pth
+    python scripts/evaluate.py --config configs/ablations/second/a4_full.yaml \\
+                                --ckpt outputs/second/a4_full/checkpoints/best.pth \\
+                                --split val
 """
 from __future__ import annotations
 
+import argparse
 import csv
 import json
+import logging
 import sys
-from datetime import datetime
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
+_REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(_REPO / "src"))
+sys.path.insert(0, str(_REPO))
 
 import torch
+from torch.utils.data import DataLoader
 
-from utils.config             import GLOBAL_CONFIG_PATH, load_config
-from utils.seed               import set_seed
-from data.dataset_builder     import build_test_loader
-from models.cd_model          import build_model
-from training.evaluator       import Evaluator
-from training.checkpoint      import peek as peek_ckpt, load as load_ckpt
-from training.logger          import get_logger
-from utils.visualization      import save_prediction_grid
+from utils.config import load_config
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s  %(levelname)-8s  %(message)s",
+    datefmt="%H:%M:%S",
+)
+logger = logging.getLogger(__name__)
+
+_BINARY_ALLOWED = {"Pre", "Rec", "F1", "IoU", "OA"}
+_SECOND_ALLOWED = {"OA", "mIoU", "SeK", "Fscd"}
 
 
-def _dataset_run_label(exp_name: str, dataset_name: str) -> str:
-    dataset_slug = dataset_name.replace("/", "-").replace(" ", "_")
-    if dataset_slug.lower() in exp_name.lower():
-        return exp_name
-    return f"{exp_name}_{dataset_slug}"
+def _get_allowed_metrics(cfg: dict) -> list[str]:
+    explicit = cfg.get("metrics", {}).get("allowed", None)
+    if explicit is not None:
+        return list(explicit)
+    task = str(cfg.get("task", cfg.get("dataset", {}).get("task_type", "binary_cd"))).lower()
+    if "SECOND" in str(cfg.get("dataset", {}).get("name", "")).upper() or task == "semantic_cd":
+        return ["OA", "mIoU", "SeK", "Fscd"]
+    return ["Pre", "Rec", "F1", "IoU", "OA"]
+
+
+def _filter_metrics(raw: dict, allowed: list[str]) -> dict:
+    return {k: v for k, v in raw.items() if k in allowed}
+
+
+def _save_results(metrics: dict, save_dir: Path, split: str) -> None:
+    save_dir.mkdir(parents=True, exist_ok=True)
+    json_path = save_dir / f"metrics_{split}.json"
+    csv_path  = save_dir / f"metrics_{split}.csv"
+    with open(json_path, "w") as f:
+        json.dump(metrics, f, indent=2)
+    with open(csv_path, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["metric", "value"])
+        for k, v in metrics.items():
+            w.writerow([k, v])
+    if split in {"val", "test"}:
+        canonical_json = save_dir / "metrics.json"
+        canonical_csv = save_dir / "metrics.csv"
+        with open(canonical_json, "w") as f:
+            json.dump(metrics, f, indent=2)
+        with open(canonical_csv, "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["metric", "value"])
+            for k, v in metrics.items():
+                w.writerow([k, v])
+    logger.info(f"Saved metrics to {json_path}")
+
+
+def evaluate_binary(model, loader, device, threshold: float = 0.5) -> dict:
+    from metrics.binary_cd_metrics import BinaryMetrics
+    from training.model_outputs import normalize_model_output
+
+    m = BinaryMetrics(threshold=threshold)
+    model.eval()
+    with torch.no_grad():
+        for batch in loader:
+            img_a = batch["image_a"].to(device, non_blocking=True)
+            img_b = batch["image_b"].to(device, non_blocking=True)
+            mask  = batch.get("mask", batch.get("label")).to(device)
+            out   = model(img_a, img_b)
+            logits = normalize_model_output(out)["change_logits"]
+            m.update(logits, mask)
+    return m.compute()
+
+
+def evaluate_second(model, loader, device, num_classes: int = 7,
+                    ignore_index: int = 255, threshold: float = 0.5,
+                    output_root: Path | None = None,
+                    save_predictions: bool = False,
+                    save_visualizations: bool = True,
+                    save_binary_head_change: bool = False) -> dict:
+    from metrics.second_scd_metrics import SECONDSCDMetrics
+    from training.model_outputs import normalize_model_output
+    from utils.second_outputs import assert_second_prediction_dirs, save_second_prediction_batch, second_semantic_predictions
+
+    m = SECONDSCDMetrics(num_classes=num_classes, ignore_index=ignore_index, threshold=threshold)
+    model.eval()
+    sanity_logged = False
+    with torch.no_grad():
+        for batch in loader:
+            img_a = batch["image_a"].to(device, non_blocking=True)
+            img_b = batch["image_b"].to(device, non_blocking=True)
+            gt_s1 = batch.get("label_t1", batch.get("sem_label_t1", batch.get("label_a"))).to(device)
+            gt_s2 = batch.get("label_t2", batch.get("sem_label_t2", batch.get("label_b"))).to(device)
+            out = model(img_a, img_b)
+            if isinstance(out, dict):
+                outputs = normalize_model_output(out)
+                sem1, sem2, ch = second_semantic_predictions(outputs)
+                binary_head = outputs.get("change_logits")
+            else:
+                raise RuntimeError("SECOND evaluation requires dict outputs with sem_logits_t1 and sem_logits_t2.")
+            m.update(sem1, sem2, gt_s1, gt_s2)
+            if not sanity_logged:
+                valid = (gt_s1 != ignore_index) & (gt_s2 != ignore_index)
+                logger.info(
+                    "SECOND sanity | gt_t1=%s gt_t2=%s pred_t1=%s pred_t2=%s ignore=%d valid=%d change_ratio=%.6f",
+                    sorted(torch.unique(gt_s1.detach().cpu()).tolist()),
+                    sorted(torch.unique(gt_s2.detach().cpu()).tolist()),
+                    sorted(torch.unique(sem1.detach().cpu()).tolist()),
+                    sorted(torch.unique(sem2.detach().cpu()).tolist()),
+                    int((~valid).sum().item()),
+                    int(valid.sum().item()),
+                    float((((gt_s1 != gt_s2) & valid).sum().float() / valid.sum().clamp_min(1)).item()),
+                )
+                sanity_logged = True
+            if save_predictions and output_root is not None:
+                save_second_prediction_batch(
+                    pred_t1=sem1,
+                    pred_t2=sem2,
+                    pred_change=ch,
+                    sample_ids=batch.get("name", batch.get("id", [f"sample_{i}" for i in range(sem1.shape[0])])),
+                    output_root=output_root,
+                    binary_head_logits=binary_head,
+                    save_visualizations=save_visualizations,
+                    save_binary_head_change=save_binary_head_change,
+                    threshold=threshold,
+                )
+    if save_predictions and output_root is not None:
+        assert_second_prediction_dirs(output_root)
+    return m.compute()
 
 
 def main() -> None:
-    cfg  = load_config()
-    exp  = cfg.experiment
-    hw   = cfg.hardware
+    parser = argparse.ArgumentParser(description="Evaluate MambaRefineCD checkpoint.")
+    parser.add_argument("--config", required=True)
+    parser.add_argument("--ckpt",   required=True)
+    parser.add_argument("--split",  default="val", choices=["val", "test"])
+    parser.add_argument("--threshold", type=float, default=0.5)
+    parser.add_argument("--save_predictions", action="store_true")
+    args = parser.parse_args()
 
-    set_seed(int(exp.seed))
+    cfg   = load_config(args.config)
+    allowed = _get_allowed_metrics(cfg)
+    device  = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    is_second = "SECOND" in str(cfg.get("dataset", {}).get("name", "")).upper()
 
-    # ── Output directory ──────────────────────────────────────────────────────
-    ts      = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_label = _dataset_run_label(str(exp.name), str(cfg.dataset.name))
-    out_dir = ROOT / "outputs" / f"eval_{ts}_{run_label}"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "config.yaml").write_text(GLOBAL_CONFIG_PATH.read_text(encoding="utf-8"), encoding="utf-8")
+    logger.info(f"Config: {args.config}")
+    logger.info(f"Checkpoint: {args.ckpt}")
+    logger.info(f"Split: {args.split}")
+    logger.info(f"Allowed metrics: {allowed}")
 
-    logger = get_logger(exp.name, out_dir / "logs")
-    logger.info(f"Evaluation  : {GLOBAL_CONFIG_PATH.relative_to(ROOT)}")
-    logger.info(f"Output dir  : {out_dir}")
+    from models.mambarefinecd import build_model
+    from datasets import build_dataset
+    from training.checkpoint import load as load_ckpt
 
-    # ── Device ────────────────────────────────────────────────────────────────
-    device = torch.device(hw.device if torch.cuda.is_available() else "cpu")
-    if device.type == "cuda" and device.index is not None:
-        torch.cuda.set_device(device.index)
-    logger.info(f"Device      : {device}")
-
-    # ── Dataset ───────────────────────────────────────────────────────────────
-    ds_cfg = cfg.dataset
-    split  = cfg.evaluation.split
-    logger.info(f"Dataset     : {ds_cfg.name}  split={split}")
-
-    loader = build_test_loader(cfg)
-
-    # ── Model ─────────────────────────────────────────────────────────────────
-    model = build_model(cfg).to(device)
-
-    ckpt_path = cfg.checkpoint.path
-    if not ckpt_path:
-        raise ValueError(
-            "checkpoint.path is null in eval config. "
-            "Set it to a trained checkpoint, e.g.:\n"
-            "  checkpoint:\n"
-            "    path: outputs/benchmark_runs/run_XXX/checkpoints/best.pth"
-        )
-    ckpt_path = Path(ckpt_path)
-    if not ckpt_path.is_absolute():
-        ckpt_path = (ROOT / ckpt_path).resolve()
-    if not ckpt_path.exists():
-        raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
-
-    ckpt_info = peek_ckpt(ckpt_path)
-    logger.info(f"Checkpoint  : {ckpt_path}")
-    logger.info(f"  Iteration : {ckpt_info.get('iteration', '?')}")
-    logger.info(f"  Best F1   : {ckpt_info.get('best_metric', '?')}")
-
-    model.load_state_dict(ckpt_info["model"], strict=True)
-    model.eval()
-
-    # ── Evaluate ──────────────────────────────────────────────────────────────
-    evaluator = Evaluator(cfg, device, logger=logger, save_dir=out_dir)
-    amp       = bool(hw.mixed_precision)
-    dataset_name = ds_cfg.name
-    second_eval = dataset_name.upper() == "SECOND" and bool(cfg.evaluation.get("second_metrics", False))
-
-    logger.info(f"\nRunning evaluation on {dataset_name} [{split}] ...")
-    results = evaluator.evaluate(model, loader, dataset_name=dataset_name, amp=amp)
-
-    # ── Print table ───────────────────────────────────────────────────────────
-    evaluator.print_table(results, title="SECOND EVALUATION RESULTS" if second_eval else "EVALUATION RESULTS")
-
-    # ── Build flat metrics dict with canonical key names ─────────────────────
-    threshold   = results.get("best_threshold", float(cfg.evaluation.threshold))
-    tta_enabled = bool(cfg.evaluation.use_tta)
-    temperature = float(getattr(getattr(cfg, "model", None) or type("_", (), {"temperature": 1.0})(), "temperature", 1.0))
-
-    # Required CSV/JSON columns in order
-    _CSV_KEYS = [
-        "mF1", "F1_0", "F1_1", "mIoU", "IoU_0", "IoU_1",
-        "precision_1", "recall_1", "OA",
-        "boundary_f1", "edge_iou",
-        "pred_positive_ratio", "gt_positive_ratio",
-    ]
-    _KEY_MAP = {
-        "mF1":  ("mf1",),
-        "F1_0": ("f1_0",),
-        "F1_1": ("f1_1", "f1"),
-        "mIoU": ("miou",),
-        "IoU_0": ("iou_0",),
-        "IoU_1": ("iou_1", "iou"),
-        "precision_1": ("precision_1", "precision"),
-        "recall_1":    ("recall_1",    "recall"),
-        "OA":          ("oa",),
-        "boundary_f1":         ("boundary_f1",),
-        "edge_iou":            ("edge_iou",),
-        "pred_positive_ratio": ("pred_positive_ratio",),
-        "gt_positive_ratio":   ("gt_positive_ratio",),
-    }
-
-    def _get(col: str) -> float | str:
-        for k in _KEY_MAP.get(col, (col,)):
-            if k in results and isinstance(results[k], (int, float)):
-                return results[k]
-        return ""
-
-    flat_metrics = {col: _get(col) for col in _CSV_KEYS}
-
-    # ── Save JSON ─────────────────────────────────────────────────────────────
-    results_meta = {
-        "config":      str(GLOBAL_CONFIG_PATH.relative_to(ROOT)),
-        "checkpoint":  str(ckpt_path),
-        "dataset":     dataset_name,
-        "split":       split,
-        "timestamp":   ts,
-        "threshold":   threshold,
-        "tta_enabled": tta_enabled,
-        "temperature": temperature,
-        "metrics":     flat_metrics,
-    }
-    json_path = out_dir / "eval_metrics.json"
-    with open(json_path, "w") as f:
-        json.dump(results_meta, f, indent=2)
-    logger.info(f"\nSaved JSON  → {json_path}")
-
-    # ── Save CSV ──────────────────────────────────────────────────────────────
-    csv_path = out_dir / "eval_metrics.csv"
-    csv_header = (
-        ["dataset"] + _CSV_KEYS +
-        ["threshold", "tta_enabled", "temperature"]
+    cfg["dataset"]["split"] = args.split
+    ds = build_dataset(cfg, split=args.split)
+    loader = DataLoader(
+        ds,
+        batch_size=int(cfg.get("validation", {}).get("batch_size", 4)),
+        num_workers=int(cfg.get("dataset", {}).get("num_workers", 4)),
+        shuffle=False,
+        pin_memory=True,
     )
-    with open(csv_path, "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(csv_header)
-        w.writerow(
-            [dataset_name]
-            + [flat_metrics[col] for col in _CSV_KEYS]
-            + [threshold, tta_enabled, temperature]
-        )
-    logger.info(f"Saved CSV   → {csv_path}")
-    if second_eval:
-        logger.info(f"Saved SECOND JSON → {out_dir / 'second_metrics.json'}")
-        logger.info(f"Saved SECOND CSV  → {out_dir / 'second_metrics.csv'}")
 
-    qualitative_dir = out_dir / "qualitative_samples"
-    qualitative_dir.mkdir(parents=True, exist_ok=True)
-    try:
-        batch = next(iter(loader))
-        ia = batch["image_a"]
-        ib = batch["image_b"]
-        label = batch.get("mask", batch.get("change_mask", batch.get("label")))
-        with torch.no_grad():
-            logits, _ = model(ia.to(device), ib.to(device))
-            pred = (torch.sigmoid(logits).cpu() > threshold).float()
-        save_prediction_grid(ia, ib, label, pred, qualitative_dir / "prediction_grid.png", count=min(4, ia.shape[0]))
-        logger.info(f"Saved qualitative samples → {qualitative_dir}")
-    except Exception as exc:
-        logger.warning(f"Could not save qualitative samples: {exc}")
+    model = build_model(cfg).to(device)
+    load_ckpt(args.ckpt, model, map_location=device)
+    logger.info(f"Loaded checkpoint from {args.ckpt}")
+
+    out_dir = Path(cfg.get("experiment", {}).get("output_root", "outputs/eval"))
+    output_cfg = cfg.get("output", {})
+    eval_cfg = cfg.get("evaluation", {})
+    save_predictions = bool(args.save_predictions or output_cfg.get("save_predictions", eval_cfg.get("save_predictions", False)))
+    save_visualizations = bool(output_cfg.get("save_visualizations", True))
+    save_binary_head_change = bool(output_cfg.get("save_binary_head_change", False))
+
+    if is_second:
+        raw = evaluate_second(
+            model, loader, device,
+            num_classes=int(cfg.get("dataset", {}).get("num_classes", 7)),
+            ignore_index=int(cfg.get("dataset", {}).get("ignore_index", 255)),
+            threshold=args.threshold,
+            output_root=out_dir,
+            save_predictions=save_predictions,
+            save_visualizations=save_visualizations,
+            save_binary_head_change=save_binary_head_change,
+        )
+    else:
+        raw = evaluate_binary(model, loader, device, threshold=args.threshold)
+
+    results = _filter_metrics(raw, allowed)
+    logger.info("=" * 50)
+    logger.info(f"Results ({args.split}):")
+    for k, v in results.items():
+        logger.info(f"  {k:8s}: {v:.4f}")
+    logger.info("=" * 50)
+
+    _save_results(results, out_dir, args.split)
 
 
 if __name__ == "__main__":

@@ -26,6 +26,8 @@ def get_logger(name: str, log_dir: Path) -> logging.Logger:
 
 def log_table(logger: logging.Logger, metrics: dict, title: str = "") -> None:
     """Print a +---------+--------+ table of metric values."""
+    if metrics.get("metric_family") == "second":
+        metrics = {key: metrics[key] for key in ("OA", "mIoU", "SeK", "Fscd") if key in metrics}
     _LABELS = {
         "f1":                  "F1",
         "iou":                 "IoU-change",

@@ -1,0 +1,109 @@
+# SECOND A4 Full Semantic Model
+# All modules: signed_diff + CRAM-lite + SeK loss + boundary refinement + ARF-FPN
+
+experiment:
+  name: second_a4_full
+  output_root: outputs/second/a4_full
+
+dataset:
+  name: SECOND
+  root: /storage2/ChangeDetection/MV/Datasets/SECOND
+  mode: semantic
+  task_type: semantic_change
+  binary: false
+  image_size: 256
+  batch_size: 8
+  num_workers: 8
+  augmentation: true
+  val_ratio: 0.2
+  num_classes: 7
+  ignore_index: 255
+
+task: semantic_cd
+
+model:
+  mode: dual
+  backbone: mambavision
+  variant: tiny2
+  decoder: adaptive_rf
+  pretrained: true
+  output_mode: semantic_change
+  enable_semantic_heads: true
+  semantic_head_type: lightweight
+  semantic_head_channels: 96
+  semantic_num_classes: 7
+  num_classes: 1
+  cram_lite:
+    enabled: true
+    alpha: 0.5
+    apply_stages: [0, 1, 2]
+    attention_type: spatial
+
+difference:
+  enabled: true
+  out_channels: 96
+  use_absdiff: true
+  use_signed_diff: true
+  use_product: false
+  pre_norm: true
+  use_region_gate: true
+  use_boundary_gate: true
+  region_gate_min: 0.2
+  region_gate_max: 0.8
+  boundary_gate_min: 0.0
+  boundary_gate_max: 0.4
+  gate_hidden_ratio: 0.25
+
+decoder:
+  channels: 96
+  dilation_rates: [1, 2, 4]
+  use_boundary_residual: true
+  residual_scale: 0.1
+  use_depthwise: true
+
+hardware:
+  device: cuda
+  mixed_precision: true
+
+training:
+  max_iterations: 50000
+  batch_size: 8
+  lr: 5.0e-5
+  optimizer: adamw
+  scheduler: cosine
+  warmup_iterations: 2500
+  validate_every: 5000
+  log_every: 20
+  gradient_clip: 0.5
+  weight_decay: 0.01
+
+loss:
+  type: second_semantic_cd
+  change_loss_weight: 1.0
+  semantic_loss_weight: 0.5
+  consistency_loss_weight: 0.2
+  sek_loss_weight: 0.3
+  ce_weight: 1.0
+  dice_weight: 1.0
+  semantic:
+    ce_weight: 1.0
+    dice_weight: 1.0
+    sek_weight: 0.1
+    use_sek: true
+
+evaluation:
+  second_metrics: true
+  compute_SeK: true
+  threshold_select_metric: Fscd
+
+metrics:
+  allowed: [OA, mIoU, SeK, Fscd]
+
+checkpoint:
+  selection_metric: Fscd
+  mode: max
+
+output:
+  save_predictions: true
+  save_visualizations: true
+  save_binary_head_change: false

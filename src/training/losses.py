@@ -5,6 +5,7 @@ Supported loss types (config: loss.type)
 bce_dice         BCE + Dice
 dice_focal       Dice + Focal
 dice_focal_sek   Dice + Focal + SeK-inspired soft-kappa surrogate
+second_semantic_cd   SECOND semantic change loss
 """
 from __future__ import annotations
 
@@ -37,6 +38,29 @@ def _masked_mean(values: torch.Tensor, valid_mask: Optional[torch.Tensor] = None
     if float(denom.item()) <= 0.0:
         return values.new_zeros(())
     return (values * mask).sum() / denom
+
+
+def _sobel_kernels(device: torch.device, dtype: torch.dtype) -> tuple[torch.Tensor, torch.Tensor]:
+    kx = torch.tensor([[-1.0, 0.0, 1.0], [-2.0, 0.0, 2.0], [-1.0, 0.0, 1.0]], device=device, dtype=dtype).view(1, 1, 3, 3)
+    ky = torch.tensor([[-1.0, -2.0, -1.0], [0.0, 0.0, 0.0], [1.0, 2.0, 1.0]], device=device, dtype=dtype).view(1, 1, 3, 3)
+    return kx, ky
+
+
+def _boundary_map(values: torch.Tensor) -> torch.Tensor:
+    kx, ky = _sobel_kernels(values.device, values.dtype)
+    grad_x = F.conv2d(values, kx, padding=1)
+    grad_y = F.conv2d(values, ky, padding=1)
+    return torch.clamp(torch.sqrt(grad_x.pow(2) + grad_y.pow(2) + 1e-6), 0.0, 1.0)
+
+
+def _boundary_l1_loss(
+    logits: torch.Tensor,
+    targets: torch.Tensor,
+    valid_mask: Optional[torch.Tensor] = None,
+) -> torch.Tensor:
+    pred_edges = _boundary_map(torch.sigmoid(torch.clamp(logits.float(), -20.0, 20.0)))
+    target_edges = _boundary_map(targets.float())
+    return _masked_mean(torch.abs(pred_edges - target_edges), valid_mask)
 
 
 class DiceLoss(nn.Module):
@@ -95,10 +119,11 @@ class FocalLoss(nn.Module):
 class BCEDiceLoss(nn.Module):
     """BCE + Dice. Returns (total, bce, dice) for compatibility."""
 
-    def __init__(self, bce_w: float = 1.0, dice_w: float = 1.0) -> None:
+    def __init__(self, bce_w: float = 1.0, dice_w: float = 1.0, boundary_w: float = 0.0) -> None:
         super().__init__()
         self.bce_w = bce_w
         self.dice_w = dice_w
+        self.boundary_w = boundary_w
         self.dice = DiceLoss()
         self.latest_stats: dict[str, float | str | bool] = {}
 
@@ -113,11 +138,13 @@ class BCEDiceLoss(nn.Module):
         bce_raw = F.binary_cross_entropy_with_logits(logits, targets, reduction="none")
         bce = _masked_mean(bce_raw, valid_mask)
         dice = self.dice(logits, targets, valid_mask=valid_mask)
-        total = self.bce_w * bce + self.dice_w * dice
+        boundary = _boundary_l1_loss(logits, targets, valid_mask=valid_mask) if self.boundary_w > 0.0 else logits.new_zeros(())
+        total = self.bce_w * bce + self.dice_w * dice + self.boundary_w * boundary
         self.latest_stats = {
             "total_loss": float(total.detach().item()),
             "bce_loss": float(bce.detach().item()),
             "dice_loss": float(dice.detach().item()),
+            "boundary_loss": float(boundary.detach().item()),
             "focal_loss": 0.0,
             "sek_loss": 0.0,
             "soft_kappa": 0.0,
@@ -259,6 +286,26 @@ def build_loss(cfg: dict) -> nn.Module:
     tc = cfg.get("training", {})
     kind = str(lc.get("type", "bce_dice")).lower().replace("-", "_")
 
+    if kind == "second_semantic_cd":
+        from training.second_loss import SecondSemanticChangeLoss
+
+        return SecondSemanticChangeLoss(
+            num_classes=int(dc.get("num_classes", mc.get("semantic_num_classes", 7))),
+            ignore_index=int(dc.get("ignore_index", 255)),
+            change_loss_weight=float(lc.get("change_loss_weight", 1.0)),
+            semantic_loss_weight=float(lc.get("semantic_loss_weight", 0.5)),
+            consistency_loss_weight=float(lc.get("consistency_loss_weight", 0.2)),
+            sek_loss_weight=float(lc.get("sek_loss_weight", 0.3)),
+            dice_weight=float(lc.get("dice_weight", 1.0)),
+            focal_weight=float(lc.get("focal_weight", 0.2)),
+            focal_gamma=float(lc.get("focal_gamma", 1.5)),
+            ce_weight=float(lc.get("ce_weight", 1.0)),
+            sek_eps=float(lc.get("sek_eps", 1e-6)),
+            consistency_detach_semantic=bool(lc.get("consistency_detach_semantic", True)),
+            consistency_loss_type=str(lc.get("consistency_loss_type", "bce")),
+            safe_on_invalid=bool(tc.get("skip_nan_steps", True)),
+        )
+
     if kind == "dice_focal_sek":
         return DiceFocalSeKLoss(
             dice_w=float(lc.get("dice_weight", 1.0)),
@@ -283,4 +330,5 @@ def build_loss(cfg: dict) -> nn.Module:
     return BCEDiceLoss(
         bce_w=float(lc.get("bce_weight", 1.0)),
         dice_w=float(lc.get("dice_weight", 1.0)),
+        boundary_w=float(lc.get("boundary_weight", 0.0)),
     )

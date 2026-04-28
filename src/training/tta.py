@@ -24,11 +24,13 @@ Config keys
 """
 from __future__ import annotations
 
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+from training.model_outputs import normalize_model_output
 
 
 # ── Transform helpers ─────────────────────────────────────────────────────────
@@ -73,7 +75,7 @@ def apply_tta(
     image_b: torch.Tensor,
     amp: bool = False,
     augmentations: Optional[List[str]] = None,
-) -> torch.Tensor:
+) -> object:
     """Run inference with TTA and return averaged logits.
 
     Args:
@@ -85,7 +87,8 @@ def apply_tta(
                        four (original + hflip + vflip + rot90).
 
     Returns:
-        averaged_logits: [B, 1, H, W]
+        Averaged change logits in binary mode, or a normalized output dict in
+        semantic mode.
     """
     aug_names = augmentations if augmentations else _DEFAULT_AUGS
 
@@ -97,10 +100,9 @@ def apply_tta(
                 f"Valid options: {list(_AUGS.keys())}"
             )
 
-    logit_sum: Optional[torch.Tensor] = None
-
     device = image_a.device
     autocast_ctx = torch.amp.autocast("cuda", enabled=(amp and device.type == "cuda"))
+    accumulators: dict[str, torch.Tensor] = {}
 
     for name in aug_names:
         fwd, inv = _AUGS[name]
@@ -109,18 +111,28 @@ def apply_tta(
         aug_b = fwd(image_b)
 
         with autocast_ctx:
-            logits, _ = model(aug_a, aug_b)     # [B, 1, H, W]
+            outputs = normalize_model_output(model(aug_a, aug_b))
 
-        # Inverse-transform the prediction back to canonical orientation
-        logits_inv = inv(logits)
+        for key, tensor in outputs.items():
+            if tensor is None:
+                continue
+            tensor_inv = inv(tensor)
+            if key not in accumulators:
+                accumulators[key] = tensor_inv
+            else:
+                accumulators[key] = accumulators[key] + tensor_inv
 
-        if logit_sum is None:
-            logit_sum = logits_inv
-        else:
-            logit_sum = logit_sum + logits_inv
-
-    averaged = logit_sum / len(aug_names)   # type: ignore[operator]
-    return averaged
+    averaged = {key: value / len(aug_names) for key, value in accumulators.items()}
+    if "sem_logits_t1" in averaged or "sem_logits_t2" in averaged:
+        return {
+            "change_logits": averaged.get("change_logits"),
+            "aux_logits": averaged.get("aux_logits"),
+            "sem_logits_t1": averaged.get("sem_logits_t1"),
+            "sem_logits_t2": averaged.get("sem_logits_t2"),
+        }
+    if averaged.get("aux_logits") is not None:
+        return averaged["change_logits"], averaged["aux_logits"]
+    return averaged["change_logits"]
 
 
 def build_tta_augmentations(cfg: dict) -> List[str]:

@@ -1,0 +1,29 @@
+# SECOND Dataset Configuration (Semantic Change Detection)
+dataset:
+  name: SECOND
+  root: /storage2/ChangeDetection/MV/Datasets/SECOND          # update to actual path
+  train_split: train
+  val_split: val
+  test_split: test
+  image_size: 256
+  batch_size: 8
+  num_workers: 8
+  augmentation: true
+  val_ratio: 0.2
+  ignore_index: 255
+  num_classes: 7
+  task_type: semantic_change
+  mode: semantic
+  binary: false
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 4
+
+task: semantic_cd
+
+metrics:
+  allowed: [OA, mIoU, SeK, Fscd]
+
+checkpoint:
+  selection_metric: Fscd
+  mode: max

@@ -1,0 +1,36 @@
+# LEVIR-CD Dataset Configuration
+dataset:
+  name: LEVIR-CD
+  root: /storage2/ChangeDetection/MV/Datasets/LEVIRCD        # update to actual path
+  train_split: train
+  val_split: val
+  test_split: test
+  image_size: 256
+  batch_size: 8
+  num_workers: 8
+  augmentation: true
+  val_ratio: 0.2
+  ignore_index: 255
+  task_type: binary_change
+  mode: binary
+  binary: true
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 4
+
+  # Balanced sampling to address change/no-change imbalance
+  balance:
+    enabled: false
+    min_change_ratio: 0.001
+    max_nochange_fraction: 0.5
+    oversample_change: true
+    changed_patch_weight: 2.0
+
+task: binary_cd
+
+metrics:
+  allowed: [Pre, Rec, F1, IoU, OA]
+
+checkpoint:
+  selection_metric: F1
+  mode: max

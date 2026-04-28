@@ -47,6 +47,7 @@ except ImportError:
 from training.metrics          import StreamingMetrics
 from training.boundary_metrics import BoundaryMetrics
 from training.logger           import log_table
+from training.model_outputs    import normalize_model_output
 from training.second_metrics   import SECONDMetrics
 from training.tta              import apply_tta, build_tta_augmentations
 
@@ -168,9 +169,13 @@ class Evaluator:
         all_labels = []
         extras = {
             "ignore_mask": [],
+            "valid_mask": [],
             "label_a": [],
             "label_b": [],
             "change_mask": [],
+            "pred_sem1": [],
+            "pred_sem2": [],
+            "sample_ids": [],
         }
         num_samples = 0
 
@@ -188,25 +193,32 @@ class Evaluator:
             num_samples += ia.shape[0]
 
             if self.use_tta:
-                logits = apply_tta(
+                outputs = normalize_model_output(apply_tta(
                     model, ia, ib,
                     amp=amp,
                     augmentations=self.tta_augmentations,
-                )
+                ))
             else:
                 with torch.amp.autocast("cuda", enabled=(amp and self.device.type == "cuda")):
-                    logits, _ = model(ia, ib)
+                    outputs = normalize_model_output(model(ia, ib))
+
+            logits = torch.clamp(outputs["change_logits"], -20.0, 20.0)
 
             all_logits.append(logits.cpu())
             all_labels.append(lb.cpu())
-            for key in extras:
+            for key in ("ignore_mask", "valid_mask", "label_a", "label_b", "change_mask"):
                 if key in batch:
                     extras[key].append(batch[key].cpu())
+            extras["sample_ids"].extend([str(x) for x in batch.get("name", batch.get("id", []))])
+            if outputs.get("sem_logits_t1") is not None:
+                extras["pred_sem1"].append(torch.argmax(outputs["sem_logits_t1"], dim=1).cpu())
+            if outputs.get("sem_logits_t2") is not None:
+                extras["pred_sem2"].append(torch.argmax(outputs["sem_logits_t2"], dim=1).cpu())
 
         all_logits = torch.cat(all_logits, dim=0)   # [N, 1, H, W]
         all_labels = torch.cat(all_labels, dim=0)
         stacked_extras = {
-            key: (torch.cat(value, dim=0) if value else None)
+            key: (list(value) if key == "sample_ids" else (torch.cat(value, dim=0) if value else None))
             for key, value in extras.items()
         }
         return all_logits, all_labels, stacked_extras, num_samples
@@ -264,46 +276,44 @@ class Evaluator:
         for start in range(0, n, bs):
             end = start + bs
             logits = all_logits[start:end].float()
-            change_pred = (torch.sigmoid(logits) > threshold)
             change_gt = all_labels[start:end] > 0.5
 
             ignore_mask = self._squeeze_spatial(extras.get("ignore_mask")[start:end] if extras.get("ignore_mask") is not None else None)
+            valid_mask = self._squeeze_spatial(extras.get("valid_mask")[start:end] if extras.get("valid_mask") is not None else None)
+            if valid_mask is None and ignore_mask is not None:
+                valid_mask = ~ignore_mask.bool()
             label_a = extras.get("label_a")
             label_b = extras.get("label_b")
             label_a = label_a[start:end] if label_a is not None else None
             label_b = label_b[start:end] if label_b is not None else None
-
+            pred_sem1 = extras.get("pred_sem1")
+            pred_sem2 = extras.get("pred_sem2")
+            pred_sem1 = pred_sem1[start:end] if pred_sem1 is not None else None
+            pred_sem2 = pred_sem2[start:end] if pred_sem2 is not None else None
+            if start == 0 and pred_sem1 is not None and pred_sem2 is not None and label_a is not None and label_b is not None:
+                valid_for_log = (label_a != self.second_ignore_index) & (label_b != self.second_ignore_index)
+                self.logger.info(
+                    "SECOND sanity | gt_t1=%s gt_t2=%s pred_t1=%s pred_t2=%s ignore=%d valid=%d change_ratio=%.6f",
+                    sorted(torch.unique(label_a.detach().cpu()).tolist()),
+                    sorted(torch.unique(label_b.detach().cpu()).tolist()),
+                    sorted(torch.unique(pred_sem1.detach().cpu()).tolist()),
+                    sorted(torch.unique(pred_sem2.detach().cpu()).tolist()),
+                    int((~valid_for_log).sum().item()),
+                    int(valid_for_log.sum().item()),
+                    float((((label_a != label_b) & valid_for_log).sum().float() / valid_for_log.sum().clamp_min(1)).item()),
+                )
             metrics.update(
-                change_pred=self._squeeze_spatial(change_pred),
+                change_pred_binary=None,
+                change_pred_semantic=None,
                 change_gt=self._squeeze_spatial(change_gt),
-                ignore_mask=ignore_mask,
-                label_t1=label_a,
-                label_t2=label_b,
+                pred_sem1=pred_sem1,
+                pred_sem2=pred_sem2,
+                gt_sem1=label_a,
+                gt_sem2=label_b,
+                valid_mask=valid_mask,
             )
 
-        result = metrics.compute()
-        result.update({
-            "metric_family": "second",
-            "second_eval_level": "semantic" if result.get("semantic_mIoU") is not None else "binary-compatible",
-            "oa": result["OA"],
-            "fscd": result["Fscd"],
-            "miou": result["mIoU"],
-            "sek": result["SeK"],
-            "f1": result["binary_F1"],
-            "f1_1": result["binary_F1"],
-            "iou": result["binary_IoU"],
-            "iou_1": result["binary_IoU"],
-            "iou_0": result["IoU_nochange"],
-            "precision": result["precision"],
-            "precision_1": result["precision"],
-            "recall": result["recall"],
-            "recall_1": result["recall"],
-            "pred_positive_ratio": result["pred_positive_ratio"],
-            "gt_positive_ratio": result["gt_positive_ratio"],
-            "boundary_f1": 0.0,
-            "edge_iou": 0.0,
-        })
-        return result
+        return metrics.compute()
 
     # ------------------------------------------------------------------
     # Public evaluate
@@ -344,6 +354,25 @@ class Evaluator:
             result = self._second_metrics_at_threshold(
                 all_logits, all_labels, extras, best_thr
             )
+            if self.save_dir is not None and bool(self.cfg.get("output", {}).get("save_predictions", False)):
+                from utils.second_outputs import assert_second_prediction_dirs, save_second_prediction_batch
+
+                pred_sem1 = extras.get("pred_sem1")
+                pred_sem2 = extras.get("pred_sem2")
+                sample_ids = extras.get("sample_ids") or [f"sample_{i}" for i in range(pred_sem1.shape[0] if pred_sem1 is not None else 0)]
+                if pred_sem1 is not None and pred_sem2 is not None:
+                    save_second_prediction_batch(
+                        pred_t1=pred_sem1,
+                        pred_t2=pred_sem2,
+                        pred_change=pred_sem1 != pred_sem2,
+                        sample_ids=sample_ids,
+                        output_root=self.save_dir,
+                        binary_head_logits=all_logits if bool(self.cfg.get("output", {}).get("save_binary_head_change", False)) else None,
+                        save_visualizations=bool(self.cfg.get("output", {}).get("save_visualizations", True)),
+                        save_binary_head_change=bool(self.cfg.get("output", {}).get("save_binary_head_change", False)),
+                        threshold=best_thr,
+                    )
+                    assert_second_prediction_dirs(self.save_dir)
         else:
             result = self._metrics_at_threshold(
                 all_logits, all_labels, best_thr, compute_boundary=True
@@ -373,17 +402,8 @@ class Evaluator:
             (best_thr, best_score, sweep_log)
         """
         if use_second_metrics:
-            _metric_key_map = {
-                "Fscd": "Fscd",
-                "F1scd": "Fscd",
-                "OA": "OA",
-                "mIoU": "mIoU",
-                "mF1": "binary_F1",
-                "F1_1": "binary_F1",
-                "IoU_1": "binary_IoU",
-            }
-            tracked_metrics = ["Fscd", "OA", "mIoU", "binary_F1", "binary_IoU"]
-            primary_key = _metric_key_map.get(self.threshold_select_metric, "Fscd")
+            tracked_metrics = ["OA", "mIoU", "SeK", "Fscd"]
+            primary_key = self.threshold_select_metric if self.threshold_select_metric in tracked_metrics else "Fscd"
             best_by = {key: (-1.0, None) for key in tracked_metrics}
             sweep_log: dict = {}
             for thr in self.threshold_list:
@@ -396,7 +416,7 @@ class Evaluator:
                     value = float(m.get(key, 0.0) or 0.0)
                     if value > best_by[key][0]:
                         best_by[key] = (value, thr)
-            best_thr = best_by[primary_key][1]
+            best_thr = best_by[primary_key][1] if best_by[primary_key][1] is not None else self.threshold
             best_score = best_by[primary_key][0]
         else:
             _metric_key_map = {
@@ -521,69 +541,42 @@ class Evaluator:
             thr_data = {
                 "select_metric": self.threshold_select_metric,
                 "best_thresholds": {
-                    "Fscd": {"threshold": result["best_threshold"], "value": round(float(result.get("Fscd", 0.0)), 6)},
+                    "Fscd": {
+                        "threshold": result["best_threshold"],
+                        "value": round(float(result.get("Fscd", 0.0)), 6),
+                    },
                 },
             }
             (self.save_dir / "best_thresholds_SECOND.json").write_text(json.dumps(thr_data, indent=2))
 
         second_payload = {
             "dataset": dataset_name,
-            "evaluation_mode": result.get("second_eval_level", "binary-compatible"),
+            "evaluation_mode": result.get("second_eval_level", "semantic_change"),
             "output_mode": self.output_mode,
-            "threshold": result.get("best_threshold"),
             "metrics": {
                 "OA": result.get("OA"),
-                "Fscd": result.get("Fscd"),
-                "F1scd": result.get("F1scd"),
                 "mIoU": result.get("mIoU"),
                 "SeK": result.get("SeK"),
-                "binary_F1": result.get("binary_F1"),
-                "binary_IoU": result.get("binary_IoU"),
-                "semantic_mIoU": result.get("semantic_mIoU"),
-                "binary_kappa": result.get("binary_kappa"),
-                "IoU_change": result.get("IoU_change"),
-                "IoU_nochange": result.get("IoU_nochange"),
-                "class_IoUs": result.get("class_IoUs", []),
+                "Fscd": result.get("Fscd"),
             },
-            "notes": result.get("notes", ""),
         }
         if sweep_log:
             second_payload["sweep"] = sweep_log
         (self.save_dir / "second_metrics.json").write_text(json.dumps(second_payload, indent=2))
+        if result.get("second_eval_level") == "semantic_change":
+            (self.save_dir / "second_semantic_metrics.json").write_text(json.dumps(second_payload, indent=2))
 
         csv_path = self.save_dir / "second_metrics.csv"
-        headers = [
-            "dataset",
-            "evaluation_mode",
-            "output_mode",
-            "threshold",
-            "OA",
-            "Fscd",
-            "mIoU",
-            "SeK",
-            "binary_F1",
-            "binary_IoU",
-            "semantic_mIoU",
-            "binary_kappa",
-            "notes",
-        ]
+        headers = ["dataset", "OA", "mIoU", "SeK", "Fscd"]
         with open(csv_path, "w", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(headers)
             writer.writerow([
                 dataset_name,
-                result.get("second_eval_level", "binary-compatible"),
-                self.output_mode,
-                result.get("best_threshold", ""),
                 result.get("OA", ""),
-                result.get("Fscd", ""),
                 result.get("mIoU", ""),
-                "N/A" if result.get("SeK") is None else result.get("SeK"),
-                result.get("binary_F1", ""),
-                result.get("binary_IoU", ""),
-                "N/A" if result.get("semantic_mIoU") is None else result.get("semantic_mIoU"),
-                "N/A" if result.get("binary_kappa") is None else result.get("binary_kappa"),
-                result.get("notes", ""),
+                result.get("SeK", ""),
+                result.get("Fscd", ""),
             ])
 
     # ------------------------------------------------------------------
@@ -599,22 +592,15 @@ class Evaluator:
         if results.get("metric_family") == "second":
             rows = [
                 ("OA", results.get("OA")),
-                ("Fscd", results.get("Fscd")),
                 ("mIoU", results.get("mIoU")),
                 ("SeK", results.get("SeK")),
-                ("Binary F1", results.get("binary_F1")),
-                ("Binary IoU", results.get("binary_IoU")),
-                ("Semantic mIoU", results.get("semantic_mIoU")),
-                ("Best Threshold", results.get("best_threshold")),
+                ("Fscd", results.get("Fscd")),
             ]
             for label, val in rows:
                 if isinstance(val, (int, float)):
                     self.logger.info(f"{label:<22}: {val:.4f}")
-                elif val is None and label in {"SeK", "Semantic mIoU"}:
+                elif val is None and label in {"SeK"}:
                     self.logger.info(f"{label:<22}: N/A")
-            notes = str(results.get("notes", "")).strip()
-            if notes:
-                self.logger.info(f"Notes{'':<17}: {notes}")
             self.logger.info(sep)
             return
 

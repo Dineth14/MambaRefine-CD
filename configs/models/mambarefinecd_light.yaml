@@ -1,0 +1,76 @@
+# MambaRefineCD Light Model Configuration
+# Smaller channels and efficient settings for low-GPU-memory environments.
+
+model:
+  mode: dual
+  backbone: mambavision
+  variant: tiny              # lighter backbone
+  decoder: adaptive_rf
+  pretrained: true
+  output_mode: binary
+  enable_semantic_heads: false
+  semantic_head_type: lightweight
+  semantic_num_classes: 7
+  num_classes: 1
+  return_features: false
+  freeze_backbone: false
+  cram_lite:
+    enabled: true
+    alpha: 0.5
+    apply_stages: [0, 1]     # fewer stages for efficiency
+    attention_type: spatial
+
+difference:
+  enabled: true
+  out_channels: 128          # narrower FPN channels
+  use_depthwise: true
+  use_absdiff: true
+  use_signed_diff: true
+  use_product: false
+  product_scale: 0.25
+  pre_norm: true
+  use_region_gate: true
+  use_boundary_gate: true
+  region_gate_min: 0.2
+  region_gate_max: 0.8
+  boundary_gate_min: 0.0
+  boundary_gate_max: 0.4
+  gate_hidden_ratio: 0.25
+
+decoder:
+  channels: 128              # narrower decoder
+  dilation_rates: [1, 2, 4]  # one fewer dilation rate
+  use_boundary_residual: true
+  residual_scale: 0.1
+  use_depthwise: true
+
+hardware:
+  device: cuda
+  mixed_precision: true
+
+training:
+  max_iterations: 40000
+  batch_size: 16             # can fit larger batch with lighter model
+  lr: 1.0e-4
+  optimizer: adamw
+  scheduler: cosine
+  warmup_iterations: 2000
+  validate_every: 4000
+  log_every: 20
+  gradient_clip: 0.5
+  weight_decay: 0.01
+
+loss:
+  final:
+    type: bce_dice
+    bce_weight: 1.0
+    dice_weight: 1.0
+  coarse:
+    enabled: true
+    weight: 0.4
+  boundary:
+    enabled: true
+    weight: 0.1
+    type: bce_dice
+    target_type: sobel
+    edge_width: 3

@@ -31,7 +31,9 @@
         <a href="#method">Method</a>
         <a href="#datasets">Datasets</a>
         <a href="#verified-results">Verified Results</a>
+        <a href="#mambacd-protocol">Protocol Comparison</a>
         <a href="#comparison">SOTA Comparison</a>
+        <a href="#ablation">Ablation</a>
         <a href="#qualitative">Qualitative</a>
         <a href="#efficiency">Efficiency</a>
         <a href="#usage">Usage</a>
@@ -52,6 +54,7 @@
           <div class="button-row">
             <a class="button button-primary" href="https://github.com/Dineth14/MambaRefine-CD">Code</a>
             <a class="button button-secondary" href="#verified-results">Verified Results</a>
+            <a class="button button-secondary" href="#mambacd-protocol">Protocol Tables</a>
             <a class="button button-secondary" href="#comparison">Comparison</a>
             <a class="button button-secondary" href="#usage">Usage</a>
           </div>
@@ -336,7 +339,7 @@
           <article class="surface-card"><h3>LEVIR-CD</h3><p>High-resolution building change benchmark and main binary CD reference dataset.</p></article>
           <article class="surface-card"><h3>WHU-CD</h3><p>Urban building change dataset with stronger sensitivity to precise boundary delineation.</p></article>
           <article class="surface-card"><h3>DSIFN-CD</h3><p>More heterogeneous scene distribution used to assess broader generalization.</p></article>
-          <article class="surface-card"><h3>SECOND</h3><p>Semantic change benchmark. Binary-mode metrics are usable; SeK is only valid when semantic predictions truly exist.</p></article>
+          <article class="surface-card"><h3>SECOND</h3><p>Semantic change benchmark. The semantic path predicts class labels at both timestamps plus a binary change head, so true SeK is reported only when those semantic outputs exist.</p></article>
         </div>
       </div>
     </section>
@@ -370,8 +373,14 @@
             <div class="math-block">\[
             OA = \frac{TP+TN}{TP+TN+FP+FN}
             \]</div>
+            <div class="math-block">\[
+            \hat{y}_{sc}(x) = \mathbb{1}\left[\arg\max_c p_{t1}(c \mid x) \neq \arg\max_c p_{t2}(c \mid x)\right]
+            \]</div>
+            <div class="math-block">\[
+            SeK = \kappa\left(\hat{y}_{t2}, y_{t2} \mid y_{change}=1\right)
+            \]</div>
           </div>
-          <p class="status-note">Important: this site does not compare \(mF1\) against \(F1_1\). Unclear literature values are marked unverified.</p>
+          <p class="status-note">Important: this site does not compare \(mF1\) against \(F1_1\), and it does not present binary fallback scores as true semantic SeK.</p>
         </article>
       </div>
     </section>
@@ -397,10 +406,55 @@
       </div>
     </section>
 
-    <section class="section" id="comparison">
+    <section class="section" id="mambacd-protocol">
       <div class="page-shell">
         <div class="section-heading">
           <span class="section-index">12</span>
+          <div>
+            <h2>Mamba-CD Protocol Comparison</h2>
+            <p class="section-copy">For comparison with Mamba-CD-style binary change detection papers, we report Precision, Recall, F1, IoU, and OA. In our implementation, these correspond to change-class precision, recall, F1_1, IoU_1, and overall accuracy. We do not use mF1 as F1.</p>
+          </div>
+        </div>
+        <article class="surface-card">
+          <h3>Metric mapping</h3>
+          <div class="table-scroll">
+            <table class="data-table mapping-table" id="mambacd-mapping-table">
+              <thead>
+                <tr>
+                  <th>Paper Metric</th>
+                  <th>MambaRefine-CD Metric Key</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>Pre</td><td>precision_1</td></tr>
+                <tr><td>Rec</td><td>recall_1</td></tr>
+                <tr><td>F1</td><td>F1_1</td></tr>
+                <tr><td>IoU</td><td>IoU_1</td></tr>
+                <tr><td>OA</td><td>OA</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="status-note">Paper F1 here always means change-class F1_1, not mF1.</p>
+        </article>
+        <div class="tab-shell" data-tab-group="protocol">
+          <div class="tab-list">
+            <button class="tab-button is-active" type="button" data-tab-target="protocol-LEVIR-CD">LEVIR-CD</button>
+            <button class="tab-button" type="button" data-tab-target="protocol-WHU-CD">WHU-CD</button>
+            <button class="tab-button" type="button" data-tab-target="protocol-DSIFN-CD">DSIFN-CD</button>
+          </div>
+        </div>
+        <div id="mambacd-protocol-panels"></div>
+        <article class="surface-card protocol-notes">
+          <h3>Interpretation</h3>
+          <ul id="mambacd-protocol-notes"></ul>
+        </article>
+      </div>
+    </section>
+
+    <section class="section" id="comparison">
+      <div class="page-shell">
+        <div class="section-heading">
+          <span class="section-index">13</span>
           <div>
             <h2>SOTA Comparison</h2>
             <p class="section-copy">The comparison tables prefer reproduced evaluations under our loaders and our metrics. Missing checkpoints and adapter failures are shown explicitly.</p>
@@ -422,7 +476,7 @@
     <section class="section" id="qualitative">
       <div class="page-shell">
         <div class="section-heading">
-          <span class="section-index">13</span>
+          <span class="section-index">14</span>
           <div>
             <h2>Qualitative Results</h2>
             <p class="section-copy">The gallery is collected automatically from local output folders and grouped by inferred dataset.</p>
@@ -439,10 +493,40 @@
       </div>
     </section>
 
+    <section class="section" id="ablation">
+      <div class="page-shell">
+        <div class="section-heading">
+          <span class="section-index">15</span>
+          <div>
+            <h2>Ablation Study</h2>
+            <p class="section-copy">Ablation study evaluates the contribution of each component by removing or modifying it.</p>
+          </div>
+        </div>
+        <div class="two-column">
+          <article class="surface-card">
+            <h3>Component importance</h3>
+            <div class="ablation-highlight-grid" id="ablation-highlights">
+              <p class="status-note">Run <code>scripts/extract_ablation_results.py</code> after ablation evaluation to populate this section.</p>
+            </div>
+          </article>
+          <article class="surface-card">
+            <h3>Protocol</h3>
+            <p>Rows are read from <code>outputs/ablation/ablation_summary.csv</code> after extraction and copied into <code>website/assets/tables/ablation_summary.csv</code>. Validation and test outputs remain separate.</p>
+          </article>
+        </div>
+        <article class="surface-card ablation-table-card">
+          <h3>Paper Table</h3>
+          <div id="ablation-table-container" class="table-scroll">
+            <p class="status-note">Ablation table pending.</p>
+          </div>
+        </article>
+      </div>
+    </section>
+
     <section class="section" id="efficiency">
       <div class="page-shell">
         <div class="section-heading">
-          <span class="section-index">14</span>
+          <span class="section-index">16</span>
           <div>
             <h2>Efficiency</h2>
             <p class="section-copy">Efficiency values come from local model scripts and are reported separately from dataset metrics.</p>
@@ -468,7 +552,7 @@
     <section class="section" id="usage">
       <div class="page-shell">
         <div class="section-heading">
-          <span class="section-index">15</span>
+          <span class="section-index">17</span>
           <div>
             <h2>Usage</h2>
             <p class="section-copy">All configuration is controlled through <code>configs/global_config.yaml</code>.</p>
@@ -476,11 +560,24 @@
         </div>
         <article class="surface-card code-card">
 <pre><code>python scripts/extract_all_results_for_website.py
+python scripts/extract_mambacd_protocol_results.py
 python scripts/model_efficiency.py
+python scripts/run_ablation.py
+python scripts/extract_ablation_results.py
+python scripts/plot_ablation.py
+python scripts/validate_ablation.py
 python scripts/run_sota_reproduction_pipeline.py
 python scripts/collect_website_qualitative.py
+python scripts/validate_mambacd_protocol_tables.py
 python scripts/validate_website.py
 cd website && python -m http.server 8000</code></pre>
+        </article>
+        <article class="surface-card">
+          <h3>SECOND semantic config</h3>
+          <div class="math-block">\[
+          f_\theta(I_1, I_2) \rightarrow \{P(change), P(class_{t1}), P(class_{t2})\}
+          \]</div>
+          <p>Enable <code>model.output_mode = semantic_change</code>, <code>model.enable_semantic_heads = true</code>, <code>dataset.mode = semantic</code>, and <code>loss.type = second_semantic_cd</code> to obtain true SECOND OA, Fscd, mIoU, and SeK.</p>
         </article>
       </div>
     </section>
@@ -488,7 +585,7 @@ cd website && python -m http.server 8000</code></pre>
     <section class="section" id="notes">
       <div class="page-shell">
         <div class="section-heading">
-          <span class="section-index">16</span>
+          <span class="section-index">18</span>
           <div>
             <h2>Notes / Citation Placeholder</h2>
             <p class="section-copy">This section is reserved for final paper citation, acknowledgements, and manual notes for any external values that still require human verification.</p>

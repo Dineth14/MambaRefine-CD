@@ -16,9 +16,9 @@ from utils.config import load_config as _load_global_config
 
 
 def load_config(path: str | Path | None = None) -> Any:
-    """Return the single global runtime config.
+    """Return the runtime config.
 
-    The optional *path* argument is ignored and preserved only for backwards
-    compatibility with older imports.
+    When *path* is provided, it is passed through to the shared config loader,
+    which merges the selected config on top of the global base config.
     """
-    return _load_global_config()
+    return _load_global_config(path)

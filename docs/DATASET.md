@@ -124,19 +124,13 @@ If any parameter changes the key mismatches and the index is rebuilt.
 ```bash
 # Inspect dataset structure and estimate tile counts
 python scripts/inspect_dataset_structure.py
-
-# Run full pipeline smoke test (no training)
-python scripts/smoke_test_dataset.py
-
-# Run NaN stability smoke test (model only)
-python scripts/smoke_test_drbi.py
 ```
 
 ---
 
 ## Manifest
 
-After training starts (or after running the smoke test), a manifest is saved to:
+After training starts, a manifest is saved to:
 
 ```
 outputs/dataset_manifests/levircd_manifest.json

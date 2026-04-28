@@ -1,0 +1,92 @@
+# LEVIR-CD A4 Full
+# All modules: signed_diff + CRAM-lite + boundary_loss + boundary_refine + ARF-FPN
+
+experiment:
+  name: whu_a4_full
+  output_root: outputs/whu/a4_full
+
+dataset:
+  name: WHU-CD
+  root: /storage2/ChangeDetection/MV/Datasets/WHU-CD
+  image_size: 256
+  batch_size: 8
+  num_workers: 8
+  augmentation: true
+  val_ratio: 0.2
+
+task: binary_cd
+
+model:
+  mode: dual
+  backbone: mambavision
+  variant: base
+  decoder: adaptive_rf           # ARF-FPN with boundary residual
+  pretrained: true
+  output_mode: binary
+  enable_semantic_heads: false
+  cram_lite:
+    enabled: true                # CRAM-lite
+    alpha: 0.5
+    apply_stages: [0, 1, 2]
+    attention_type: spatial
+
+difference:
+  enabled: true
+  out_channels: 256
+  use_absdiff: true
+  use_signed_diff: true          # signed diff
+  use_product: false
+  pre_norm: true
+  use_region_gate: true
+  use_boundary_gate: true
+  region_gate_min: 0.2
+  region_gate_max: 0.8
+  boundary_gate_min: 0.0
+  boundary_gate_max: 0.4
+  gate_hidden_ratio: 0.25
+
+decoder:
+  channels: 256
+  dilation_rates: [1, 2, 4, 8]  # ARF-FPN
+  use_boundary_residual: true    # boundary refinement
+  residual_scale: 0.1
+  use_depthwise: true
+
+hardware:
+  device: cuda
+  gpu_ids: [1]
+  mixed_precision: true
+
+training:
+  max_iterations: 50000
+  batch_size: 8
+  lr: 5.0e-5
+  optimizer: adamw
+  scheduler: cosine
+  warmup_iterations: 2500
+  validate_every: 5000
+  log_every: 20
+  gradient_clip: 0.5
+  weight_decay: 0.01
+
+loss:
+  final:
+    type: bce_dice
+    bce_weight: 1.0
+    dice_weight: 1.0
+  coarse:
+    enabled: true
+    weight: 0.4
+  boundary:
+    enabled: true
+    weight: 0.1
+    type: bce_dice
+    target_type: sobel
+    edge_width: 3
+
+metrics:
+  allowed: [Pre, Rec, F1, IoU, OA]
+
+checkpoint:
+  selection_metric: F1
+  mode: max

@@ -14,8 +14,8 @@
 #   DSIFN training:      dataset.name = DSIFN-CD and comment out the LEVIR-only tile overrides.
 
 experiment:
-  name: DSIFN_experiment
-  output_root: outputs/dsifn_experiment
+  name: whu_experiment
+  output_root: outputs/whu_experiment
   seed: 42
 
 hardware:
@@ -29,8 +29,10 @@ model:
   variant: base        # tiny | tiny2 | small | base | large
   decoder: adaptive_rf
   pretrained: true
-  output_mode: "binary"      # binary | semantic
+  output_mode: "semantic_change"      # binary | semantic_change
   num_classes: 1
+  enable_semantic_heads: true
+  semantic_head_type: lightweight
   semantic_num_classes: 7
   return_features: false
   freeze_backbone: false
@@ -87,9 +89,9 @@ resume:
 dataset:
   # Active dataset selector. Base values are resolved from datasets_catalog.
   # Supported names: LEVIR-CD | WHU-CD | SYSU-CD | DSIFN-CD | SECOND
-  name: DSIFN-CD
+  name: WHU-CD
   task_type: semantic_change
-  mode: binary
+  mode: semantic
   ignore_index: 255
 
   # Common per-run overrides for the active dataset.
@@ -100,15 +102,25 @@ dataset:
   prefetch_factor: 4
   val_ratio: 0.2
   augment: true
-  binary: true
+  binary: false
   split: train
   precompute_second_binary_masks: true
   second_binary_cache_dir: outputs/second_binary_masks
   cache_images_in_ram: false
   cache_masks_in_ram: false
+  second_label_palette: null
 
   # Uncomment only if your local dataset path differs from datasets_catalog.
   # root: /storage2/ChangeDetection/MV/Datasets/LEVIRCD
+
+  # SECOND semantic-mode example.
+  # Keep these commented unless you are explicitly training or evaluating
+  # true semantic SECOND with timestamp-wise semantic heads enabled.
+  # name: SECOND
+  # mode: semantic
+  # task_type: semantic_change
+  # binary: false
+  # second_label_palette: [0, 1, 2, 3, 4, 5, 6]
 
   # LEVIR-only routing overrides.
   # Keep these for LEVIR experiments.
@@ -144,7 +156,7 @@ evaluation:
   threshold_list: [0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60]
   threshold_select_metric: "Fscd"   # options: mF1 | F1_1 | IoU_1 | Fscd
   second_metrics: true              # applied only when dataset.name: SECOND
-  compute_SeK: true
+  compute_SeK: true                 # true SeK requires semantic SECOND outputs
   sek_binary_fallback: false
   use_tta: false
   tta_augmentations: [original, hflip, vflip, rot90]
@@ -152,6 +164,7 @@ evaluation:
 
 loss:
   type: dice_focal_sek
+  # Use loss.type: second_semantic_cd only for SECOND semantic_change runs.
   dice_weight: 1.0
   focal_weight: 0.2
   focal_gamma: 1.5
@@ -160,6 +173,13 @@ loss:
   sek_eps: 1e-6
   sek_separate_nochange: true
   bce_weight: 1.0
+  change_loss_weight: 1.0
+  semantic_loss_weight: 0.5
+  consistency_loss_weight: 0.2
+  sek_loss_weight: 0.3
+  ce_weight: 1.0
+  consistency_detach_semantic: true
+  consistency_loss_type: bce
 
 ema:
   enabled: true
@@ -168,7 +188,7 @@ ema:
 
 checkpoint:
   path: null
-  monitor: f1
+  monitor: Fscd                       # SECOND semantic runs usually prefer Fscd or SeK
   mode: max
   save_best_only: true
 
@@ -273,7 +293,7 @@ datasets_catalog:
     name: SECOND
     root: /storage2/ChangeDetection/MV/Datasets/SECOND
     task_type: semantic_change
-    mode: binary
+    mode: semantic
     image_size: 256
     train_split: train
     val_split: val

@@ -193,6 +193,14 @@ def _make_logger() -> logging.Logger:
 
 
 def _save_json(results: dict, path: Path) -> None:
+    if results.get("metric_family") == "second":
+        serialisable = {
+            key: round(float(results[key]), 6)
+            for key in ("OA", "mIoU", "SeK", "Fscd")
+            if key in results and results[key] is not None
+        }
+        path.write_text(json.dumps(serialisable, indent=2))
+        return
     serialisable = {}
     for k, v in results.items():
         if isinstance(v, float):
@@ -205,6 +213,13 @@ def _save_json(results: dict, path: Path) -> None:
 
 
 def _save_csv(results: dict, path: Path) -> None:
+    if results.get("metric_family") == "second":
+        keys = [key for key in ("OA", "mIoU", "SeK", "Fscd") if key in results]
+        with open(path, "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(keys)
+            w.writerow([round(float(results[k]), 6) if results[k] is not None else "" for k in keys])
+        return
     numeric_keys = [
         k for k, v in results.items()
         if isinstance(v, (int, float)) and k not in ("num_samples",)
@@ -222,6 +237,13 @@ def _build_summary(results: dict) -> str:
         "FINAL TEST RESULTS",
         _SEP,
     ]
+    if results.get("metric_family") == "second":
+        for key in ("OA", "mIoU", "SeK", "Fscd"):
+            value = results.get(key)
+            if value is not None:
+                lines.append(f"{key:<16}: {float(value):.4f}")
+        lines.append(_SEP)
+        return "\n".join(lines) + "\n"
 
     def _fmt(key: str, label: str) -> Optional[str]:
         v = results.get(key)

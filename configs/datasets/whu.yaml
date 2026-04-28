@@ -1,0 +1,28 @@
+# WHU-CD Dataset Configuration
+dataset:
+  name: WHU-CD
+  root: /storage2/ChangeDetection/MV/Datasets/WHU-CD          # update to actual path
+  train_split: train
+  val_split: val
+  test_split: test
+  image_size: 256
+  batch_size: 8
+  num_workers: 8
+  augmentation: true
+  val_ratio: 0.2
+  ignore_index: 255
+  task_type: binary_change
+  mode: binary
+  binary: true
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 4
+
+task: binary_cd
+
+metrics:
+  allowed: [Pre, Rec, F1, IoU, OA]
+
+checkpoint:
+  selection_metric: F1
+  mode: max

@@ -293,6 +293,10 @@ p {
   border-collapse: collapse;
 }
 
+.table-scroll {
+  overflow-x: auto;
+}
+
 .data-table th,
 .data-table td {
   border-bottom: 1px solid var(--border);
@@ -309,6 +313,62 @@ p {
 .status-note {
   color: var(--warning);
   font-weight: 600;
+}
+
+.metric-card-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.metric-card {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: #f8fbff;
+  padding: 14px 16px;
+}
+
+.metric-card-label {
+  display: block;
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 6px;
+}
+
+.metric-card-value {
+  font-size: 1.1rem;
+}
+
+.mapping-table td:last-child,
+.mapping-table th:last-child {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+.protocol-notes ul {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--muted);
+}
+
+.protocol-row-ours {
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.protocol-row-mambacd {
+  background: rgba(5, 150, 105, 0.08);
+}
+
+.metric-best {
+  background: rgba(5, 150, 105, 0.18);
+  font-weight: 700;
+}
+
+.metric-second {
+  background: rgba(245, 158, 11, 0.16);
+  font-weight: 700;
 }
 
 .figure-card figcaption {
@@ -395,6 +455,37 @@ p {
   text-align: center;
 }
 
+.ablation-table-card {
+  margin-top: 24px;
+}
+
+.ablation-highlight-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ablation-highlight {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: #f8fbff;
+  padding: 14px 16px;
+}
+
+.ablation-highlight span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 6px;
+}
+
+.ablation-highlight strong {
+  display: block;
+  font-size: 1.05rem;
+}
+
 .code-card pre {
   margin: 0;
   white-space: pre-wrap;
@@ -407,7 +498,9 @@ p {
   .three-column,
   .summary-grid,
   .dataset-grid,
-  .qualitative-grid {
+  .qualitative-grid,
+  .metric-card-grid,
+  .ablation-highlight-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -452,6 +545,8 @@ p {
   .summary-grid,
   .dataset-grid,
   .qualitative-grid,
+  .metric-card-grid,
+  .ablation-highlight-grid,
   .section-heading {
     grid-template-columns: 1fr;
   }

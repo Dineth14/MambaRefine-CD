@@ -1,0 +1,42 @@
+Dataset,Method,Year,Pre (%),Rec (%),F1 (%),IoU (%),OA (%),Source,Source Status
+LEVIR-CD,FC-EF,2018,86.91,80.17,83.4,71.53,98.39,Mamba-CD paper literature table,Mamba-CD paper literature table
+LEVIR-CD,FC-Siam-Di,2018,89.53,83.31,86.31,75.92,98.67,Mamba-CD paper literature table,Mamba-CD paper literature table
+LEVIR-CD,FC-Siam-Conc,2018,91.99,76.77,83.69,71.96,98.49,Mamba-CD paper literature table,Mamba-CD paper literature table
+LEVIR-CD,DTCDSCN,2020,88.53,86.83,87.67,78.05,98.77,Mamba-CD paper literature table,Mamba-CD paper literature table
+LEVIR-CD,STANet,2020,83.81,91.0,87.26,77.4,98.66,Mamba-CD paper literature table,Mamba-CD paper literature table
+LEVIR-CD,IFNet,2020,94.02,82.93,88.13,78.77,98.87,Mamba-CD paper literature table,Mamba-CD paper literature table
+LEVIR-CD,SNUNet,2021,89.18,87.17,88.16,78.83,98.82,Mamba-CD paper literature table,Mamba-CD paper literature table
+LEVIR-CD,BIT,2021,89.24,89.37,89.31,80.68,98.92,Mamba-CD paper literature table,Mamba-CD paper literature table
+LEVIR-CD,ChangeFormer,2022,92.05,88.8,90.4,82.48,99.04,Mamba-CD paper literature table,Mamba-CD paper literature table
+LEVIR-CD,BiFA,2024,91.52,89.86,90.69,82.96,99.06,Mamba-CD paper literature table,Mamba-CD paper literature table
+LEVIR-CD,RSM-CD,2024,92.52,89.73,91.1,83.66,,Mamba-CD paper literature table,Mamba-CD paper literature table
+LEVIR-CD,CDMamba,2025,91.43,90.08,90.75,83.07,99.06,Mamba-CD paper literature table,Mamba-CD paper literature table
+LEVIR-CD,Mamba-CD,2025,93.06,91.07,92.06,85.28,99.2,Mamba-CD paper literature table,Mamba-CD paper literature table
+LEVIR-CD,MambaRefine-CD,2026,85.15,86.38,85.76,75.07,98.83,"Ours, reproduced from local evaluation","Ours, reproduced from local evaluation"
+WHU-CD,FC-EF,2018,71.63,67.25,69.37,53.11,97.61,Mamba-CD paper literature table,Mamba-CD paper literature table
+WHU-CD,FC-Siam-Di,2018,47.33,77.66,58.81,41.66,95.63,Mamba-CD paper literature table,Mamba-CD paper literature table
+WHU-CD,FC-Siam-Conc,2018,60.88,73.58,66.63,49.95,97.04,Mamba-CD paper literature table,Mamba-CD paper literature table
+WHU-CD,DTCDSCN,2020,63.92,82.3,71.95,56.19,97.42,Mamba-CD paper literature table,Mamba-CD paper literature table
+WHU-CD,STANet,2020,79.37,85.5,82.32,69.95,98.52,Mamba-CD paper literature table,Mamba-CD paper literature table
+WHU-CD,IFNet,2020,96.91,73.19,83.4,71.52,98.83,Mamba-CD paper literature table,Mamba-CD paper literature table
+WHU-CD,SNUNet,2021,85.6,81.49,83.5,71.67,98.71,Mamba-CD paper literature table,Mamba-CD paper literature table
+WHU-CD,ChangeFormer,2022,91.83,88.02,89.88,81.63,99.12,Mamba-CD paper literature table,Mamba-CD paper literature table
+WHU-CD,BiFA,2024,95.15,93.6,94.37,89.34,99.56,Mamba-CD paper literature table,Mamba-CD paper literature table
+WHU-CD,RSM-CD,2024,93.37,90.42,91.87,84.96,,Mamba-CD paper literature table,Mamba-CD paper literature table
+WHU-CD,SChanger,2025,94.62,91.83,93.2,87.27,,Mamba-CD paper literature table,Mamba-CD paper literature table
+WHU-CD,CDMamba,2025,95.58,92.01,93.76,88.26,99.51,Mamba-CD paper literature table,Mamba-CD paper literature table
+WHU-CD,Mamba-CD,2025,96.52,93.91,95.2,90.83,99.62,Mamba-CD paper literature table,Mamba-CD paper literature table
+WHU-CD,MambaRefine-CD,2026,94.95,94.49,94.72,89.96,99.49,"Ours, reproduced from local evaluation","Ours, reproduced from local evaluation"
+DSIFN-CD,FC-EF,2018,72.61,52.73,61.09,43.98,88.59,Mamba-CD paper literature table,Mamba-CD paper literature table
+DSIFN-CD,FC-Siam-Di,2018,59.67,65.71,62.54,45.5,86.63,Mamba-CD paper literature table,Mamba-CD paper literature table
+DSIFN-CD,FC-Siam-Conc,2018,66.45,54.21,59.71,42.56,87.57,Mamba-CD paper literature table,Mamba-CD paper literature table
+DSIFN-CD,DTCDSCN,2020,53.87,77.99,63.72,46.76,84.91,Mamba-CD paper literature table,Mamba-CD paper literature table
+DSIFN-CD,STANet,2020,67.71,61.68,64.56,47.66,88.49,Mamba-CD paper literature table,Mamba-CD paper literature table
+DSIFN-CD,IFNet,2020,67.86,53.94,60.1,42.96,87.83,Mamba-CD paper literature table,Mamba-CD paper literature table
+DSIFN-CD,SNUNet,2021,60.6,72.89,66.18,49.45,87.34,Mamba-CD paper literature table,Mamba-CD paper literature table
+DSIFN-CD,ChangeFormer,2022,88.48,84.94,86.67,76.48,95.56,Mamba-CD paper literature table,Mamba-CD paper literature table
+DSIFN-CD,BiFA,2024,73.99,68.87,71.34,55.45,90.8,Mamba-CD paper literature table,Mamba-CD paper literature table
+DSIFN-CD,FTAN,2024,90.54,88.61,89.56,81.1,,Mamba-CD paper literature table,Mamba-CD paper literature table
+DSIFN-CD,ADSFNet,2025,94.79,95.24,95.01,90.5,98.3,Mamba-CD paper literature table,Mamba-CD paper literature table
+DSIFN-CD,Mamba-CD,2025,95.6,95.61,95.61,91.69,98.51,Mamba-CD paper literature table,Mamba-CD paper literature table
+DSIFN-CD,MambaRefine-CD,2026,96.45,96.56,96.5,93.25,97.56,"Ours, reproduced from local evaluation","Ours, reproduced from local evaluation"

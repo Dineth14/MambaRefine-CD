@@ -215,6 +215,9 @@ def model_output_to_logits(output: Any) -> Tuple[torch.Tensor, str, bool]:
         contains_features = False
         return logits, "list", contains_features
     if isinstance(output, dict):
+        if "change_logits" in output:
+            contains_features = any(k for k in output.keys() if k != "change_logits")
+            return output["change_logits"], "dict", contains_features
         if "logits" in output:
             contains_features = any(k for k in output.keys() if k != "logits")
             return output["logits"], "dict", contains_features
