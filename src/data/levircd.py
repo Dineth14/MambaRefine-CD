@@ -6,18 +6,19 @@ Directory layout expected:
       test/   A/  B/  label/
 
 LEVIRCDDataset (original):
-    split='train' → random 256×256 crops from 80% of train/.
-    split='val'   → sliding-window 256×256 tiles from 20% of train/.
+    split='train' → random 256×256 crops from train split file.
+    split='val'   → sliding-window 256×256 tiles from val split file.
     split='test'  → sliding-window 256×256 tiles from test/.
 
 LEVIRCDTileDataset (new tile-based):
-    split='train' → tile index (stride configurable) from 80% of train/.
-    split='val'   → tile index (stride=tile_size) from 20% of train/.
+    split='train' → tile index (stride configurable) from train split file.
+    split='val'   → tile index (stride=tile_size) from val split file.
     split='test'  → tile index (stride=tile_size) from test/.
     Supports balanced sampling via has_change / change_ratio fields.
 """
 from __future__ import annotations
 
+import hashlib
 import random
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -36,6 +37,7 @@ except ImportError:
 
 _MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 _STD  = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _discover(split_dir: Path) -> List[str]:
@@ -51,6 +53,88 @@ def _split(names: List[str], val_ratio: float, seed: int) -> Tuple[List[str], Li
     return sorted(shuffled[n_val:]), sorted(shuffled[:n_val])
 
 
+def _resolve_repo_path(path: str | Path | None) -> Optional[Path]:
+    if path is None:
+        return None
+    p = Path(path)
+    return p if p.is_absolute() else _REPO_ROOT / p
+
+
+def _read_split_file(path: str | Path | None) -> Optional[List[str]]:
+    resolved = _resolve_repo_path(path)
+    if resolved is None:
+        return None
+    if not resolved.exists():
+        raise FileNotFoundError(f"LEVIR split file not found: {resolved}")
+    ids: List[str] = []
+    with open(resolved) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            ids.append(Path(line).name)
+    return ids
+
+
+def _name_lookup(names: List[str]) -> dict[str, str]:
+    lookup = {}
+    for name in names:
+        p = Path(name)
+        lookup[name] = name
+        lookup[p.name] = name
+        lookup[p.stem] = name
+    return lookup
+
+
+def _names_from_split_file(all_names: List[str], split_file: str | Path | None, split: str) -> Optional[List[str]]:
+    ids = _read_split_file(split_file)
+    if ids is None:
+        return None
+    lookup = _name_lookup(all_names)
+    selected: List[str] = []
+    missing: List[str] = []
+    seen = set()
+    for sample_id in ids:
+        key = Path(sample_id).name
+        matched = lookup.get(key) or lookup.get(Path(key).stem)
+        if matched is None:
+            missing.append(sample_id)
+            continue
+        if matched not in seen:
+            selected.append(matched)
+            seen.add(matched)
+    if missing:
+        preview = ", ".join(missing[:10])
+        raise ValueError(
+            f"LEVIR {split} split file contains {len(missing)} ids not found in dataset folder. "
+            f"Examples: {preview}"
+        )
+    return sorted(selected)
+
+
+def _select_train_val_names(
+    all_names: List[str],
+    split: str,
+    val_ratio: float,
+    seed: int,
+    split_files: Optional[dict] = None,
+) -> List[str]:
+    split_files = split_files or {}
+    if split in ("train", "val"):
+        selected = _names_from_split_file(all_names, split_files.get(split), split)
+        if selected is not None:
+            return selected
+        train_names, val_names = _split(all_names, val_ratio, seed)
+        return train_names if split == "train" else val_names
+    return all_names
+
+
+def _split_cache_tag(names: List[str], split: str) -> str:
+    blob = "\n".join(sorted(names)).encode()
+    digest = hashlib.sha1(blob).hexdigest()[:10]
+    return f"{split}_{len(names)}_{digest}"
+
+
 class LEVIRCDDataset(Dataset):
     def __init__(
         self,
@@ -60,23 +144,21 @@ class LEVIRCDDataset(Dataset):
         val_ratio: float = 0.2,
         seed: int = 42,
         augment: bool = True,
+        split_files: Optional[dict] = None,
+        test_dir: str = "test",
     ) -> None:
         self.root       = Path(root)
         self.split      = split
         self.size       = image_size
         self.do_augment = augment and split == "train"
 
-        src = self.root / ("train" if split in ("train", "val") else "test")
+        src = self.root / ("train" if split in ("train", "val") else test_dir)
         self.a_dir   = src / "A"
         self.b_dir   = src / "B"
         self.lbl_dir = src / "label"
 
         all_names = _discover(src)
-        if split in ("train", "val"):
-            train_names, val_names = _split(all_names, val_ratio, seed)
-            self.names = train_names if split == "train" else val_names
-        else:
-            self.names = all_names
+        self.names = _select_train_val_names(all_names, split, val_ratio, seed, split_files)
 
         self.tiles: Optional[List[Tuple[str, int, int]]] = (
             None if split == "train" else self._build_tiles()
@@ -219,6 +301,8 @@ class LEVIRCDTileDataset(Dataset):
         include_empty_ratio: float = 0.25,
         use_cache: bool = True,
         cache_dir: str | Path = "outputs/dataset_indices",
+        split_files: Optional[dict] = None,
+        test_dir: str = "test",
     ) -> None:
         from data.tile_index import build_tile_index
 
@@ -228,18 +312,15 @@ class LEVIRCDTileDataset(Dataset):
         self.do_augment = augment and split == "train"
 
         # Resolve split directories
-        src = self.root / ("train" if split in ("train", "val") else "test")
+        src = self.root / ("train" if split in ("train", "val") else test_dir)
         self.a_dir   = src / "A"
         self.b_dir   = src / "B"
         self.lbl_dir = src / "label"
 
         # Collect file lists and apply train/val split
         all_names = _discover(src)
-        if split in ("train", "val"):
-            train_names, val_names = _split(all_names, val_ratio, seed)
-            names = train_names if split == "train" else val_names
-        else:
-            names = all_names
+        names = _select_train_val_names(all_names, split, val_ratio, seed, split_files)
+        self.names = names
 
         # Resolve to full paths
         a_paths = [self.a_dir / n for n in names]
@@ -257,7 +338,7 @@ class LEVIRCDTileDataset(Dataset):
         if use_cache:
             cache_root = Path(cache_dir)
             cache_root.mkdir(parents=True, exist_ok=True)
-            cache_path = cache_root / f"levircd_{split}_{image_size}_{stride}.csv"
+            cache_path = cache_root / f"levircd_{_split_cache_tag(names, split)}_{image_size}_{stride}.csv"
 
         self.index: List[dict] = build_tile_index(
             image_paths_a       = a_paths,

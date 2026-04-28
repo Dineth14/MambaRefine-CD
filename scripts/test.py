@@ -100,7 +100,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Test MambaRefineCD on held-out test split.")
     parser.add_argument("--config",          required=True)
     parser.add_argument("--ckpt",            required=True)
-    parser.add_argument("--split",           default="test", choices=["val", "test"])
+    parser.add_argument("--split",           default="test", choices=["test"])
     parser.add_argument("--threshold",       type=float, default=None)
     ema_group = parser.add_mutually_exclusive_group()
     ema_group.add_argument("--use_ema", dest="use_ema", action="store_true", default=None)
@@ -154,11 +154,11 @@ def main() -> None:
     cfg["output"]["save_visualizations"] = save_visualizations
     if args.save_debug:
         cfg["evaluation"]["save_debug_outputs"] = True
-        cfg["evaluation"]["debug_output_root"] = "outputs/debug_levir_eval"
-        cfg["evaluation"]["debug_max_samples"] = 20
+        cfg["evaluation"]["debug_output_root"] = "debug/levir"
+        cfg["evaluation"]["debug_max_samples"] = 50
         cfg["eval"]["save_debug_outputs"] = True
-        cfg["eval"]["debug_output_root"] = "outputs/debug_levir_eval"
-        cfg["eval"]["debug_max_samples"] = 20
+        cfg["eval"]["debug_output_root"] = "debug/levir"
+        cfg["eval"]["debug_max_samples"] = 50
     if args.split == "test" or args.threshold is not None or threshold_source == "checkpoint":
         cfg["evaluation"]["threshold_sweep"] = False
         cfg["eval"]["threshold_sweep"] = False

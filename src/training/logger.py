@@ -28,10 +28,11 @@ def log_table(logger: logging.Logger, metrics: dict, title: str = "") -> None:
     """Print a +---------+--------+ table of metric values."""
     if metrics.get("metric_family") == "second":
         metrics = {key: metrics[key] for key in ("OA", "mIoU", "SeK", "Fscd") if key in metrics}
+    elif any(key in metrics for key in ("f1", "iou", "precision", "recall", "oa")):
+        metrics = {key: metrics[key] for key in ("precision", "recall", "f1", "iou", "oa") if key in metrics}
     _LABELS = {
         "f1":                  "F1",
-        "iou":                 "IoU-change",
-        "miou":                "mIoU",
+        "iou":                 "IoU",
         "precision":           "Precision",
         "recall":              "Recall",
         "oa":                  "OA",

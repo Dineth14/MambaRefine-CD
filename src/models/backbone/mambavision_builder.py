@@ -20,17 +20,23 @@ import warnings
 from pathlib import Path
 from typing import List
 
-# ── Ensure MambaVisionCD is importable ───────────────────────────────────────
-_REPO_ROOT = Path(__file__).resolve().parents[3]   # MambaRefine-CD/
-_MV_SRC    = _REPO_ROOT.parent / "src"             # /storage2/ChangeDetection/MV/src (has mvcd)
-_OLD_REPO  = _REPO_ROOT.parent / "MambaVisionCD"   # sibling repo
-for _p in [str(_MV_SRC), str(_OLD_REPO)]:
-    if _p not in sys.path:
-        sys.path.append(_p)  # append so MambaRefine-CD/src/ keeps priority
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
+# ── Ensure MambaVision dependencies are importable ───────────────────────────
+_REPO_ROOT = Path(__file__).resolve().parents[3]        # MambaRefine-CD/
+_MV_EXP_SRC = _REPO_ROOT.parent / "MambaVision_experiments" / "src"
+_MV_REPO = _REPO_ROOT.parent / "MambaVisionCD"
 
-from mvcd.model import MambaVisionFeatureExtractor  # noqa: E402
+for _p in (_MV_EXP_SRC, _MV_REPO):
+    if _p.exists() and str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
+
+try:
+    from mvcd.model import MambaVisionFeatureExtractor  # noqa: E402
+except ModuleNotFoundError as exc:  # pragma: no cover - import-time environment guard
+    raise ModuleNotFoundError(
+        "Could not import mvcd.model.MambaVisionFeatureExtractor. "
+        f"Expected sibling dependency at {_MV_EXP_SRC}. "
+        "Check that MambaVision_experiments/src and MambaVisionCD are present."
+    ) from exc
 
 # ── Variant maps ──────────────────────────────────────────────────────────────
 _ALIAS_MAP: dict[str, str] = {

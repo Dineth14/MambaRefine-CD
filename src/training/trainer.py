@@ -481,9 +481,7 @@ class Trainer:
         else:
             csv_cols = [
                 "iteration", "dataset",
-                "f1", "iou", "miou", "precision", "recall", "oa",
-                "boundary_f1", "edge_iou",
-                "pred_positive_ratio", "gt_positive_ratio",
+                "precision", "recall", "f1", "iou", "oa",
                 "best_threshold",
             ]
         if not self.val_csv.exists():
@@ -572,7 +570,10 @@ class Trainer:
                 log_table(self.logger, vm, title="")  # detailed table
 
                 if self.writer:
+                    writer_keys = set(csv_cols[2:]) if not self.second_semantic_mode else None
                     for k, v in vm.items():
+                        if writer_keys is not None and k not in writer_keys:
+                            continue
                         if isinstance(v, bool):
                             self.writer.add_scalar(f"val/{k}", float(v), iteration)
                         elif isinstance(v, (int, float)):
@@ -629,12 +630,9 @@ class Trainer:
             return
         self.logger.info(f"  Best Threshold  : {vm.get('best_threshold', self.threshold):.2f}")
         self.logger.info(f"  F1              : {vm.get('f1', 0.0):.4f}")
-        self.logger.info(f"  IoU (change)    : {vm.get('iou', 0.0):.4f}")
-        self.logger.info(f"  mIoU            : {vm.get('miou', 0.0):.4f}")
+        self.logger.info(f"  IoU             : {vm.get('iou', 0.0):.4f}")
         self.logger.info(f"  Precision       : {vm.get('precision', 0.0):.4f}")
         self.logger.info(f"  Recall          : {vm.get('recall', 0.0):.4f}")
         self.logger.info(f"  OA              : {vm.get('oa', 0.0):.4f}")
-        self.logger.info(f"  Boundary F1     : {vm.get('boundary_f1', 0.0):.4f}")
-        ema_tag = " [EMA]" if vm.get("ema_enabled") else ""
         self.logger.info(f"  EMA             : {'on' if vm.get('ema_enabled') else 'off'}")
         self.logger.info(sep)

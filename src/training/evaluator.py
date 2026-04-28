@@ -583,8 +583,17 @@ class Evaluator:
                     assert_second_prediction_dirs(self.save_dir, split=str(_merged_eval_cfg(self.cfg).get("split", "eval")))
         else:
             result = self._metrics_at_threshold(
-                all_logits, all_labels, best_thr, compute_boundary=True
+                all_logits,
+                all_labels,
+                best_thr,
+                compute_boundary=bool(self.cfg.get("debug", {}).get("metrics", False)),
             )
+            if not bool(self.cfg.get("debug", {}).get("metrics", False)):
+                result = {
+                    key: result[key]
+                    for key in ("precision", "recall", "f1", "iou", "oa")
+                    if key in result
+                }
         result["best_threshold"] = best_thr
         result["dataset"]        = dataset_name
         result["num_samples"]    = num_samples

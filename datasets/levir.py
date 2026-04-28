@@ -8,7 +8,9 @@ Expected config keys (dataset section)
     dataset.root          : path to LEVIR-CD root
     dataset.split         : train | val | test
     dataset.image_size    : 256
-    dataset.val_ratio     : 0.2
+    dataset.val_ratio     : 0.15 fallback when split files are absent
+    dataset.split_files   : {train: splits/levir_train.txt, val: splits/levir_val.txt}
+    dataset.test_dir      : test
     dataset.augment       : true/false
     dataset.balance.enabled              : true/false
     dataset.balance.min_change_ratio     : 0.001
@@ -45,6 +47,8 @@ def build_levir_dataset(cfg: dict[str, Any], split: str) -> Any:
     image_size = int(ds_cfg.get("image_size", 256))
     val_ratio  = float(ds_cfg.get("val_ratio", 0.2))
     augment    = bool(ds_cfg.get("augment", True))
+    split_files = ds_cfg.get("split_files", {})
+    test_dir = str(ds_cfg.get("test_dir", "test"))
 
     # Prefer tiled dataset which supports balanced sampling
     return LEVIRCDTileDataset(
@@ -53,4 +57,6 @@ def build_levir_dataset(cfg: dict[str, Any], split: str) -> Any:
         image_size=image_size,
         val_ratio=val_ratio,
         augment=augment,
+        split_files=split_files,
+        test_dir=test_dir,
     )

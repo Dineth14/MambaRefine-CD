@@ -118,7 +118,10 @@ def build_dataset(
         augment    = do_augment,
     )
     if cls is LEVIRCDDataset:
-        pass  # no extra kwargs
+        kwargs.update({
+            "split_files": dataset_cfg.get("split_files", {}),
+            "test_dir": str(dataset_cfg.get("test_dir", "test")),
+        })
     elif cls is SECONDDataset:
         kwargs.update({
             "mode": str(dataset_cfg.get("mode", "binary")),
@@ -178,6 +181,8 @@ def _build_levircd_tile(
         include_empty_ratio = float(dc.get("include_empty_ratio", 0.25)),
         use_cache           = bool(dc.get("use_tile_cache", True)),
         cache_dir           = cache_path,
+        split_files         = dc.get("split_files", {}),
+        test_dir            = str(dc.get("test_dir", "test")),
     )
 
 
@@ -281,6 +286,91 @@ def _estimate_positive_ratio(ds: Dataset, n: int = 200) -> float:
     return float(positive / total) if total else 0.0
 
 
+def _dataset_mode_label(ds: Dataset) -> str:
+    if isinstance(ds, LEVIRCDTileDataset):
+        return "tile"
+    if isinstance(ds, LEVIRCDDataset) and getattr(ds, "tiles", None) is not None:
+        return "tile"
+    return "full_image"
+
+
+def _first_shape_info(ds: Dataset) -> dict:
+    from PIL import Image
+    info = {
+        "image_before": "unknown",
+        "mask_before": "unknown",
+        "image_after": "unknown",
+        "mask_after": "unknown",
+    }
+    try:
+        if isinstance(ds, LEVIRCDTileDataset) and getattr(ds, "index", None):
+            entry = ds.index[0]
+            info["image_before"] = list(reversed(Image.open(entry["image_a_path"]).size))
+            info["mask_before"] = list(reversed(Image.open(entry["mask_path"]).size))
+        elif isinstance(ds, LEVIRCDDataset):
+            if getattr(ds, "tiles", None):
+                name, _, _ = ds.tiles[0]
+            else:
+                name = ds.names[0]
+            info["image_before"] = list(reversed(Image.open(ds.a_dir / name).size))
+            info["mask_before"] = list(reversed(Image.open(ds.lbl_dir / name).size))
+        item = ds[0]
+        image = item.get("image_a")
+        mask = item.get("mask", item.get("label", item.get("change_mask")))
+        if image is not None:
+            info["image_after"] = list(image.shape)
+        if mask is not None:
+            info["mask_after"] = list(mask.shape)
+    except Exception as exc:
+        info["error"] = str(exc)
+    return info
+
+
+def log_split_diagnostics(ds: Dataset, split: str, log: logging.Logger) -> None:
+    """Log mode, shape, sample count, and positive-ratio diagnostics."""
+    info = _first_shape_info(ds)
+    log.info(
+        "LEVIR split diagnostics [%s] | mode=%s | samples=%d | "
+        "image_shape_before=%s | image_shape_after=%s | "
+        "mask_shape_before=%s | mask_shape_after=%s | avg_positive_ratio=%.6f",
+        split,
+        _dataset_mode_label(ds),
+        len(ds),
+        info.get("image_before"),
+        info.get("image_after"),
+        info.get("mask_before"),
+        info.get("mask_after"),
+        _estimate_positive_ratio(ds),
+    )
+
+
+def _levir_image_count(ds: Dataset) -> Optional[int]:
+    names = getattr(ds, "names", None)
+    if names is not None:
+        return len(names)
+    if isinstance(ds, LEVIRCDTileDataset) and getattr(ds, "index", None):
+        return len({Path(e["image_a_path"]).name for e in ds.index})
+    return None
+
+
+def log_levir_split_summary(log: logging.Logger, dc: dict, train_ds: Optional[Dataset] = None,
+                            val_ds: Optional[Dataset] = None, test_ds: Optional[Dataset] = None) -> None:
+    root = Path(str(dc.get("root", "")))
+    test_dir = str(dc.get("test_dir", "test"))
+    test_count = _levir_image_count(test_ds) if test_ds is not None else None
+    if test_count is None:
+        try:
+            test_count = len([p for p in (root / test_dir / "A").iterdir() if p.suffix.lower() in {".png", ".jpg", ".jpeg", ".tif", ".tiff"}])
+        except Exception:
+            test_count = None
+    log.info("Split summary:")
+    if train_ds is not None:
+        log.info("  train images: %s", _levir_image_count(train_ds))
+    if val_ds is not None:
+        log.info("  val images: %s", _levir_image_count(val_ds))
+    log.info("  test images: %s", test_count if test_count is not None else "unknown")
+
+
 # ── Dataset manifest ──────────────────────────────────────────────────────────
 
 def save_dataset_manifest(
@@ -363,6 +453,10 @@ def build_dataloaders(cfg: dict, dataset_cfg: Optional[dict] = None):
 
     train_loader = DataLoader(**train_loader_kwargs)
     val_loader = DataLoader(**val_loader_kwargs)
+    if _is_levir(str(dc.get("name", ""))):
+        log_levir_split_summary(logger, dc, train_ds=train_ds, val_ds=val_ds)
+        log_split_diagnostics(train_ds, "train", logger)
+        log_split_diagnostics(val_ds, "val", logger)
     return train_loader, val_loader
 
 
@@ -393,4 +487,7 @@ def build_test_loader(cfg: dict, dataset_cfg: Optional[dict] = None) -> DataLoad
     if prefetch_factor is not None:
         loader_kwargs["prefetch_factor"] = prefetch_factor
     loader = DataLoader(**loader_kwargs)
+    if _is_levir(str(dc.get("name", ""))):
+        log_levir_split_summary(logger, dc, test_ds=test_ds)
+        log_split_diagnostics(test_ds, split, logger)
     return loader

@@ -12,7 +12,11 @@ dataset:
   batch_size: 8
   num_workers: 8
   augmentation: true
-  val_ratio: 0.2
+  val_ratio: 0.15
+  split_files:
+    train: splits/levir_train.txt
+    val: splits/levir_val.txt
+  test_dir: test
 
 task: binary_cd
 
@@ -99,4 +103,3 @@ checkpoint:
   selection_metric: F1
   monitor: f1
   mode: max
-
