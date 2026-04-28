@@ -425,61 +425,18 @@ class Trainer:
         if self.ema is not None:
             self.ema.apply_shadow(self.model)
 
-        if self.second_semantic_mode:
-            from training.evaluator import Evaluator
+        from training.evaluator import Evaluator
 
-            evaluator = Evaluator(self.cfg, self.device, logger=self.logger, save_dir=self.val_dir)
+        evaluator = Evaluator(self.cfg, self.device, logger=self.logger, save_dir=self.val_dir)
+        try:
             result = evaluator.evaluate(self.model, self.val_loader, dataset_name=self.dataset_name, amp=self.amp)
+        finally:
             if self.ema is not None:
                 self.ema.restore(self.model)
-            self.model.train()
-            result["ema_enabled"] = self.ema is not None
-            return result
-
-        self.model.eval()
-        pix_metrics = StreamingMetrics(threshold=self.threshold)
-        bnd_metrics = BoundaryMetrics(
-            boundary_width = self.bnd_width,
-            tolerance      = self.bnd_tol,
-            threshold      = self.threshold,
-        )
-        sample_done = False
-
-        val_iter = tqdm(self.val_loader, desc="Validating", leave=False, unit="batch") if _TQDM else self.val_loader
-        for batch in val_iter:
-            ia = batch["image_a"].to(self.device, non_blocking=self.non_blocking_transfer)
-            ib = batch["image_b"].to(self.device, non_blocking=self.non_blocking_transfer)
-            lbl_key = "label" if "label" in batch else "mask"
-            lb = batch[lbl_key].to(self.device, non_blocking=self.non_blocking_transfer)
-            logits = normalize_model_output(self.model(ia, ib))["change_logits"]
-            pix_metrics.update(logits, lb)
-            bnd_metrics.update(logits, lb)
-
-            if _TQDM:
-                m = pix_metrics.compute()
-                val_iter.set_postfix(  # type: ignore[union-attr]
-                    F1=f"{m['f1']:.3f}",
-                    IoU=f"{m['iou']:.3f}",
-                    BF1=f"{m.get('boundary_f1', 0):.3f}",
-                )
-
-            if self.save_samples and not sample_done:
-                n = min(self.sample_count, ia.shape[0])
-                save_prediction_grid(ia[:n], ib[:n], lb[:n], logits[:n],
-                                     self.sample_dir / f"iter_{iteration:07d}.png", count=n)
-                sample_done = True
-
-        # Restore live weights before resuming training
-        if self.ema is not None:
-            self.ema.restore(self.model)
 
         self.model.train()
-        result = pix_metrics.compute()
-        bm     = bnd_metrics.compute()
-        result.update(bm)            # tolerance-aware BF1 + edge_iou override
-        result["dataset"]          = self.dataset_name
-        result["best_threshold"]   = self.threshold  # fixed during training
-        result["ema_enabled"]      = self.ema is not None
+        result["ema_enabled"] = self.ema is not None
+        result["ema_weights_found"] = self.ema is not None
         return result
 
     # ------------------------------------------------------------------
@@ -634,6 +591,9 @@ class Trainer:
                         self.ckpt_dir / "best.pth",
                         self.model, self.optimizer, self.scheduler,
                         iteration + 1, self.best_metric, self.cfg,
+                        ema_state=self.ema.state_dict() if self.ema is not None else None,
+                        best_threshold=vm.get("best_threshold"),
+                        val_metrics=vm,
                     )
                     self.logger.info(
                         f"  ✓ New best {self.monitor}={self.best_metric:.4f} saved."

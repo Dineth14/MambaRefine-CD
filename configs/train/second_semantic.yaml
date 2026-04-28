@@ -10,7 +10,7 @@ hardware:
 model:
   mode: dual
   backbone: mambavision
-  variant: tiny2
+  variant: base
   semantic_head_channels: 96
   decoder: adaptive_rf
   pretrained: true

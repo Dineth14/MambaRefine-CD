@@ -277,14 +277,35 @@ def _normalize_config(data: dict[str, Any]) -> dict[str, Any]:
     data["dataset"] = dataset_cfg
 
     evaluation = data.get("evaluation", {})
+    eval_alias = data.get("eval", {})
+    if eval_alias:
+        evaluation.update(eval_alias)
     evaluation.setdefault("split", "test")
+    evaluation.setdefault("threshold", 0.5)
+    evaluation.setdefault("use_ema", training.get("use_ema", False))
     evaluation.setdefault("threshold_list", [0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60])
+    threshold_sweep = evaluation.get("threshold_sweep", False)
+    if isinstance(threshold_sweep, dict):
+        evaluation["threshold_sweep"] = {
+            "enabled": bool(threshold_sweep.get("enabled", False)),
+            "values": threshold_sweep.get("values", evaluation.get("threshold_list")),
+        }
+    else:
+        evaluation.setdefault("threshold_sweep", False)
     evaluation.setdefault("tta_augmentations", ["original", "hflip", "vflip", "rot90"])
     evaluation.setdefault("threshold_select_metric", "mF1")
+    evaluation.setdefault("inference_mode", "patch")
+    evaluation.setdefault("crop_size", dataset_cfg.get("image_size", 256))
+    evaluation.setdefault("overlap", 0.25)
     evaluation.setdefault("second_metrics", False)
     evaluation.setdefault("compute_SeK", True)
     evaluation.setdefault("sek_binary_fallback", False)
     data["evaluation"] = evaluation
+    data["eval"] = evaluation
+
+    metrics = data.get("metrics", {})
+    metrics.setdefault("average_mode", "global")
+    data["metrics"] = metrics
 
     loss_cfg = data.get("loss", {})
     loss_cfg.setdefault("type", "bce_dice")

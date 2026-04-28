@@ -85,6 +85,22 @@ loss:
 
 metrics:
   allowed: [Pre, Rec, F1, IoU, OA]
+  average_mode: global
+
+eval:
+  threshold: 0.5
+  threshold_sweep:
+    enabled: true
+    values: [0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60]
+  threshold_select_metric: F1_1
+  use_ema: true
+  inference_mode: patch
+  crop_size: 256
+  overlap: 0.25
+  log_mask_debug: true
+  save_debug_outputs: false
+  debug_output_root: outputs/debug_levir_eval
+  debug_max_samples: 20
 
 checkpoint:
   selection_metric: F1

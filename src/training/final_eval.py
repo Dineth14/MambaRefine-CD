@@ -20,6 +20,7 @@ import torch
 import torch.nn as nn
 
 from data.dataset_builder  import build_test_loader
+from training.checkpoint   import load_for_eval
 from training.evaluator    import Evaluator
 from training.ema          import EMA
 
@@ -83,21 +84,24 @@ def run_final_test_evaluation(
 
     # ── Load best weights into model ──────────────────────────────────────────
     logger.info(f"Loading best checkpoint: {ckpt_path}")
-    ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
-    model.load_state_dict(ckpt["model"])
+    eval_cfg = cfg.get("eval", cfg.get("evaluation", {}))
+    use_ema_cfg = bool(eval_cfg.get("use_ema", cfg.get("training", {}).get("use_ema", ema is not None)))
+    load_info = load_for_eval(
+        ckpt_path,
+        model,
+        map_location=device,
+        strict=bool(cfg.get("resume", {}).get("strict", True)),
+        use_ema=use_ema_cfg,
+    )
     model.to(device)
     model.eval()
     logger.info(
-        f"  Checkpoint iteration : {ckpt.get('iteration', 'N/A')}"
-        f"  |  Best val metric : {ckpt.get('best_metric', 'N/A')}"
+        f"  Checkpoint iteration : {load_info.get('iteration', 'N/A')}"
+        f"  |  Best val metric : {load_info.get('best_metric', 'N/A')}"
     )
-
-    # ── Apply EMA shadow weights if available ─────────────────────────────────
-    ema_applied = False
-    if ema is not None:
-        ema.apply_shadow(model)
-        ema_applied = True
-        logger.info("  EMA shadow weights applied for test evaluation.")
+    logger.info(f"  Using EMA          : {str(load_info['ema_used']).lower()}")
+    logger.info(f"  EMA weights found  : {str(load_info['ema_found']).lower()}")
+    ema_applied = bool(load_info["ema_used"])
 
     # ── Build test loader (force split=test) ──────────────────────────────────
     # Temporarily override evaluation.split to guarantee "test"
@@ -110,8 +114,6 @@ def run_final_test_evaluation(
         test_loader = build_test_loader(cfg)
     except Exception as exc:
         logger.warning(f"[final_eval] Could not build test loader: {exc}. Skipping.")
-        if ema_applied:
-            ema.restore(model)
         ec["split"] = original_split
         cfg["evaluation"] = ec
         return None
@@ -123,8 +125,6 @@ def run_final_test_evaluation(
     num_test = len(test_loader.dataset)
     if num_test == 0:
         logger.warning("[final_eval] Test dataset is empty. Skipping final evaluation.")
-        if ema_applied:
-            ema.restore(model)
         return None
     logger.info(f"  Test samples : {num_test}  |  Dataset : {dataset_name}")
 
@@ -136,12 +136,7 @@ def run_final_test_evaluation(
     amp = bool(cfg.get("hardware", {}).get("mixed_precision", True))
     evaluator = Evaluator(cfg, device, logger=logger, save_dir=test_results_dir)
 
-    try:
-        results = evaluator.evaluate(model, test_loader, dataset_name=dataset_name, amp=amp)
-    finally:
-        # Always restore original weights after EMA
-        if ema_applied:
-            ema.restore(model)
+    results = evaluator.evaluate(model, test_loader, dataset_name=dataset_name, amp=amp)
 
     # ── Augment results with metadata ────────────────────────────────────────
     results["tta"]          = bool(cfg.get("evaluation", {}).get("use_tta", False))

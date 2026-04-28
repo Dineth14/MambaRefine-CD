@@ -34,8 +34,10 @@ import logging
 from pathlib import Path
 from typing import List, Optional
 
+import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 try:
@@ -77,6 +79,13 @@ _LABELS = {
 }
 
 
+def _merged_eval_cfg(cfg: dict) -> dict:
+    """Return evaluation config, accepting both legacy `evaluation` and new `eval`."""
+    merged = dict(cfg.get("evaluation", {}) or {})
+    merged.update(dict(cfg.get("eval", {}) or {}))
+    return merged
+
+
 class Evaluator:
     """Full evaluation pass combining pixel and boundary metrics.
 
@@ -98,14 +107,17 @@ class Evaluator:
         self.device   = device
         self.save_dir = Path(save_dir) if save_dir is not None else None
 
-        ec = cfg.get("evaluation", {})
+        ec = _merged_eval_cfg(cfg)
         self.threshold        = float(ec.get("threshold", 0.5))
-        self.do_sweep         = bool(ec.get("threshold_sweep", False))
+        sweep_cfg = ec.get("threshold_sweep", False)
+        if isinstance(sweep_cfg, dict):
+            self.do_sweep = bool(sweep_cfg.get("enabled", False))
+            sweep_values = sweep_cfg.get("values", ec.get("threshold_list", None))
+        else:
+            self.do_sweep = bool(sweep_cfg)
+            sweep_values = ec.get("threshold_list", None)
         self.threshold_list: List[float] = [
-            float(t) for t in ec.get(
-                "threshold_list",
-                [0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60],
-            )
+            float(t) for t in (sweep_values or [0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60])
         ]
         # Metric used to select the best threshold: "mF1" | "F1_1" | "IoU_1"
         self.threshold_select_metric: str = str(
@@ -116,6 +128,15 @@ class Evaluator:
         self.sek_binary_fallback = bool(ec.get("sek_binary_fallback", False))
         self.use_tta          = bool(ec.get("use_tta", False))
         self.tta_augmentations = build_tta_augmentations(cfg)
+        self.inference_mode = str(ec.get("inference_mode", "patch")).lower()
+        self.crop_size = int(ec.get("crop_size", cfg.get("dataset", {}).get("image_size", 256)))
+        self.overlap = float(ec.get("overlap", 0.25))
+        self.stride = max(1, int(round(self.crop_size * (1.0 - self.overlap))))
+        self.log_mask_debug = bool(ec.get("log_mask_debug", True))
+        self.save_debug_outputs = bool(ec.get("save_debug_outputs", False))
+        self.debug_output_root = Path(ec.get("debug_output_root", "outputs/debug_levir_eval"))
+        self.debug_max_samples = int(ec.get("debug_max_samples", 20))
+        self._debug_saved = 0
 
         dataset_cfg = cfg.get("dataset", {})
         model_cfg = cfg.get("model", {})
@@ -139,6 +160,15 @@ class Evaluator:
                 h.setFormatter(logging.Formatter("%(asctime)s  %(message)s", "%H:%M:%S"))
                 self.logger.addHandler(h)
                 self.logger.setLevel(logging.INFO)
+
+        self.logger.info(
+            "Evaluation inference mode: %s | crop_size=%d | stride=%d | overlap=%.2f | logits averaged=%s",
+            self.inference_mode,
+            self.crop_size,
+            self.stride,
+            self.overlap,
+            self.inference_mode == "sliding_window",
+        )
 
     # ------------------------------------------------------------------
     # Internal: collect all logits + labels from one pass
@@ -190,19 +220,23 @@ class Evaluator:
             else:
                 lbl_key = "label" if "label" in batch else "mask"
             lb  = batch[lbl_key].to(self.device, non_blocking=True)
+            batch_start = num_samples
             num_samples += ia.shape[0]
 
-            if self.use_tta:
-                outputs = normalize_model_output(apply_tta(
-                    model, ia, ib,
-                    amp=amp,
-                    augmentations=self.tta_augmentations,
-                ))
+            if self.inference_mode == "sliding_window":
+                logits = self._sliding_window_logits(model, ia, ib, amp)
+                outputs = {"change_logits": logits}
             else:
-                with torch.amp.autocast("cuda", enabled=(amp and self.device.type == "cuda")):
-                    outputs = normalize_model_output(model(ia, ib))
+                outputs = self._forward_outputs(model, ia, ib, amp)
+                logits = torch.clamp(outputs["change_logits"], -20.0, 20.0)
+            if logits.shape[-2:] != lb.shape[-2:]:
+                logits = F.interpolate(logits, size=lb.shape[-2:], mode="bilinear", align_corners=False)
 
-            logits = torch.clamp(outputs["change_logits"], -20.0, 20.0)
+            if self.log_mask_debug and batch_start < 5:
+                self._log_mask_debug(batch, lb, batch_start, getattr(loader, "dataset", None))
+
+            if self.save_debug_outputs and self._debug_saved < self.debug_max_samples and not self._uses_second_metrics(dataset_name):
+                self._save_binary_debug_batch(batch, logits, lb, dataset_name)
 
             all_logits.append(logits.cpu())
             all_labels.append(lb.cpu())
@@ -222,6 +256,142 @@ class Evaluator:
             for key, value in extras.items()
         }
         return all_logits, all_labels, stacked_extras, num_samples
+
+    def _forward_outputs(self, model: nn.Module, ia: torch.Tensor, ib: torch.Tensor, amp: bool) -> dict:
+        if self.use_tta:
+            return normalize_model_output(apply_tta(
+                model, ia, ib,
+                amp=amp,
+                augmentations=self.tta_augmentations,
+            ))
+        with torch.amp.autocast("cuda", enabled=(amp and self.device.type == "cuda")):
+            return normalize_model_output(model(ia, ib))
+
+    @staticmethod
+    def _window_positions(length: int, crop_size: int, stride: int) -> list[int]:
+        if length <= crop_size:
+            return [0]
+        positions = list(range(0, length - crop_size + 1, stride))
+        last = length - crop_size
+        if positions[-1] != last:
+            positions.append(last)
+        return positions
+
+    def _sliding_window_logits(self, model: nn.Module, ia: torch.Tensor, ib: torch.Tensor, amp: bool) -> torch.Tensor:
+        """Run tiled inference and average logits in overlapping regions."""
+        bsz, _, h, w = ia.shape
+        crop = self.crop_size
+        stride = self.stride
+        pad_h = max(0, crop - h)
+        pad_w = max(0, crop - w)
+        if pad_h or pad_w:
+            ia = F.pad(ia, (0, pad_w, 0, pad_h), mode="replicate")
+            ib = F.pad(ib, (0, pad_w, 0, pad_h), mode="replicate")
+        padded_h, padded_w = ia.shape[-2:]
+        ys = self._window_positions(padded_h, crop, stride)
+        xs = self._window_positions(padded_w, crop, stride)
+
+        outputs = []
+        for n in range(bsz):
+            accum = None
+            count = ia.new_zeros((1, 1, padded_h, padded_w))
+            for y in ys:
+                for x in xs:
+                    tile_a = ia[n : n + 1, :, y : y + crop, x : x + crop]
+                    tile_b = ib[n : n + 1, :, y : y + crop, x : x + crop]
+                    tile_out = self._forward_outputs(model, tile_a, tile_b, amp)
+                    tile_logits = torch.clamp(tile_out["change_logits"], -20.0, 20.0)
+                    if tile_logits.shape[-2:] != (crop, crop):
+                        tile_logits = F.interpolate(tile_logits, size=(crop, crop), mode="bilinear", align_corners=False)
+                    if accum is None:
+                        accum = ia.new_zeros((1, tile_logits.shape[1], padded_h, padded_w))
+                    accum[:, :, y : y + crop, x : x + crop] += tile_logits
+                    count[:, :, y : y + crop, x : x + crop] += 1.0
+            averaged = accum / count.clamp_min(1.0)
+            outputs.append(averaged[:, :, :h, :w])
+        return torch.cat(outputs, dim=0)
+
+    def _log_mask_debug(self, batch: dict, labels: torch.Tensor, start_index: int, dataset=None) -> None:
+        labels_cpu = labels.detach().cpu()
+        batch_size = min(labels_cpu.shape[0], max(0, 5 - start_index))
+        for i in range(batch_size):
+            mask = labels_cpu[i]
+            unique_after = sorted(float(x) for x in torch.unique(mask).tolist())
+            positive_ratio = float((mask > 0.5).float().mean().item())
+            raw_unique = "unavailable"
+            raw_shape = tuple(mask.shape)
+            if dataset is not None and hasattr(dataset, "raw_mask_stats"):
+                try:
+                    raw_stats = dataset.raw_mask_stats(start_index + i)
+                    raw_unique = raw_stats.get("raw_unique", raw_unique)
+                    raw_shape = tuple(raw_stats.get("shape", raw_shape))
+                except Exception as exc:
+                    raw_unique = f"unavailable ({exc})"
+            sample_id = batch.get("id", batch.get("name", [f"sample_{start_index + i}"]))
+            if isinstance(sample_id, (list, tuple)):
+                sample_id = sample_id[i]
+            self.logger.info(
+                "Mask debug sample=%s | raw_unique=%s | converted_unique=%s | shape=%s | positive_ratio=%.6f",
+                sample_id,
+                raw_unique,
+                unique_after,
+                raw_shape,
+                positive_ratio,
+            )
+
+    @staticmethod
+    def _denorm_image(tensor: torch.Tensor) -> np.ndarray:
+        mean = torch.tensor([0.485, 0.456, 0.406], dtype=tensor.dtype).view(3, 1, 1)
+        std = torch.tensor([0.229, 0.224, 0.225], dtype=tensor.dtype).view(3, 1, 1)
+        img = (tensor.detach().cpu() * std + mean).clamp(0, 1)
+        return (img.permute(1, 2, 0).numpy() * 255.0).astype(np.uint8)
+
+    @staticmethod
+    def _safe_name(value: object) -> str:
+        return str(value).replace("/", "_").replace("\\", "_").replace(" ", "_")
+
+    def _save_binary_debug_batch(self, batch: dict, logits: torch.Tensor, labels: torch.Tensor, dataset_name: str) -> None:
+        from PIL import Image
+
+        split = str(_merged_eval_cfg(self.cfg).get("split", "eval"))
+        root = self.debug_output_root / split
+        dirs = {
+            "image_t1": root / "image_t1",
+            "image_t2": root / "image_t2",
+            "gt": root / "gt",
+            "pred": root / "pred",
+            "prob": root / "prob",
+            "error_map": root / "error_map",
+        }
+        for path in dirs.values():
+            path.mkdir(parents=True, exist_ok=True)
+
+        probs = torch.sigmoid(logits.detach().cpu())
+        preds = (probs > self.threshold).to(torch.uint8)
+        labels_cpu = (labels.detach().cpu() > 0.5).to(torch.uint8)
+        batch_size = min(logits.shape[0], self.debug_max_samples - self._debug_saved)
+        ids = batch.get("id", batch.get("name", [f"sample_{self._debug_saved + i}" for i in range(batch_size)]))
+        for i in range(batch_size):
+            sample_id = ids[i] if isinstance(ids, (list, tuple)) else f"sample_{self._debug_saved + i}"
+            stem = f"{self._debug_saved:03d}_{self._safe_name(sample_id)}"
+            gt = labels_cpu[i, 0] if labels_cpu[i].ndim == 3 else labels_cpu[i]
+            pred = preds[i, 0] if preds[i].ndim == 3 else preds[i]
+            prob = probs[i, 0] if probs[i].ndim == 3 else probs[i]
+
+            Image.fromarray(self._denorm_image(batch["image_a"][i])).save(dirs["image_t1"] / f"{stem}.png")
+            Image.fromarray(self._denorm_image(batch["image_b"][i])).save(dirs["image_t2"] / f"{stem}.png")
+            Image.fromarray((gt.numpy() * 255).astype(np.uint8)).save(dirs["gt"] / f"{stem}.png")
+            Image.fromarray((pred.numpy() * 255).astype(np.uint8)).save(dirs["pred"] / f"{stem}.png")
+            Image.fromarray((prob.numpy() * 255.0).clip(0, 255).astype(np.uint8)).save(dirs["prob"] / f"{stem}.png")
+
+            err = np.zeros((*gt.shape, 3), dtype=np.uint8)
+            gt_np = gt.numpy().astype(bool)
+            pred_np = pred.numpy().astype(bool)
+            err[pred_np & gt_np] = (0, 180, 0)
+            err[pred_np & ~gt_np] = (255, 80, 0)
+            err[~pred_np & gt_np] = (0, 120, 255)
+            Image.fromarray(err).save(dirs["error_map"] / f"{stem}.png")
+            self._debug_saved += 1
 
     # ------------------------------------------------------------------
     # Internal: compute metrics at one threshold from pre-collected tensors

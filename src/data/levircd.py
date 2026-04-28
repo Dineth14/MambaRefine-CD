@@ -122,6 +122,23 @@ class LEVIRCDDataset(Dataset):
     def __len__(self) -> int:
         return len(self.names) if self.split == "train" else len(self.tiles)  # type: ignore
 
+    def raw_mask_stats(self, idx: int) -> dict:
+        s = self.size
+        if self.split == "train":
+            name = self.names[idx]
+            raw = np.array(Image.open(self.lbl_dir / name).convert("L"))
+        else:
+            name, r, c = self.tiles[idx]  # type: ignore
+            raw = np.array(Image.open(self.lbl_dir / name).convert("L"))[r:r+s, c:c+s]
+        converted = (raw > 127).astype(np.uint8)
+        return {
+            "id": name,
+            "raw_unique": sorted(int(x) for x in np.unique(raw).tolist()),
+            "converted_unique": sorted(int(x) for x in np.unique(converted).tolist()),
+            "shape": list(raw.shape),
+            "positive_ratio": float(converted.mean()),
+        }
+
     def __getitem__(self, idx: int) -> dict:
         s = self.size
         if self.split == "train":
@@ -294,6 +311,20 @@ class LEVIRCDTileDataset(Dataset):
     def __len__(self) -> int:
         return len(self.index)
 
+    def raw_mask_stats(self, idx: int) -> dict:
+        entry = self.index[idx]
+        x, y = entry["x"], entry["y"]
+        s = entry["tile_size"]
+        raw = np.array(Image.open(entry["mask_path"]).convert("L"))[y : y + s, x : x + s]
+        converted = (raw > 127).astype(np.uint8)
+        return {
+            "id": f"{Path(entry['image_a_path']).name}_{x}_{y}",
+            "raw_unique": sorted(int(v) for v in np.unique(raw).tolist()),
+            "converted_unique": sorted(int(v) for v in np.unique(converted).tolist()),
+            "shape": list(raw.shape),
+            "positive_ratio": float(converted.mean()),
+        }
+
     def __getitem__(self, idx: int) -> dict:
         entry = self.index[idx]
         x, y  = entry["x"], entry["y"]
@@ -332,4 +363,3 @@ class LEVIRCDTileDataset(Dataset):
             "has_change":   entry["has_change"],
             "change_ratio": entry["change_ratio"],
         }
-

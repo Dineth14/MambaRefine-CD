@@ -28,7 +28,6 @@ sys.path.insert(0, str(_REPO / "src"))
 sys.path.insert(0, str(_REPO))
 
 import torch
-from torch.utils.data import DataLoader
 
 from utils.config import load_config
 
@@ -55,6 +54,40 @@ def _get_allowed_metrics(cfg: dict) -> list[str]:
 
 def _filter_metrics(raw: dict, allowed: list[str]) -> dict:
     return {k: v for k, v in raw.items() if k in allowed}
+
+
+def _merged_eval_cfg(cfg: dict) -> dict:
+    merged = dict(cfg.get("evaluation", {}) or {})
+    merged.update(dict(cfg.get("eval", {}) or {}))
+    return merged
+
+
+def _paper_binary_metrics(raw: dict) -> dict:
+    return {
+        "Pre": round(float(raw.get("precision", raw.get("precision_1", 0.0))) * 100.0, 4),
+        "Rec": round(float(raw.get("recall", raw.get("recall_1", 0.0))) * 100.0, 4),
+        "F1": round(float(raw.get("f1", raw.get("f1_1", 0.0))) * 100.0, 4),
+        "IoU": round(float(raw.get("iou", raw.get("iou_1", 0.0))) * 100.0, 4),
+        "OA": round(float(raw.get("oa", 0.0)) * 100.0, 4),
+    }
+
+
+def _resolve_threshold(args, cfg: dict, ckpt: dict) -> tuple[float, str]:
+    ec = _merged_eval_cfg(cfg)
+    if args.threshold is not None:
+        return float(args.threshold), "command-line"
+    if ckpt.get("best_threshold") is not None:
+        return float(ckpt["best_threshold"]), "checkpoint"
+    return float(ec.get("threshold", 0.5)), "config"
+
+
+def _resolve_use_ema(args, cfg: dict) -> bool:
+    if args.use_ema is not None:
+        return bool(args.use_ema)
+    ec = _merged_eval_cfg(cfg)
+    if "use_ema" in ec:
+        return bool(ec.get("use_ema"))
+    return bool(cfg.get("training", {}).get("use_ema", cfg.get("ema", {}).get("enabled", False)))
 
 
 def _save_results(metrics: dict, save_dir: Path, split: str) -> None:
@@ -160,11 +193,20 @@ def main() -> None:
     parser.add_argument("--config", required=True)
     parser.add_argument("--ckpt",   required=True)
     parser.add_argument("--split",  default="val", choices=["val", "test"])
-    parser.add_argument("--threshold", type=float, default=0.5)
+    parser.add_argument("--threshold", type=float, default=None)
+    ema_group = parser.add_mutually_exclusive_group()
+    ema_group.add_argument("--use_ema", dest="use_ema", action="store_true", default=None)
+    ema_group.add_argument("--no_ema", dest="use_ema", action="store_false")
+    parser.add_argument("--strict", action="store_true", default=True)
+    parser.add_argument("--non_strict", dest="strict", action="store_false")
     parser.add_argument("--save_predictions", action="store_true")
+    parser.add_argument("--save_debug", action="store_true")
+    parser.add_argument("--num_workers", type=int, default=None)
     args = parser.parse_args()
 
     cfg   = load_config(args.config)
+    if args.num_workers is not None:
+        cfg.setdefault("dataset", {})["num_workers"] = int(args.num_workers)
     allowed = _get_allowed_metrics(cfg)
     device  = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     is_second = "SECOND" in str(cfg.get("dataset", {}).get("name", "")).upper()
@@ -175,49 +217,77 @@ def main() -> None:
     logger.info(f"Allowed metrics: {allowed}")
 
     from models.mambarefinecd import build_model
-    from datasets import build_dataset
-    from training.checkpoint import load as load_ckpt
+    from data.dataset_builder import build_test_loader
+    from training.checkpoint import load_for_eval, peek as peek_ckpt
+    from training.evaluator import Evaluator
 
-    cfg["dataset"]["split"] = args.split
-    ds = build_dataset(cfg, split=args.split)
-    loader = DataLoader(
-        ds,
-        batch_size=int(cfg.get("validation", {}).get("batch_size", 4)),
-        num_workers=int(cfg.get("dataset", {}).get("num_workers", 4)),
-        shuffle=False,
-        pin_memory=True,
-    )
+    ckpt_meta = peek_ckpt(args.ckpt, map_location=device)
+    threshold, threshold_source = _resolve_threshold(args, cfg, ckpt_meta)
+    use_ema_requested = _resolve_use_ema(args, cfg)
+
+    cfg.setdefault("evaluation", {})
+    cfg["evaluation"]["split"] = args.split
+    cfg["evaluation"]["threshold"] = threshold
+    cfg["evaluation"]["save_predictions"] = bool(args.save_predictions)
+    cfg.setdefault("eval", {})
+    cfg["eval"]["split"] = args.split
+    cfg["eval"]["threshold"] = threshold
+    cfg["eval"]["save_predictions"] = bool(args.save_predictions)
+    if args.save_debug:
+        cfg["evaluation"]["save_debug_outputs"] = True
+        cfg["evaluation"]["debug_output_root"] = "outputs/debug_levir_eval"
+        cfg["evaluation"]["debug_max_samples"] = 20
+        cfg["eval"]["save_debug_outputs"] = True
+        cfg["eval"]["debug_output_root"] = "outputs/debug_levir_eval"
+        cfg["eval"]["debug_max_samples"] = 20
+    if args.split == "test" or args.threshold is not None or threshold_source == "checkpoint":
+        cfg["evaluation"]["threshold_sweep"] = False
+        cfg["eval"]["threshold_sweep"] = False
+
+    loader = build_test_loader(cfg)
 
     model = build_model(cfg).to(device)
-    load_ckpt(args.ckpt, model, map_location=device)
+    load_info = load_for_eval(
+        args.ckpt,
+        model,
+        map_location=device,
+        strict=bool(args.strict),
+        use_ema=use_ema_requested,
+    )
     logger.info(f"Loaded checkpoint from {args.ckpt}")
+    logger.info(f"Checkpoint iteration: {load_info['iteration']} | best_metric: {load_info['best_metric']}")
+    logger.info(f"Using threshold: {threshold:.4f}")
+    logger.info(f"Threshold source: {threshold_source}")
+    logger.info(f"Using EMA: {str(load_info['ema_used']).lower()}")
+    logger.info(f"EMA weights found: {str(load_info['ema_found']).lower()}")
+    logger.info(f"Missing keys: {load_info['missing_keys']}")
+    logger.info(f"Unexpected keys: {load_info['unexpected_keys']}")
 
     out_dir = Path(cfg.get("experiment", {}).get("output_root", "outputs/eval"))
-    output_cfg = cfg.get("output", {})
-    eval_cfg = cfg.get("evaluation", {})
-    save_predictions = bool(args.save_predictions or output_cfg.get("save_predictions", eval_cfg.get("save_predictions", False)))
-    save_visualizations = bool(output_cfg.get("save_visualizations", True))
-    save_binary_head_change = bool(output_cfg.get("save_binary_head_change", False))
+    evaluator = Evaluator(cfg, device, logger=logger, save_dir=out_dir)
+    raw = evaluator.evaluate(
+        model,
+        loader,
+        dataset_name=cfg.get("dataset", {}).get("name", "unknown"),
+        amp=bool(cfg.get("hardware", {}).get("mixed_precision", True)),
+    )
 
-    if is_second:
-        raw = evaluate_second(
-            model, loader, device,
-            num_classes=int(cfg.get("dataset", {}).get("num_classes", 7)),
-            ignore_index=int(cfg.get("dataset", {}).get("ignore_index", 255)),
-            threshold=args.threshold,
-            output_root=out_dir,
-            save_predictions=save_predictions,
-            save_visualizations=save_visualizations,
-            save_binary_head_change=save_binary_head_change,
-        )
-    else:
-        raw = evaluate_binary(model, loader, device, threshold=args.threshold)
-
-    results = _filter_metrics(raw, allowed)
+    effective_threshold = float(raw.get("best_threshold", threshold))
+    effective_source = "validation-sweep" if effective_threshold != threshold and args.split == "val" else threshold_source
+    results = _filter_metrics(raw, allowed) if is_second else _paper_binary_metrics(raw)
+    results["threshold"] = effective_threshold
+    results["threshold_source"] = effective_source
+    results["ema_used"] = bool(load_info["ema_used"])
+    results["ema_found"] = bool(load_info["ema_found"])
     logger.info("=" * 50)
     logger.info(f"Results ({args.split}):")
     for k, v in results.items():
-        logger.info(f"  {k:8s}: {v:.4f}")
+        if isinstance(v, bool):
+            logger.info(f"  {k:16s}: {str(v).lower()}")
+        elif isinstance(v, (int, float)):
+            logger.info(f"  {k:16s}: {v:.4f}")
+        else:
+            logger.info(f"  {k:16s}: {v}")
     logger.info("=" * 50)
 
     _save_results(results, out_dir, args.split)

@@ -24,7 +24,7 @@ task: semantic_cd
 model:
   mode: dual
   backbone: mambavision
-  variant: tiny2
+  variant: base
   decoder: adaptive_rf
   pretrained: true
   output_mode: semantic_change
@@ -63,6 +63,7 @@ decoder:
 
 hardware:
   device: cuda
+  gpu_id: [0]
   mixed_precision: true
 
 training:

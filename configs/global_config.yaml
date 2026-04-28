@@ -20,7 +20,7 @@ experiment:
 
 hardware:
   device: cuda
-  gpu_ids: [1]
+  gpu_ids: [0]
   mixed_precision: true
 
 model:
@@ -161,6 +161,21 @@ evaluation:
   use_tta: false
   tta_augmentations: [original, hflip, vflip, rot90]
   save_predictions: false
+
+eval:
+  threshold: 0.5
+  threshold_sweep:
+    enabled: true
+    values: [0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60]
+  threshold_select_metric: F1_1
+  use_ema: true
+  inference_mode: patch
+  crop_size: 256
+  overlap: 0.25
+  log_mask_debug: true
+  save_debug_outputs: false
+  debug_output_root: outputs/debug_levir_eval
+  debug_max_samples: 20
 
 loss:
   type: dice_focal_sek
