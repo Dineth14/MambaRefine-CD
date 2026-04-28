@@ -146,9 +146,16 @@ class DRBISiameseMambaCD(nn.Module):
         dec_name   = model_cfg.get("decoder", "adaptive_rf")
         out_ch     = int(dec_cfg.get("channels", 256))
         self.output_mode = str(model_cfg.get("output_mode", "binary")).lower()
-        self.enable_semantic_heads = bool(model_cfg.get("enable_semantic_heads", False))
-        self.semantic_head_type = str(model_cfg.get("semantic_head_type", "lightweight")).lower()
-        self.semantic_num_classes = int(model_cfg.get("semantic_num_classes", dataset_cfg.get("num_classes", 7)))
+        semantic_head_cfg = model_cfg.get("semantic_head", {}) or {}
+        self.enable_semantic_heads = bool(
+            semantic_head_cfg.get("enabled", model_cfg.get("enable_semantic_heads", False))
+        )
+        self.semantic_head_type = str(
+            semantic_head_cfg.get("type", model_cfg.get("semantic_head_type", "lightweight"))
+        ).lower()
+        self.semantic_num_classes = int(
+            semantic_head_cfg.get("num_classes", model_cfg.get("semantic_num_classes", dataset_cfg.get("num_classes", 7)))
+        )
 
         # ── Shared encoder ─────────────────────────────────────────────
         self.encoder = build_backbone(variant, pretrained=pretrained)
@@ -167,7 +174,8 @@ class DRBISiameseMambaCD(nn.Module):
             self.semantic_head = LightweightSemanticHead(
                 channels=channels,
                 num_classes=self.semantic_num_classes,
-                hidden_channels=int(model_cfg.get("semantic_head_channels", out_ch)),
+                hidden_channels=int(semantic_head_cfg.get("channels", model_cfg.get("semantic_head_channels", out_ch))),
+                dropout=float(semantic_head_cfg.get("dropout", 0.0)),
             )
         else:
             self.semantic_head = None

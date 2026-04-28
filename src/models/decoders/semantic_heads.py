@@ -34,8 +34,10 @@ class LightweightSemanticHead(nn.Module):
         channels: Sequence[int],
         num_classes: int,
         hidden_channels: int = 128,
+        dropout: float = 0.0,
     ) -> None:
         super().__init__()
+        drop = nn.Dropout2d(float(dropout)) if float(dropout) > 0.0 else nn.Identity()
         self.proj = nn.ModuleList([
             nn.Sequential(
                 nn.Conv2d(in_channels, hidden_channels, 1, bias=False),
@@ -50,6 +52,7 @@ class LightweightSemanticHead(nn.Module):
         ])
         self.classifier = nn.Sequential(
             _ConvGNAct(hidden_channels, hidden_channels, kernel_size=3),
+            drop,
             nn.Conv2d(hidden_channels, num_classes, 1),
         )
 

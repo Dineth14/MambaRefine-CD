@@ -20,6 +20,8 @@ def save(
     ema_state: Optional[dict] = None,
     best_threshold: Optional[float] = None,
     val_metrics: Optional[dict] = None,
+    scaler_state: Optional[dict] = None,
+    best_metric_name: Optional[str] = None,
 ) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -29,9 +31,13 @@ def save(
         "optimizer": optimizer.state_dict() if optimizer else None,
         "scheduler": scheduler.state_dict() if scheduler else None,
         "iteration":   iteration,
+        "iter":        iteration,
+        "epoch":       iteration,
         "best_metric": best_metric,
+        "best_metric_name": best_metric_name or cfg.get("checkpoint", {}).get("monitor", cfg.get("checkpoint", {}).get("selection_metric")),
         "variant":     variant,
         "config":      cfg,
+        "ema_enabled": ema_state is not None,
     }
     if ema_state is not None:
         payload["ema"] = ema_state
@@ -39,6 +45,11 @@ def save(
         payload["best_threshold"] = float(best_threshold)
     if val_metrics is not None:
         payload["val_metrics"] = _checkpoint_safe(val_metrics)
+        for key in ("Fscd", "OA", "mIoU", "SeK"):
+            if key in val_metrics:
+                payload[f"best_{key}"] = _checkpoint_safe(val_metrics[key])
+    if scaler_state is not None:
+        payload["scaler"] = scaler_state
     torch.save(payload, path)
 
 

@@ -134,6 +134,9 @@ class Evaluator:
         self.stride = max(1, int(round(self.crop_size * (1.0 - self.overlap))))
         self.log_mask_debug = bool(ec.get("log_mask_debug", True))
         self.save_debug_outputs = bool(ec.get("save_debug_outputs", False))
+        self.save_predictions = bool(ec.get("save_predictions", cfg.get("output", {}).get("save_predictions", False)))
+        self.save_visualizations = bool(ec.get("save_visualizations", cfg.get("output", {}).get("save_visualizations", True)))
+        self.save_binary_head_change = bool(ec.get("save_binary_head_change", cfg.get("output", {}).get("save_binary_head_change", False)))
         self.debug_output_root = Path(ec.get("debug_output_root", "outputs/debug_levir_eval"))
         self.debug_max_samples = int(ec.get("debug_max_samples", 20))
         self._debug_saved = 0
@@ -245,9 +248,43 @@ class Evaluator:
                     extras[key].append(batch[key].cpu())
             extras["sample_ids"].extend([str(x) for x in batch.get("name", batch.get("id", []))])
             if outputs.get("sem_logits_t1") is not None:
-                extras["pred_sem1"].append(torch.argmax(outputs["sem_logits_t1"], dim=1).cpu())
+                pred_sem1 = torch.argmax(outputs["sem_logits_t1"], dim=1)
+                extras["pred_sem1"].append(pred_sem1.cpu())
             if outputs.get("sem_logits_t2") is not None:
-                extras["pred_sem2"].append(torch.argmax(outputs["sem_logits_t2"], dim=1).cpu())
+                pred_sem2 = torch.argmax(outputs["sem_logits_t2"], dim=1)
+                extras["pred_sem2"].append(pred_sem2.cpu())
+            if (
+                self.save_dir is not None
+                and self.save_predictions
+                and self._uses_second_metrics(dataset_name)
+                and outputs.get("sem_logits_t1") is not None
+                and outputs.get("sem_logits_t2") is not None
+            ):
+                from utils.second_outputs import save_second_prediction_batch, second_semantic_predictions
+
+                pred_t1, pred_t2, pred_change = second_semantic_predictions(outputs)
+                sample_ids = batch.get("sample_id", batch.get("name", batch.get("id", [f"sample_{batch_start + i}" for i in range(ia.shape[0])])))
+                split = str(_merged_eval_cfg(self.cfg).get("split", "eval"))
+                gt_t1 = batch.get("label_t1", batch.get("label_a"))
+                gt_t2 = batch.get("label_t2", batch.get("label_b"))
+                gt_change = batch.get("change_mask")
+                save_second_prediction_batch(
+                    pred_t1=pred_t1,
+                    pred_t2=pred_t2,
+                    pred_change=pred_change,
+                    sample_ids=sample_ids,
+                    output_root=self.save_dir,
+                    split=split,
+                    binary_head_logits=logits,
+                    save_visualizations=self.save_visualizations,
+                    save_binary_head_change=self.save_binary_head_change,
+                    threshold=self.threshold,
+                    image_t1=batch.get("image_t1", batch.get("image_a")),
+                    image_t2=batch.get("image_t2", batch.get("image_b")),
+                    gt_t1=gt_t1,
+                    gt_t2=gt_t2,
+                    gt_change=gt_change,
+                )
 
         all_logits = torch.cat(all_logits, dim=0)   # [N, 1, H, W]
         all_labels = torch.cat(all_labels, dim=0)
@@ -524,7 +561,7 @@ class Evaluator:
             result = self._second_metrics_at_threshold(
                 all_logits, all_labels, extras, best_thr
             )
-            if self.save_dir is not None and bool(self.cfg.get("output", {}).get("save_predictions", False)):
+            if self.save_dir is not None and self.save_predictions:
                 from utils.second_outputs import assert_second_prediction_dirs, save_second_prediction_batch
 
                 pred_sem1 = extras.get("pred_sem1")
@@ -537,12 +574,13 @@ class Evaluator:
                         pred_change=pred_sem1 != pred_sem2,
                         sample_ids=sample_ids,
                         output_root=self.save_dir,
-                        binary_head_logits=all_logits if bool(self.cfg.get("output", {}).get("save_binary_head_change", False)) else None,
-                        save_visualizations=bool(self.cfg.get("output", {}).get("save_visualizations", True)),
-                        save_binary_head_change=bool(self.cfg.get("output", {}).get("save_binary_head_change", False)),
+                        split=str(_merged_eval_cfg(self.cfg).get("split", "eval")),
+                        binary_head_logits=all_logits if self.save_binary_head_change else None,
+                        save_visualizations=self.save_visualizations,
+                        save_binary_head_change=self.save_binary_head_change,
                         threshold=best_thr,
                     )
-                    assert_second_prediction_dirs(self.save_dir)
+                    assert_second_prediction_dirs(self.save_dir, split=str(_merged_eval_cfg(self.cfg).get("split", "eval")))
         else:
             result = self._metrics_at_threshold(
                 all_logits, all_labels, best_thr, compute_boundary=True

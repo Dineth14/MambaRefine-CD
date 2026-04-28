@@ -48,14 +48,21 @@ def save_second_prediction_batch(
     pred_change: torch.Tensor,
     sample_ids: Iterable[str],
     output_root: Path,
+    split: str | None = None,
     binary_head_logits: torch.Tensor | None = None,
     save_visualizations: bool = True,
     save_binary_head_change: bool = False,
     threshold: float = 0.5,
+    image_t1: torch.Tensor | None = None,
+    image_t2: torch.Tensor | None = None,
+    gt_t1: torch.Tensor | None = None,
+    gt_t2: torch.Tensor | None = None,
+    gt_change: torch.Tensor | None = None,
 ) -> None:
     """Save SECOND predictions in the required directory structure."""
-    pred_root = output_root / "predictions"
-    vis_root = output_root / "visualizations"
+    split_name = str(split) if split else None
+    pred_root = output_root / "predictions" / split_name if split_name else output_root / "predictions"
+    vis_root = output_root / "visualizations" / split_name if split_name else output_root / "visualizations"
     dirs = {
         "sem_t1": pred_root / "pred_sem_t1",
         "sem_t2": pred_root / "pred_sem_t2",
@@ -64,6 +71,7 @@ def save_second_prediction_batch(
         "vis_sem_t1": vis_root / "sem_t1",
         "vis_sem_t2": vis_root / "sem_t2",
         "vis_change": vis_root / "change",
+        "comparison": vis_root / "comparison",
     }
     for key, path in dirs.items():
         if key == "binary_head" and not (binary_head_logits is not None and save_binary_head_change):
@@ -76,6 +84,11 @@ def save_second_prediction_batch(
     pred_t2_cpu = pred_t2.detach().cpu()
     pred_change_cpu = pred_change.detach().cpu().bool()
     binary_head_cpu = binary_head_logits.detach().cpu() if binary_head_logits is not None else None
+    image_t1_cpu = image_t1.detach().cpu() if image_t1 is not None else None
+    image_t2_cpu = image_t2.detach().cpu() if image_t2 is not None else None
+    gt_t1_cpu = gt_t1.detach().cpu() if gt_t1 is not None else None
+    gt_t2_cpu = gt_t2.detach().cpu() if gt_t2 is not None else None
+    gt_change_cpu = gt_change.detach().cpu() if gt_change is not None else None
 
     for i, raw_id in enumerate(sample_ids):
         sample_id = Path(str(raw_id)).stem
@@ -95,10 +108,43 @@ def save_second_prediction_batch(
             Image.fromarray(colorize_second(sem1)).save(dirs["vis_sem_t1"] / f"{sample_id}.png")
             Image.fromarray(colorize_second(sem2)).save(dirs["vis_sem_t2"] / f"{sample_id}.png")
             Image.fromarray(change, mode="L").convert("RGB").save(dirs["vis_change"] / f"{sample_id}.png")
+            if image_t1_cpu is not None and image_t2_cpu is not None and gt_t1_cpu is not None and gt_t2_cpu is not None:
+                panels = [
+                    _denorm_image(image_t1_cpu[i]),
+                    _denorm_image(image_t2_cpu[i]),
+                    colorize_second(_squeeze_label(gt_t1_cpu[i])),
+                    colorize_second(_squeeze_label(gt_t2_cpu[i])),
+                    colorize_second(sem1),
+                    colorize_second(sem2),
+                    _change_rgb(_squeeze_label(gt_change_cpu[i]) if gt_change_cpu is not None else (_squeeze_label(gt_t1_cpu[i]) != _squeeze_label(gt_t2_cpu[i]))),
+                    _change_rgb(change > 0),
+                ]
+                Image.fromarray(np.concatenate(panels, axis=1)).save(dirs["comparison"] / f"{sample_id}.png")
 
 
-def assert_second_prediction_dirs(output_root: Path) -> None:
-    pred_root = output_root / "predictions"
+def _squeeze_label(tensor: torch.Tensor | np.ndarray) -> np.ndarray:
+    arr = tensor.detach().cpu().numpy() if torch.is_tensor(tensor) else np.asarray(tensor)
+    if arr.ndim == 3 and arr.shape[0] == 1:
+        arr = arr[0]
+    return arr
+
+
+def _denorm_image(tensor: torch.Tensor) -> np.ndarray:
+    mean = torch.tensor([0.485, 0.456, 0.406], dtype=tensor.dtype).view(3, 1, 1)
+    std = torch.tensor([0.229, 0.224, 0.225], dtype=tensor.dtype).view(3, 1, 1)
+    img = (tensor * std + mean).clamp(0, 1)
+    return (img.permute(1, 2, 0).numpy() * 255.0).astype(np.uint8)
+
+
+def _change_rgb(mask: torch.Tensor | np.ndarray) -> np.ndarray:
+    arr = _squeeze_label(mask).astype(bool)
+    out = np.zeros((*arr.shape, 3), dtype=np.uint8)
+    out[arr] = (255, 0, 0)
+    return out
+
+
+def assert_second_prediction_dirs(output_root: Path, split: str | None = None) -> None:
+    pred_root = output_root / "predictions" / str(split) if split else output_root / "predictions"
     required = ["pred_sem_t1", "pred_sem_t2", "pred_change"]
     empty = []
     for name in required:

@@ -83,10 +83,30 @@ loss:
     dice_weight: 1.0
     sek_weight: 0.1
     use_sek: true                # <── A3: SeK in semantic loss
+  second:
+    sem_ce_weight: 1.0
+    sem_dice_weight: 0.5
+    change_weight: 0.5
+    consistency_weight: 0.1
+    ignore_index: 255
 
 metrics:
+  task: second_scd
   allowed: [OA, mIoU, SeK, Fscd]
+  average_mode: global
+
+train:
+  ema:
+    enabled: true
+    decay: 0.999
+  save_best_by: Fscd
+
+eval:
+  use_ema: true
+  save_predictions: true
+  save_visualizations: true
 
 checkpoint:
   selection_metric: Fscd
+  monitor: Fscd
   mode: max

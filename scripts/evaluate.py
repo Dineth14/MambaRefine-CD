@@ -199,7 +199,8 @@ def main() -> None:
     ema_group.add_argument("--no_ema", dest="use_ema", action="store_false")
     parser.add_argument("--strict", action="store_true", default=True)
     parser.add_argument("--non_strict", dest="strict", action="store_false")
-    parser.add_argument("--save_predictions", action="store_true")
+    parser.add_argument("--save_predictions", action=argparse.BooleanOptionalAction, default=None)
+    parser.add_argument("--save_visualizations", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--save_debug", action="store_true")
     parser.add_argument("--num_workers", type=int, default=None)
     args = parser.parse_args()
@@ -210,6 +211,8 @@ def main() -> None:
     allowed = _get_allowed_metrics(cfg)
     device  = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     is_second = "SECOND" in str(cfg.get("dataset", {}).get("name", "")).upper()
+    save_predictions = bool(args.save_predictions) if args.save_predictions is not None else False
+    save_visualizations = bool(args.save_visualizations) if args.save_visualizations is not None else bool(is_second)
 
     logger.info(f"Config: {args.config}")
     logger.info(f"Checkpoint: {args.ckpt}")
@@ -228,11 +231,16 @@ def main() -> None:
     cfg.setdefault("evaluation", {})
     cfg["evaluation"]["split"] = args.split
     cfg["evaluation"]["threshold"] = threshold
-    cfg["evaluation"]["save_predictions"] = bool(args.save_predictions)
+    cfg["evaluation"]["save_predictions"] = save_predictions
+    cfg["evaluation"]["save_visualizations"] = save_visualizations
     cfg.setdefault("eval", {})
     cfg["eval"]["split"] = args.split
     cfg["eval"]["threshold"] = threshold
-    cfg["eval"]["save_predictions"] = bool(args.save_predictions)
+    cfg["eval"]["save_predictions"] = save_predictions
+    cfg["eval"]["save_visualizations"] = save_visualizations
+    cfg.setdefault("output", {})
+    cfg["output"]["save_predictions"] = save_predictions
+    cfg["output"]["save_visualizations"] = save_visualizations
     if args.save_debug:
         cfg["evaluation"]["save_debug_outputs"] = True
         cfg["evaluation"]["debug_output_root"] = "outputs/debug_levir_eval"
@@ -261,6 +269,8 @@ def main() -> None:
     logger.info(f"Threshold source: {threshold_source}")
     logger.info(f"Using EMA: {str(load_info['ema_used']).lower()}")
     logger.info(f"EMA weights found: {str(load_info['ema_found']).lower()}")
+    if use_ema_requested and not load_info["ema_found"]:
+        logger.warning("eval.use_ema/--use_ema requested but checkpoint has no EMA weights; using raw model weights.")
     logger.info(f"Missing keys: {load_info['missing_keys']}")
     logger.info(f"Unexpected keys: {load_info['unexpected_keys']}")
 

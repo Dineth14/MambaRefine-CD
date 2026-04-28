@@ -68,6 +68,18 @@ def _scd_labels(pred1: torch.Tensor, pred2: torch.Tensor, gt1: torch.Tensor, gt2
 
 
 def _compute_scores(hist: torch.Tensor, eps: float = _EPS) -> dict[str, float]:
+    """Compute SECOND SCD scores from a global SCD confusion matrix.
+
+    The matrix is built over the semantic-change label stream used by common
+    SECOND/Mamba-FCS style evaluation: unchanged pixels are mapped to class 0,
+    and changed pixels keep their semantic class ID. OA is therefore the
+    overall accuracy of this semantic-change stream over both timestamps.
+
+    SeK follows the semantic-kappa convention used in SCD literature: remove
+    the no-change true-negative dominance at hist[0, 0], compute kappa on the
+    remaining semantic-change matrix, then scale it by exp(IoU_change) / e.
+    This is deliberately not ordinary kappa over the full matrix.
+    """
     hist = hist.to(torch.float64)
     total = float(hist.sum().item())
     correct = float(torch.diag(hist).sum().item())

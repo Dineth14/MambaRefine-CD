@@ -121,6 +121,8 @@ def run_final_test_evaluation(
     )
     logger.info(f"  Using EMA          : {str(load_info['ema_used']).lower()}")
     logger.info(f"  EMA weights found  : {str(load_info['ema_found']).lower()}")
+    if use_ema_cfg and not load_info["ema_found"]:
+        logger.warning("eval.use_ema requested but checkpoint has no EMA weights; using raw model weights.")
     logger.info(f"  Missing keys       : {load_info['missing_keys']}")
     logger.info(f"  Unexpected keys    : {load_info['unexpected_keys']}")
     ema_applied = bool(load_info["ema_used"])

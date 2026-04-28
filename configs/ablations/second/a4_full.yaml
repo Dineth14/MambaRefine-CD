@@ -15,6 +15,7 @@ dataset:
   batch_size: 8
   num_workers: 8
   augmentation: true
+  debug_stats: false
   val_ratio: 0.2
   num_classes: 7
   ignore_index: 255
@@ -30,9 +31,15 @@ model:
   output_mode: semantic_change
   enable_semantic_heads: true
   semantic_head_type: lightweight
-  semantic_head_channels: 96
+  semantic_head_channels: 128
   semantic_num_classes: 7
   num_classes: 1
+  semantic_head:
+    enabled: true
+    num_classes: 7
+    share_head: true
+    channels: 128
+    dropout: 0.0
   cram_lite:
     enabled: true
     alpha: 0.5
@@ -41,10 +48,10 @@ model:
 
 difference:
   enabled: true
-  out_channels: 96
+  out_channels: 256
   use_absdiff: true
   use_signed_diff: true
-  use_product: false
+  use_product: true
   pre_norm: true
   use_region_gate: true
   use_boundary_gate: true
@@ -55,15 +62,15 @@ difference:
   gate_hidden_ratio: 0.25
 
 decoder:
-  channels: 96
-  dilation_rates: [1, 2, 4]
+  channels: 256
+  dilation_rates: [1, 2, 4, 8]
   use_boundary_residual: true
   residual_scale: 0.1
   use_depthwise: true
 
 hardware:
   device: cuda
-  gpu_id: [0]
+  gpu_id: [1]
   mixed_precision: true
 
 training:
@@ -91,6 +98,12 @@ loss:
     dice_weight: 1.0
     sek_weight: 0.1
     use_sek: true
+  second:
+    sem_ce_weight: 1.0
+    sem_dice_weight: 0.5
+    change_weight: 0.5
+    consistency_weight: 0.1
+    ignore_index: 255
 
 evaluation:
   second_metrics: true
@@ -98,10 +111,24 @@ evaluation:
   threshold_select_metric: Fscd
 
 metrics:
+  task: second_scd
   allowed: [OA, mIoU, SeK, Fscd]
+  average_mode: global
+
+train:
+  ema:
+    enabled: true
+    decay: 0.999
+  save_best_by: Fscd
+
+eval:
+  use_ema: true
+  save_predictions: true
+  save_visualizations: true
 
 checkpoint:
   selection_metric: Fscd
+  monitor: Fscd
   mode: max
 
 output:

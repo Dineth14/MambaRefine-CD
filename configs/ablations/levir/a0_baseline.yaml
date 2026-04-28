@@ -47,6 +47,7 @@ decoder:
 
 hardware:
   device: cuda
+  gpu_id: [1]
   mixed_precision: true
 
 training:

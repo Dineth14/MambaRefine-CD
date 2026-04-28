@@ -1,8 +1,8 @@
-# SECOND A2 CGA-lite (CRAM-lite adapted for semantic CD)
+# SECOND A3 Semantic Loss
 
 experiment:
-  name: second_a2_cga_lite
-  output_root: outputs/second/a2_cga_lite
+  name: second_a3_semantic_loss
+  output_root: outputs/second/a3_semantic_loss
 
 dataset:
   name: SECOND
@@ -33,7 +33,7 @@ model:
   semantic_num_classes: 7
   num_classes: 1
   cram_lite:
-    enabled: true                # <── A2: CRAM-lite (CGA-lite for semantic)
+    enabled: true
     alpha: 0.5
     apply_stages: [0, 1, 2]
     attention_type: spatial

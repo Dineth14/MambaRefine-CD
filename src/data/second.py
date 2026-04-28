@@ -401,6 +401,7 @@ class SECONDDataset(Dataset):
         cache_masks_in_ram: bool = False,
         profile_enabled: bool = False,
         second_label_palette: Optional[dict[Any, Any]] = None,
+        debug_stats: bool = False,
     ) -> None:
         self.root = Path(root)
         self.split = split
@@ -418,6 +419,7 @@ class SECONDDataset(Dataset):
         self.cache_images_in_ram = bool(cache_images_in_ram)
         self.cache_masks_in_ram = bool(cache_masks_in_ram)
         self.profile_enabled = bool(profile_enabled)
+        self.debug_stats = bool(debug_stats)
         self.second_label_palette = _normalize_palette(second_label_palette)
         self.profile_stats = {
             "getitem_calls": 0,
@@ -473,7 +475,9 @@ class SECONDDataset(Dataset):
         self._log_size_summary()
         self._prime_ram_cache()
         self._warn_unexpected_class_ids()
-        self._log_class_histogram()
+        if self.debug_stats:
+            self._log_class_histogram()
+            self.log_debug_stats()
 
     def _resolve_base_dir(self) -> Path:
         base = self.split_dir if self.split_dir is not None else self.root
@@ -781,6 +785,61 @@ class SECONDDataset(Dataset):
     def __len__(self) -> int:
         return len(self.entries) if self.split == "train" else len(self.tiles or [])
 
+    def debug_stats_summary(self, sample_limit: int = 8) -> dict[str, Any]:
+        total_px = 0
+        changed_px = 0
+        ignored_px = 0
+        valid_px = 0
+        label_a_values: set[int] = set()
+        label_b_values: set[int] = set()
+        image_shape = None
+        for idx in range(min(sample_limit, len(self))):
+            item = self[idx]
+            image_shape = list(item["image_a"].shape)
+            label_a = item.get("label_t1")
+            label_b = item.get("label_t2")
+            if label_a is not None:
+                label_a_values.update(int(v) for v in torch.unique(label_a).tolist())
+            if label_b is not None:
+                label_b_values.update(int(v) for v in torch.unique(label_b).tolist())
+            ignore_mask = item.get("ignore_mask")
+            change_mask = item.get("change_mask", item.get("mask"))
+            if ignore_mask is not None:
+                ignored_px += int((ignore_mask > 0.5).sum().item())
+                valid_px += int((ignore_mask <= 0.5).sum().item())
+                total_px += int(ignore_mask.numel())
+            if change_mask is not None:
+                changed_px += int((change_mask > 0.5).sum().item())
+        no_change_px = max(valid_px - changed_px, 0)
+        return {
+            "split": self.split,
+            "num_samples": len(self),
+            "image_shape": image_shape,
+            "unique_label_t1": sorted(label_a_values),
+            "unique_label_t2": sorted(label_b_values),
+            "ignore_pixel_count": ignored_px,
+            "valid_pixel_count": valid_px,
+            "change_pixel_ratio": round(changed_px / max(valid_px, 1), 6),
+            "no_change_pixel_ratio": round(no_change_px / max(valid_px, 1), 6),
+            "sampled_pixels": total_px,
+        }
+
+    def log_debug_stats(self) -> None:
+        stats = self.debug_stats_summary()
+        logger.info(
+            "SECOND debug [%s] samples=%s image_shape=%s label_t1=%s label_t2=%s "
+            "ignore=%s valid=%s change_ratio=%.6f no_change_ratio=%.6f",
+            stats["split"],
+            stats["num_samples"],
+            stats["image_shape"],
+            stats["unique_label_t1"],
+            stats["unique_label_t2"],
+            stats["ignore_pixel_count"],
+            stats["valid_pixel_count"],
+            stats["change_pixel_ratio"],
+            stats["no_change_pixel_ratio"],
+        )
+
     def _maybe_cached(self, path: Optional[str], loader) -> Optional[np.ndarray]:
         if path is None:
             return None
@@ -951,18 +1010,23 @@ class SECONDDataset(Dataset):
         sample: dict[str, Any] = {
             "image_a": tensor_a,
             "image_b": tensor_b,
+            "image_t1": tensor_a,
+            "image_t2": tensor_b,
             "id": entry["sample_id"],
             "name": entry["sample_id"],
+            "sample_id": entry["sample_id"],
             "ignore_mask": tensor_ignore,
             "valid_mask": (1.0 - tensor_ignore),
         }
         if self.mode == "semantic":
+            tensor_change_long = tensor_change.squeeze(0).long()
             sample.update({
                 "label_a": tensor_label_a,
                 "label_b": tensor_label_b,
                 "label_t1": tensor_label_a,
                 "label_t2": tensor_label_b,
                 "change_mask": tensor_change,
+                "change_mask_long": tensor_change_long,
                 "mask": tensor_change,
                 "label": tensor_change,
             })

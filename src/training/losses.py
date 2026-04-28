@@ -288,13 +288,15 @@ def build_loss(cfg: dict) -> nn.Module:
 
     if kind == "second_semantic_cd":
         from training.second_loss import SecondSemanticChangeLoss
+        second_cfg = lc.get("second", {}) or {}
 
         return SecondSemanticChangeLoss(
             num_classes=int(dc.get("num_classes", mc.get("semantic_num_classes", 7))),
-            ignore_index=int(dc.get("ignore_index", 255)),
-            change_loss_weight=float(lc.get("change_loss_weight", 1.0)),
-            semantic_loss_weight=float(lc.get("semantic_loss_weight", 0.5)),
-            consistency_loss_weight=float(lc.get("consistency_loss_weight", 0.2)),
+            ignore_index=int(second_cfg.get("ignore_index", dc.get("ignore_index", 255))),
+            change_loss_weight=float(second_cfg.get("change_weight", lc.get("change_loss_weight", 1.0))),
+            semantic_loss_weight=float(second_cfg.get("sem_ce_weight", lc.get("semantic_loss_weight", 0.5))),
+            semantic_dice_weight=float(second_cfg.get("sem_dice_weight", lc.get("semantic_dice_weight", 0.0))),
+            consistency_loss_weight=float(second_cfg.get("consistency_weight", lc.get("consistency_loss_weight", 0.2))),
             sek_loss_weight=float(lc.get("sek_loss_weight", 0.3)),
             dice_weight=float(lc.get("dice_weight", 1.0)),
             focal_weight=float(lc.get("focal_weight", 0.2)),

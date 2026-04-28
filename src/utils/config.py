@@ -215,6 +215,14 @@ def _normalize_config(data: dict[str, Any]) -> dict[str, Any]:
             data["dataset"] = _deep_merge(base_ds, dataset)
 
     # EMA lives in one top-level section, but training internals still expect keys under training.
+    train_alias = data.get("train", {})
+    train_ema = train_alias.get("ema", {}) if isinstance(train_alias, dict) else {}
+    if isinstance(train_ema, dict) and train_ema:
+        data.setdefault("ema", {})
+        data["ema"]["enabled"] = bool(train_ema.get("enabled", data["ema"].get("enabled", False)))
+        data["ema"]["decay"] = float(train_ema.get("decay", data["ema"].get("decay", 0.999)))
+        if "save_best_by" in train_alias:
+            data.setdefault("checkpoint", {})["selection_metric"] = train_alias["save_best_by"]
     ema = data.get("ema", {})
     training = data.get("training", {})
     training["use_ema"] = bool(ema.get("enabled", training.get("use_ema", False)))
@@ -251,7 +259,12 @@ def _normalize_config(data: dict[str, Any]) -> dict[str, Any]:
     # Preserve checkpoint path for eval/validate in one place.
     checkpoint = data.get("checkpoint", {})
     checkpoint.setdefault("path", None)
-    checkpoint.setdefault("monitor", "f1")
+    if "selection_metric" in checkpoint and "monitor" not in checkpoint:
+        checkpoint["monitor"] = checkpoint["selection_metric"]
+    checkpoint.setdefault(
+        "monitor",
+        "Fscd" if str(data.get("task", "")).lower() == "semantic_cd" or str(data.get("dataset", {}).get("name", "")).upper() == "SECOND" else "f1",
+    )
     checkpoint.setdefault("mode", "max")
     checkpoint.setdefault("save_best_only", True)
     data["checkpoint"] = checkpoint

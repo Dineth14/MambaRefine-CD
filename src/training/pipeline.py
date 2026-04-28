@@ -115,20 +115,39 @@ def run_training_pipeline(
     model = build_model(cfg).to(device)
     total_p = sum(p.numel() for p in model.parameters())
     trainable_p = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    backbone_p = sum(p.numel() for p in getattr(model, "encoder", torch.nn.Module()).parameters())
+    decoder_p = sum(p.numel() for p in getattr(model, "decoder", torch.nn.Module()).parameters())
+    drbi_p = sum(p.numel() for p in getattr(model, "diff_modules", torch.nn.ModuleList()).parameters())
+    semantic_head_module = getattr(model, "semantic_head", None)
+    semantic_head_p = sum(p.numel() for p in semantic_head_module.parameters()) if semantic_head_module is not None else 0
+    binary_head_p = 0
+    decoder = getattr(model, "decoder", None)
+    for attr in ("head", "coarse_head"):
+        head = getattr(decoder, attr, None)
+        if head is not None:
+            binary_head_p = sum(p.numel() for p in head.parameters())
+            break
     semantic_head = getattr(model, "semantic_head", None)
     semantic_head_params = sum(p.numel() for p in semantic_head.parameters()) if semantic_head is not None else 0
     logger.info(f"Variant          : {cfg.model.variant}")
     logger.info(f"Total params     : {total_p / 1e6:.2f}M")
     logger.info(f"Trainable params : {trainable_p / 1e6:.2f}M")
-    if semantic_head_params > 0:
-        logger.info(f"Semantic head    : {semantic_head_params / 1e6:.2f}M")
+    logger.info(f"Backbone params  : {backbone_p / 1e6:.2f}M")
+    logger.info(f"Decoder params   : {decoder_p / 1e6:.2f}M")
+    logger.info(f"D-RBI params     : {drbi_p / 1e6:.2f}M")
+    logger.info(f"Semantic head    : {semantic_head_p / 1e6:.2f}M")
+    logger.info(f"Binary head      : {binary_head_p / 1e6:.2f}M")
     (out_dir / "model_info.json").write_text(
         json.dumps(
             {
                 "variant": cfg.model.variant,
                 "total_params": total_p,
                 "trainable_params": trainable_p,
-                "semantic_head_params": semantic_head_params,
+                "backbone_params": backbone_p,
+                "decoder_params": decoder_p,
+                "drbi_params": drbi_p,
+                "semantic_head_params": semantic_head_p,
+                "binary_head_params": binary_head_p,
                 "output_mode": str(cfg.model.output_mode),
                 "encoder_channels": model.encoder.channels,
             },

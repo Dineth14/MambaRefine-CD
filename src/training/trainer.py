@@ -314,6 +314,8 @@ class Trainer:
                     loss_stats = {
                         "total_loss": float(total.detach().item()),
                         "change_loss": 0.0,
+                        "sem_t1_loss": 0.0,
+                        "sem_t2_loss": 0.0,
                         "semantic_ce_loss": 0.0,
                         "consistency_loss": 0.0,
                         "sek_loss": 0.0,
@@ -412,6 +414,8 @@ class Trainer:
             "soft_kappa": float(loss_stats.get("soft_kappa", 0.0)),
             "bce_loss": float(loss_stats.get("bce_loss", 0.0)),
             "change_loss": float(loss_stats.get("change_loss", 0.0)),
+            "sem_t1_loss": float(loss_stats.get("sem_t1_loss", 0.0)),
+            "sem_t2_loss": float(loss_stats.get("sem_t2_loss", 0.0)),
             "semantic_ce_loss": float(loss_stats.get("semantic_ce_loss", 0.0)),
             "consistency_loss": float(loss_stats.get("consistency_loss", 0.0)),
         }
@@ -519,6 +523,8 @@ class Trainer:
                         f"[{iteration+1}/{self.max_iter}] "
                         f"loss={_fmt(step_stats['loss'])} "
                         f"change={_fmt(step_stats['change_loss'])} "
+                        f"sem_t1={_fmt(step_stats['sem_t1_loss'])} "
+                        f"sem_t2={_fmt(step_stats['sem_t2_loss'])} "
                         f"sem_ce={_fmt(step_stats['semantic_ce_loss'])} "
                         f"cons={_fmt(step_stats['consistency_loss'])} "
                         f"sek={_fmt(step_stats['sek_loss'])} lr={lr:.2e}"
@@ -551,6 +557,8 @@ class Trainer:
                     self.writer.add_scalar("train/bce", step_stats["bce_loss"], iteration)
                     if self.second_semantic_mode:
                         self.writer.add_scalar("train/change_loss", step_stats["change_loss"], iteration)
+                        self.writer.add_scalar("train/sem_t1_loss", step_stats["sem_t1_loss"], iteration)
+                        self.writer.add_scalar("train/sem_t2_loss", step_stats["sem_t2_loss"], iteration)
                         self.writer.add_scalar("train/semantic_ce_loss", step_stats["semantic_ce_loss"], iteration)
                         self.writer.add_scalar("train/consistency_loss", step_stats["consistency_loss"], iteration)
                     self.writer.add_scalar("train/lr", lr, iteration)
@@ -594,6 +602,8 @@ class Trainer:
                         ema_state=self.ema.state_dict() if self.ema is not None else None,
                         best_threshold=vm.get("best_threshold"),
                         val_metrics=vm,
+                        scaler_state=self.scaler.state_dict(),
+                        best_metric_name=self.monitor,
                     )
                     self.logger.info(
                         f"  ✓ New best {self.monitor}={self.best_metric:.4f} saved."

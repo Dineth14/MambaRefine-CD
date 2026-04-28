@@ -113,6 +113,21 @@ def _dry_run(cfg: dict, allowed: list[str]) -> None:
     model = build_model(cfg).to(device)
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     logger.info(f"Model parameters: {n_params / 1e6:.2f}M")
+    for label, module_name in [
+        ("Backbone params", "encoder"),
+        ("Decoder params", "decoder"),
+        ("D-RBI params", "diff_modules"),
+        ("Semantic head params", "semantic_head"),
+    ]:
+        module = getattr(model, module_name, None)
+        count = sum(p.numel() for p in module.parameters()) if module is not None else 0
+        logger.info(f"{label}: {count / 1e6:.2f}M")
+    binary_head = None
+    decoder = getattr(model, "decoder", None)
+    if decoder is not None:
+        binary_head = getattr(decoder, "head", getattr(decoder, "coarse_head", None))
+    binary_count = sum(p.numel() for p in binary_head.parameters()) if binary_head is not None else 0
+    logger.info(f"Binary head params: {binary_count / 1e6:.2f}M")
 
     # Build dataset
     ds = build_dataset(cfg, split="train")

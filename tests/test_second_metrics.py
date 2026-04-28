@@ -145,3 +145,38 @@ class TestSECONDMetricsWithChangeMask:
         res = m.compute()
         assert isinstance(res, dict)
         assert set(res.keys()) == {"OA", "mIoU", "SeK", "Fscd"}
+
+
+class TestSECONDMetricsIgnoreIndex:
+    """Ignore pixels must not affect global accumulators."""
+
+    def test_ignore_pixels_do_not_hurt_perfect_valid_pixels(self) -> None:
+        m = SECONDSCDMetrics(num_classes=4, ignore_index=255)
+        gt_t1 = torch.tensor([[[1, 255], [2, 2]]], dtype=torch.long)
+        gt_t2 = torch.tensor([[[1, 255], [2, 3]]], dtype=torch.long)
+        pred_t1 = gt_t1.clone()
+        pred_t2 = gt_t2.clone()
+        pred_t1[0, 0, 1] = 0
+        pred_t2[0, 0, 1] = 1
+        m.update(pred_t1, pred_t2, gt_t1, gt_t2)
+        res = m.compute()
+        assert abs(res["OA"] - 100.0) < EPS
+        assert abs(res["Fscd"] - 100.0) < EPS
+
+
+class TestSECONDMetricsSemanticSpecificity:
+    """Perfect binary change localization is not enough for perfect Fscd."""
+
+    def test_binary_perfect_but_wrong_semantic_classes_not_perfect(self) -> None:
+        m = SECONDSCDMetrics(num_classes=4, ignore_index=255)
+        gt_t1 = torch.tensor([[[1, 1], [2, 2]]], dtype=torch.long)
+        gt_t2 = torch.tensor([[[1, 2], [2, 3]]], dtype=torch.long)
+        pred_t1 = gt_t1.clone()
+        pred_t2 = gt_t2.clone()
+        # The changed pixels remain changed, but their semantic destination
+        # classes are wrong, so SCD F-score must drop.
+        pred_t2[0, 0, 1] = 3
+        pred_t2[0, 1, 1] = 1
+        m.update(pred_t1, pred_t2, gt_t1, gt_t2)
+        res = m.compute()
+        assert res["Fscd"] < 100.0

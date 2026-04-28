@@ -62,6 +62,30 @@ def _binary_focal_loss(
     return _masked_mean(((1.0 - pt) ** gamma) * bce, valid_mask)
 
 
+def _semantic_dice_loss(
+    logits: torch.Tensor,
+    target: torch.Tensor,
+    num_classes: int,
+    ignore_index: int,
+    smooth: float = 1.0,
+) -> torch.Tensor:
+    valid = target != ignore_index
+    if int(valid.sum().item()) <= 0:
+        return logits.new_zeros(())
+    probs = torch.softmax(logits.float(), dim=1)
+    safe_target = target.long().clone()
+    safe_target[~valid] = 0
+    one_hot = F.one_hot(safe_target, num_classes=num_classes).permute(0, 3, 1, 2).float()
+    valid_f = valid.unsqueeze(1).float()
+    probs = probs * valid_f
+    one_hot = one_hot * valid_f
+    dims = (0, 2, 3)
+    intersection = (probs * one_hot).sum(dim=dims)
+    denominator = probs.sum(dim=dims) + one_hot.sum(dim=dims)
+    dice = (2.0 * intersection + smooth) / (denominator + smooth)
+    return 1.0 - dice.mean()
+
+
 class SecondSemanticChangeLoss(nn.Module):
     """Joint loss for binary change and timestamp-wise semantic prediction."""
 
@@ -72,6 +96,7 @@ class SecondSemanticChangeLoss(nn.Module):
         ignore_index: int,
         change_loss_weight: float = 1.0,
         semantic_loss_weight: float = 0.5,
+        semantic_dice_weight: float = 0.0,
         consistency_loss_weight: float = 0.2,
         sek_loss_weight: float = 0.3,
         dice_weight: float = 1.0,
@@ -88,6 +113,7 @@ class SecondSemanticChangeLoss(nn.Module):
         self.ignore_index = int(ignore_index)
         self.change_loss_weight = float(change_loss_weight)
         self.semantic_loss_weight = float(semantic_loss_weight)
+        self.semantic_dice_weight = float(semantic_dice_weight)
         self.consistency_loss_weight = float(consistency_loss_weight)
         self.sek_loss_weight = float(sek_loss_weight)
         self.dice_weight = float(dice_weight)
@@ -165,6 +191,9 @@ class SecondSemanticChangeLoss(nn.Module):
         sem_ce_t1 = self._semantic_ce(sem_logits_t1, label_a)
         sem_ce_t2 = self._semantic_ce(sem_logits_t2, label_b)
         semantic_ce_loss = self.ce_weight * (sem_ce_t1 + sem_ce_t2)
+        sem_dice_t1 = _semantic_dice_loss(sem_logits_t1, label_a, self.num_classes, self.ignore_index)
+        sem_dice_t2 = _semantic_dice_loss(sem_logits_t2, label_b, self.num_classes, self.ignore_index)
+        semantic_dice_loss = self.semantic_dice_weight * (sem_dice_t1 + sem_dice_t2)
 
         sek_loss, average_sek, average_iou = self._mambafcs_eval_sek_loss(
             change_logits=change_logits,
@@ -202,13 +231,17 @@ class SecondSemanticChangeLoss(nn.Module):
         total = (
             self.change_loss_weight * change_loss
             + self.semantic_loss_weight * semantic_ce_loss
+            + semantic_dice_loss
             + self.sek_loss_weight * sek_loss
             + self.consistency_loss_weight * consistency_loss
         )
         self.latest_stats = {
             "total_loss": float(total.detach().item()),
             "change_loss": float(change_loss.detach().item()),
+            "sem_t1_loss": float(sem_ce_t1.detach().item()),
+            "sem_t2_loss": float(sem_ce_t2.detach().item()),
             "semantic_ce_loss": float(semantic_ce_loss.detach().item()),
+            "semantic_dice_loss": float(semantic_dice_loss.detach().item()),
             "consistency_loss": float(consistency_loss.detach().item()),
             "sek_loss": float(sek_loss.detach().item()),
             "dice_loss": float(dice_loss.detach().item()),
