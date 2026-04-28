@@ -1,0 +1,17 @@
+\section{Introduction}
+
+Remote-sensing change detection identifies changed regions from co-registered bi-temporal images. It supports urban monitoring, land-cover analysis, infrastructure mapping, and disaster assessment, where pixel-level errors can alter downstream estimates of changed area. A useful change detector must therefore satisfy two requirements: it should recover complete changed regions and preserve accurate object boundaries.
+
+Convolutional models such as STANet, SNUNet, and IFNet improve feature fusion for bi-temporal imagery, while transformer-based methods such as BIT and ChangeFormer introduce stronger long-range modeling \cite{STANet,SNUNet,IFNet,BIT,ChangeFormer}. These models provide effective temporal representations, but dense change masks remain sensitive to boundary ambiguity, small structures, and local misalignment. A common issue is that low-frequency region evidence and high-frequency boundary evidence are compressed into a single change representation.
+
+Our key insight is that region and boundary evidence should be decoupled but not isolated. Region-level cues describe coherent changed-object extent and suppress fragmented responses. Boundary-level cues describe contours and local discontinuities that determine mask sharpness. Allowing these streams to interact provides a direct mechanism for boundary evidence to refine region predictions without replacing the region decision.
+
+We propose \ours, a binary remote-sensing change detector built on a MambaVision backbone. It constructs a temporal descriptor from raw features, absolute difference, signed difference, and multiplicative interaction. Differential Region--Boundary Interaction (\drbi) then separates the descriptor into region and boundary streams. An adaptive receptive-field decoder and CRAM-lite attention aggregate multi-scale evidence, and a boundary residual refinement branch adjusts the final prediction near contours.
+
+The contributions are:
+\begin{itemize}
+    \item A MambaVision-based binary change detection architecture that explicitly separates region-level and boundary-level change evidence.
+    \item A \drbi{} module that uses learned gates to form interacting region and boundary feature streams from temporal differences.
+    \item A compact decoding design with signed temporal difference, adaptive receptive fields, CRAM-lite attention, and boundary residual refinement.
+    \item A concise evaluation using only verified binary metrics: Pre, Rec, F1, IoU, and OA.
+\end{itemize}

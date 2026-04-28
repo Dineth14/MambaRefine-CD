@@ -23,6 +23,7 @@ sys.path.insert(0, str(_REPO / "src"))
 sys.path.insert(0, str(_REPO))
 
 from utils.config import load_config
+from utils.ablation import log_parameter_breakdown, log_startup_config
 
 
 logging.basicConfig(
@@ -80,6 +81,7 @@ def main() -> None:
     logger.info(f"Config: {config_path}")
     logger.info(f"Dataset: {cfg.get('dataset', {}).get('name', 'unknown')}")
     logger.info(f"Allowed metrics: {allowed}")
+    log_startup_config(logger, cfg, config_path)
 
     if args.resume:
         cfg.setdefault("resume", {})
@@ -97,7 +99,7 @@ def main() -> None:
     # Patch allowed metrics into cfg so the pipeline can filter logs
     cfg.setdefault("metrics", {})["allowed"] = list(allowed)
 
-    run_training_pipeline(cfg)
+    run_training_pipeline(cfg, config_source_path=config_path)
 
 
 def _dry_run(cfg: dict, allowed: list[str]) -> None:
@@ -108,9 +110,11 @@ def _dry_run(cfg: dict, allowed: list[str]) -> None:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"Device: {device}")
+    log_startup_config(logger, cfg, cfg.get("_meta", {}).get("config_path"))
 
     # Build model
     model = build_model(cfg).to(device)
+    log_parameter_breakdown(logger, model)
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     logger.info(f"Model parameters: {n_params / 1e6:.2f}M")
     for label, module_name in [

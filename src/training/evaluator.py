@@ -735,6 +735,13 @@ class Evaluator:
                 metrics_payload[key] = round(value, 6)
             elif isinstance(value, (int, bool, str)):
                 metrics_payload[key] = value
+        try:
+            from utils.ablation import config_fingerprint, module_flags
+            meta = self.cfg.get("_meta", {}) if isinstance(self.cfg.get("_meta", {}), dict) else {}
+            metrics_payload["config_fingerprint"] = meta.get("config_fingerprint", config_fingerprint(self.cfg))
+            metrics_payload["module_flags"] = module_flags(self.cfg)
+        except Exception:
+            pass
         (self.save_dir / "metrics.json").write_text(json.dumps(metrics_payload, indent=2))
 
         # tta_results.json  (if TTA was used)

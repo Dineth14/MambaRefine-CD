@@ -1,0 +1,40 @@
+\section{Method}
+
+\subsection{Overview}
+
+Given two registered images $I_1$ and $I_2$, \ours{} predicts a binary change map. A shared MambaVision backbone extracts multi-scale features from both timestamps. For clarity, we describe one level and denote the features as $F_1$ and $F_2$. The temporal descriptor is
+\begin{equation}
+X = [F_1, F_2, |F_2-F_1|, F_2-F_1, F_1 \odot F_2].
+\label{eq:temporal_descriptor}
+\end{equation}
+The descriptor contains appearance at both times, magnitude of change, direction of change, and feature interaction. A lightweight projection maps $X$ to a difference feature $D$. The model then separates $D$ into region and boundary streams, decodes region-aware multi-scale features into a coarse map, and uses boundary residual refinement to improve contours.
+
+\input{figures/fig_pipeline}
+
+\subsection{Differential Region--Boundary Interaction}
+
+\drbi{} is the core region--boundary decoupling module. It computes learned gates $G_r$ and $G_b$ from the difference feature $D$ and applies them to form region and boundary streams:
+\begin{equation}
+R = G_r \odot D, \qquad B = G_b \odot D.
+\label{eq:drbi}
+\end{equation}
+$R$ emphasizes low-frequency changed-region extent. $B$ emphasizes high-frequency contour evidence. The two streams are decoupled by separate gates but remain connected through the shared temporal descriptor and decoder fusion. This avoids treating all changes as a single signal while keeping the module efficient: it adds lightweight gating rather than a separate heavy boundary network.
+
+\input{figures/fig_drbi}
+
+\subsection{Signed Difference}
+
+Absolute difference $|F_2-F_1|$ captures change magnitude but discards temporal direction. The signed term $F_2-F_1$ preserves directional evidence, which can help distinguish appearance transitions that have similar magnitude but different temporal structure. The model remains supervised by binary change labels; signed difference only enriches the temporal representation.
+
+\subsection{ARF Decoder}
+
+The Adaptive Receptive Field (\arf) decoder fuses multi-scale features from the region stream and boundary-aware interactions. Shallow levels preserve spatial detail, while deeper levels provide broader context. CRAM-lite attention modulates the fused representation with a compact attention block, suppressing redundant responses without adding a heavy decoder. The decoder produces a coarse change probability $P_c$.
+
+\subsection{Boundary Refinement}
+
+The boundary branch predicts a residual $\Delta$ that modifies the coarse probability near contours. The final probability is
+\begin{equation}
+P_f = P_c + \delta \tanh(\Delta),
+\label{eq:boundary_refine}
+\end{equation}
+where $\delta$ controls residual strength. The hyperbolic tangent bounds the residual and stabilizes refinement. The final binary prediction is obtained by thresholding $P_f$. This design keeps the region decoder responsible for object extent while allowing the boundary branch to correct local contour errors.

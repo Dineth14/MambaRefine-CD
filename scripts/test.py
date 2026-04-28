@@ -23,6 +23,7 @@ sys.path.insert(0, str(_REPO))
 import torch
 
 from utils.config import load_config
+from utils.ablation import compare_checkpoint_config, config_fingerprint, log_parameter_breakdown, log_startup_config, module_flags
 
 logging.basicConfig(
     level=logging.INFO,
@@ -125,6 +126,7 @@ def main() -> None:
     logger.info(f"Checkpoint: {args.ckpt}")
     logger.info(f"Split: {args.split}")
     logger.info(f"Allowed metrics: {allowed}")
+    log_startup_config(logger, cfg, args.config)
 
     from models.mambarefinecd import build_model
     from data.dataset_builder import build_test_loader
@@ -132,6 +134,8 @@ def main() -> None:
     from training.evaluator import Evaluator
 
     ckpt_meta = peek_ckpt(args.ckpt, map_location=device)
+    logger.info("Config ablation name: %s", cfg.get("experiment", {}).get("name", "unknown"))
+    compare_checkpoint_config(logger, cfg, ckpt_meta, strict=bool(args.strict))
     threshold, threshold_source = _resolve_threshold(args, cfg, ckpt_meta)
     use_ema_requested = _resolve_use_ema(args, cfg)
 
@@ -162,6 +166,7 @@ def main() -> None:
     loader = build_test_loader(cfg)
 
     model = build_model(cfg).to(device)
+    log_parameter_breakdown(logger, model)
     load_info = load_for_eval(
         args.ckpt,
         model,
@@ -197,6 +202,8 @@ def main() -> None:
     results["threshold_source"] = effective_source
     results["ema_used"] = bool(load_info["ema_used"])
     results["ema_found"] = bool(load_info["ema_found"])
+    results["config_fingerprint"] = cfg.get("_meta", {}).get("config_fingerprint", config_fingerprint(cfg))
+    results["module_flags"] = module_flags(cfg)
 
     logger.info("=" * 50)
     logger.info("Test Results:")

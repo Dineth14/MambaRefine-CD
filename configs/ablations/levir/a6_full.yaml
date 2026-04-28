@@ -1,15 +1,13 @@
-# LEVIR-CD A0 Baseline
-# signed_diff: false, cram_lite: false, boundary_loss: disabled, basic boundary_refine
-
 experiment:
-  name: levir_a0_baseline
-  output_root: outputs/levir/a0_baseline
-
-_base_: [configs/datasets/levir.yaml]
+  name: a6_full
+  output_root: outputs/levir/a6_full
+  seed: 42
 
 dataset:
   name: LEVIR-CD
   root: /storage2/ChangeDetection/MV/Datasets/LEVIRCD
+  mode: binary
+  task_type: binary_change
   image_size: 256
   batch_size: 8
   num_workers: 8
@@ -26,28 +24,41 @@ model:
   pretrained: true
   output_mode: binary
   enable_semantic_heads: false
+  freeze_backbone: false
   cram_lite:
-    enabled: false
+    enabled: true
+    alpha: 0.5
+    apply_stages: [0, 1, 2]
+    attention_type: spatial
 
 difference:
   enabled: true
   out_channels: 256
+  use_depthwise: true
+  gate_hidden_ratio: 0.25
   use_absdiff: true
-  use_signed_diff: false
+  use_signed_diff: true
   use_product: false
   pre_norm: true
   use_region_gate: true
   use_boundary_gate: true
+  region_gate_min: 0.2
+  region_gate_max: 0.8
+  boundary_gate_min: 0.0
+  boundary_gate_max: 0.4
 
 decoder:
+  type: adaptive_rf
   channels: 256
   dilation_rates: [1, 2, 4, 8]
   use_boundary_residual: true
   residual_scale: 0.1
+  use_depthwise: true
+  aux_weight: 0.4
 
 hardware:
   device: cuda
-  gpu_id: [1]
+  gpu_ids: [1]
   mixed_precision: true
 
 training:
@@ -63,20 +74,45 @@ training:
   weight_decay: 0.01
 
 loss:
+  type: bce_dice
   final:
     type: bce_dice
     bce_weight: 1.0
     dice_weight: 1.0
   coarse:
-    enabled: false
-    weight: 0.0
+    enabled: true
+    weight: 0.4
   boundary:
-    enabled: false
-    weight: 0.0
+    enabled: true
+    weight: 0.1
+    type: bce_dice
+    target_type: sobel
+    edge_width: 3
 
 metrics:
   allowed: [Pre, Rec, F1, IoU, OA]
+  average_mode: global
+
+eval:
+  threshold: 0.5
+  threshold_sweep:
+    enabled: true
+    values: [0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60]
+  threshold_select_metric: F1_1
+  use_ema: true
+  inference_mode: patch
+  crop_size: 256
+  overlap: 0.25
+  log_mask_debug: true
+  save_debug_outputs: false
+  debug_output_root: outputs/debug_levir_eval
+  debug_max_samples: 20
+
+ema:
+  enabled: true
+  decay: 0.999
 
 checkpoint:
   selection_metric: F1
+  monitor: f1
   mode: max

@@ -1,0 +1,45 @@
+\section{Experiments}
+
+\subsection{Datasets}
+
+Experiments are reported for DSIFN-CD, WHU-CD, and LEVIR-CD. DSIFN-CD and WHU-CD are binary change detection datasets and are reported with the verified values provided for this paper. LEVIR-CD values are validation metrics and are explicitly marked as validation results. SECOND is treated only as a possible semantic change detection extension; no SECOND results are reported because the pipeline is not reliable.
+
+\subsection{Metrics}
+
+For binary change detection, only Precision (Pre), Recall (Rec), F1, IoU, and OA are reported. All metrics are computed from pixel-level counts:
+\begin{equation}
+\mathrm{Pre}=\frac{\mathrm{TP}}{\mathrm{TP}+\mathrm{FP}}, \quad
+\mathrm{Rec}=\frac{\mathrm{TP}}{\mathrm{TP}+\mathrm{FN}},
+\end{equation}
+\begin{equation}
+\mathrm{F1}=\frac{2\mathrm{Pre}\mathrm{Rec}}{\mathrm{Pre}+\mathrm{Rec}}, \quad
+\mathrm{IoU}=\frac{\mathrm{TP}}{\mathrm{TP}+\mathrm{FP}+\mathrm{FN}},
+\end{equation}
+\begin{equation}
+\mathrm{OA}=\frac{\mathrm{TP}+\mathrm{TN}}{\mathrm{TP}+\mathrm{TN}+\mathrm{FP}+\mathrm{FN}}.
+\end{equation}
+Boundary F1 is reported only as an analysis metric and is not included in the main result table.
+
+\subsection{Implementation}
+
+The model uses a MambaVision backbone, \drbi, signed temporal difference, an \arf{} decoder, CRAM-lite attention, and boundary residual refinement. Dataset-specific implementation details that are not verified are left as TODOs: optimizer \todo{OPTIMIZER}, learning rate \todo{LR}, batch size \todo{BATCH}, crop size \todo{CROP}, training schedule \todo{SCHEDULE}, checkpoint selection \todo{CHECKPOINT}, and threshold \todo{THRESHOLD}.
+
+\subsection{Results}
+
+\input{tables/table_main_results}
+
+Table~\ref{tab:main_results} reports only verified values. DSIFN-CD and WHU-CD include complete binary metrics. LEVIR-CD is included only with available validation metrics; missing Pre and Rec values remain as TODOs.
+
+\subsection{Ablation}
+
+\input{tables/table_ablation}
+
+Table~\ref{tab:ablation} defines the intended ablation structure. Values are intentionally left as TODOs until each variant is evaluated under the same split, checkpoint rule, threshold, and metric pipeline.
+
+\subsection{Boundary Analysis}
+
+\input{tables/table_boundary}
+
+Table~\ref{tab:boundary} reports verified boundary F1 values for DSIFN-CD and WHU-CD. This diagnostic table supports the region--boundary design motivation but is kept separate from the main binary change detection metrics.
+
+\input{figures/fig_visuals}

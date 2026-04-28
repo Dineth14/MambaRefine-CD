@@ -20,6 +20,7 @@ from training.logger import get_logger
 from training.losses import build_loss
 from training.trainer import Trainer
 from utils.config import GLOBAL_CONFIG_PATH
+from utils.ablation import config_fingerprint, log_parameter_breakdown, log_startup_config, module_flags
 from utils.seed import set_seed
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -65,6 +66,8 @@ def run_training_pipeline(
 
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "config.yaml").write_text(yaml.safe_dump(cfg.to_dict(), sort_keys=False), encoding="utf-8")
+    fingerprint = cfg.get("_meta", {}).get("config_fingerprint", config_fingerprint(cfg))
+    (out_dir / "config_fingerprint.txt").write_text(str(fingerprint), encoding="utf-8")
     if config_source_path is not None:
         shutil.copy(config_source_path, out_dir / "config_source.yaml")
 
@@ -76,6 +79,7 @@ def run_training_pipeline(
         "Config     : %s",
         str(config_source_path) if config_source_path is not None else str(GLOBAL_CONFIG_PATH.relative_to(ROOT)),
     )
+    log_startup_config(logger, cfg, config_source_path)
 
     resume_cfg = cfg.resume
     if resume_cfg.enabled:
@@ -113,15 +117,15 @@ def run_training_pipeline(
     logger.info(f"Train samples : {len(train_loader.dataset)} | Val tiles : {len(val_loader.dataset)}")
 
     model = build_model(cfg).to(device)
-    total_p = sum(p.numel() for p in model.parameters())
-    trainable_p = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    backbone_p = sum(p.numel() for p in getattr(model, "encoder", torch.nn.Module()).parameters())
-    decoder_p = sum(p.numel() for p in getattr(model, "decoder", torch.nn.Module()).parameters())
-    drbi_p = sum(p.numel() for p in getattr(model, "diff_modules", torch.nn.ModuleList()).parameters())
-    semantic_head_module = getattr(model, "semantic_head", None)
-    semantic_head_p = sum(p.numel() for p in semantic_head_module.parameters()) if semantic_head_module is not None else 0
-    binary_head_p = 0
+    param_info = log_parameter_breakdown(logger, model)
+    total_p = param_info["total_params"]
+    trainable_p = param_info["trainable_params"]
+    backbone_p = param_info["encoder_params"]
+    decoder_p = param_info["decoder_params"]
+    drbi_p = param_info["drbi_params"]
+    semantic_head_p = 0
     decoder = getattr(model, "decoder", None)
+    binary_head_p = 0
     for attr in ("head", "coarse_head"):
         head = getattr(decoder, attr, None)
         if head is not None:
@@ -148,6 +152,12 @@ def run_training_pipeline(
                 "drbi_params": drbi_p,
                 "semantic_head_params": semantic_head_p,
                 "binary_head_params": binary_head_p,
+                "arf_params": param_info["arf_params"],
+                "cram_lite_params": param_info["cram_lite_params"],
+                "boundary_refinement_params": param_info["boundary_refinement_params"],
+                "module_flags": module_flags(cfg),
+                "config_fingerprint": fingerprint,
+                "config_path": str(config_source_path) if config_source_path is not None else str(GLOBAL_CONFIG_PATH.relative_to(ROOT)),
                 "output_mode": str(cfg.model.output_mode),
                 "encoder_channels": model.encoder.channels,
             },

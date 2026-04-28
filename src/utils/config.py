@@ -242,6 +242,9 @@ def _normalize_config(data: dict[str, Any]) -> dict[str, Any]:
 
     # Keep device and gpu_ids consistent. If device is bare cuda, use first gpu_ids entry.
     hardware = data.get("hardware", {})
+    if "gpu_ids" not in hardware and "gpu_id" in hardware:
+        raw_gpu_id = hardware.get("gpu_id")
+        hardware["gpu_ids"] = raw_gpu_id if isinstance(raw_gpu_id, list) else [raw_gpu_id]
     gpu_ids = hardware.get("gpu_ids", [0])
     device = str(hardware.get("device", "cuda"))
     if device == "cuda" and gpu_ids:
@@ -321,6 +324,22 @@ def _normalize_config(data: dict[str, Any]) -> dict[str, Any]:
     data["metrics"] = metrics
 
     loss_cfg = data.get("loss", {})
+    final_cfg = loss_cfg.get("final", {}) if isinstance(loss_cfg.get("final", {}), dict) else {}
+    if final_cfg:
+        loss_cfg["type"] = final_cfg.get("type", loss_cfg.get("type", "bce_dice"))
+        loss_cfg["bce_weight"] = float(final_cfg.get("bce_weight", loss_cfg.get("bce_weight", 1.0)))
+        loss_cfg["dice_weight"] = float(final_cfg.get("dice_weight", loss_cfg.get("dice_weight", 1.0)))
+        # A nested final loss means the ablation intended the simple binary loss
+        # family, so clear inherited focal/SeK weights unless explicitly set at
+        # the same nested level.
+        loss_cfg["focal_weight"] = float(final_cfg.get("focal_weight", 0.0))
+        loss_cfg["sek_weight"] = float(final_cfg.get("sek_weight", 0.0))
+    boundary_cfg = loss_cfg.get("boundary", {}) if isinstance(loss_cfg.get("boundary", {}), dict) else {}
+    if boundary_cfg:
+        loss_cfg["boundary_weight"] = float(boundary_cfg.get("weight", 0.0)) if bool(boundary_cfg.get("enabled", False)) else 0.0
+    coarse_cfg = loss_cfg.get("coarse", {}) if isinstance(loss_cfg.get("coarse", {}), dict) else {}
+    if coarse_cfg:
+        data.setdefault("decoder", {})["aux_weight"] = float(coarse_cfg.get("weight", 0.0)) if bool(coarse_cfg.get("enabled", False)) else 0.0
     loss_cfg.setdefault("type", "bce_dice")
     loss_cfg.setdefault("dice_weight", 1.0)
     loss_cfg.setdefault("boundary_weight", 0.0)
@@ -385,4 +404,10 @@ def load_config(path: str | Path | None = None) -> Config:
         raw = _read_yaml(config_path)
     else:
         raw = _deep_merge(_read_yaml(GLOBAL_CONFIG_PATH), _read_yaml(config_path))
-    return Config(_normalize_config(raw))
+    normalized = _normalize_config(raw)
+    from utils.ablation import config_fingerprint
+    normalized["_meta"] = {
+        "config_path": str(config_path),
+        "config_fingerprint": config_fingerprint(normalized),
+    }
+    return Config(normalized)

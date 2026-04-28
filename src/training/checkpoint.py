@@ -7,6 +7,8 @@ from typing import Optional, Tuple
 
 import torch
 
+from utils.ablation import config_fingerprint, module_flags
+
 
 def save(
     path: Path,
@@ -26,6 +28,8 @@ def save(
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     variant = cfg.get("model", {}).get("variant", "unknown")
+    meta = cfg.get("_meta", {}) if isinstance(cfg.get("_meta", {}), dict) else {}
+    fingerprint = meta.get("config_fingerprint", config_fingerprint(cfg))
     payload = {
         "model":     model.state_dict(),
         "optimizer": optimizer.state_dict() if optimizer else None,
@@ -37,6 +41,10 @@ def save(
         "best_metric_name": best_metric_name or cfg.get("checkpoint", {}).get("monitor", cfg.get("checkpoint", {}).get("selection_metric")),
         "variant":     variant,
         "config":      cfg,
+        "config_path": meta.get("config_path"),
+        "config_fingerprint": fingerprint,
+        "experiment_name": cfg.get("experiment", {}).get("name"),
+        "module_flags": module_flags(cfg),
         "ema_enabled": ema_state is not None,
     }
     if ema_state is not None:

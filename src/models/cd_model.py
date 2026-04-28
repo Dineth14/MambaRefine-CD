@@ -20,9 +20,55 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from models.backbone.mambavision_builder import build as build_backbone
+from models.backbone.mambavision_builder import build as build_mambavision_backbone
 from models.decoders import DECODER_REGISTRY
 from models.decoders.semantic_heads import LightweightSemanticHead
+
+
+class SimpleCNNFeatureExtractor(nn.Module):
+    """Small baseline encoder for ablation runs without MambaVision."""
+
+    def __init__(self, channels: List[int] | None = None) -> None:
+        super().__init__()
+        channels = channels or [64, 128, 256, 512]
+        self.channels = channels
+        self.model_name = "simple_cnn"
+        in_ch = 3
+        stages = []
+        for idx, out_ch in enumerate(channels):
+            stride = 1 if idx == 0 else 2
+            stages.append(
+                nn.Sequential(
+                    nn.Conv2d(in_ch, out_ch, 3, stride=stride, padding=1, bias=False),
+                    nn.BatchNorm2d(out_ch),
+                    nn.GELU(),
+                    nn.Conv2d(out_ch, out_ch, 3, padding=1, bias=False),
+                    nn.BatchNorm2d(out_ch),
+                    nn.GELU(),
+                )
+            )
+            in_ch = out_ch
+        self.stages = nn.ModuleList(stages)
+
+    def forward(self, x: torch.Tensor) -> List[torch.Tensor]:
+        feats = []
+        for stage in self.stages:
+            x = stage(x)
+            feats.append(x)
+        return feats
+
+
+def build_encoder(model_cfg: dict) -> nn.Module:
+    backbone = str(model_cfg.get("backbone", "mambavision")).lower()
+    if backbone == "mambavision":
+        return build_mambavision_backbone(
+            model_cfg.get("variant", "tiny"),
+            pretrained=bool(model_cfg.get("pretrained", True)),
+        )
+    if backbone in {"baseline", "simple_cnn", "fpn_baseline"}:
+        raw_channels = model_cfg.get("baseline_channels", [64, 128, 256, 512])
+        return SimpleCNNFeatureExtractor([int(v) for v in raw_channels])
+    raise ValueError(f"Unknown model.backbone={backbone!r}. Valid options: mambavision, simple_cnn.")
 
 
 class SiameseMambaCD(nn.Module):
@@ -43,7 +89,7 @@ class SiameseMambaCD(nn.Module):
         out_ch      = int(dec_cfg.get("channels", 256))
 
         # ── Shared encoder ─────────────────────────────────────────────
-        self.encoder = build_backbone(variant, pretrained=pretrained)
+        self.encoder = build_encoder(model_cfg)
         self.variant = self.encoder.model_name if hasattr(self.encoder, "model_name") else variant
         channels: List[int] = self.encoder.channels
 
@@ -158,7 +204,7 @@ class DRBISiameseMambaCD(nn.Module):
         )
 
         # ── Shared encoder ─────────────────────────────────────────────
-        self.encoder = build_backbone(variant, pretrained=pretrained)
+        self.encoder = build_encoder(model_cfg)
         self.variant = getattr(self.encoder, "model_name", variant)
         channels: List[int] = self.encoder.channels   # e.g. [80, 160, 320, 640]
 
@@ -321,8 +367,8 @@ def build_model(cfg: dict) -> nn.Module:
         )
     # Legacy class kept for API compatibility
     if mode == "dual":
-        diff_enabled = cfg.get("difference", {}).get("enabled", True)
-        # Only use DRBISiameseMambaCD when D-RBI is wanted (adaptive_rf + enabled)
-        # or always — it handles the fallback internally
-        return DRBISiameseMambaCD(cfg)
+        model = DRBISiameseMambaCD(cfg)
+        from utils.ablation import assert_model_matches_config
+        assert_model_matches_config(model, cfg)
+        return model
     raise ValueError(f"Unknown model.mode: {mode!r}. Valid options: dual")

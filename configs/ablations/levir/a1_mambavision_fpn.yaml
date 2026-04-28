@@ -1,13 +1,13 @@
-# LEVIR-CD A1 Signed Diff
-# signed_diff: true
-
 experiment:
-  name: levir_a1_signed_diff
-  output_root: outputs/levir/a1_signed_diff
+  name: a1_mambavision_fpn
+  output_root: outputs/levir/a1_mambavision_fpn
+  seed: 42
 
 dataset:
   name: LEVIR-CD
   root: /storage2/ChangeDetection/MV/Datasets/LEVIRCD
+  mode: binary
+  task_type: binary_change
   image_size: 256
   batch_size: 8
   num_workers: 8
@@ -20,31 +20,35 @@ model:
   mode: dual
   backbone: mambavision
   variant: base
-  decoder: adaptive_rf
+  decoder: baseline
   pretrained: true
   output_mode: binary
   enable_semantic_heads: false
+  freeze_backbone: false
   cram_lite:
     enabled: false
 
 difference:
-  enabled: true
+  enabled: false
   out_channels: 256
-  use_absdiff: true
-  use_signed_diff: true          # <── A1: signed diff enabled
+  use_absdiff: false
+  use_signed_diff: false
   use_product: false
-  pre_norm: true
-  use_region_gate: true
-  use_boundary_gate: true
+  pre_norm: false
+  use_region_gate: false
+  use_boundary_gate: false
 
 decoder:
+  type: baseline
   channels: 256
-  dilation_rates: [1, 2, 4, 8]
-  use_boundary_residual: true
-  residual_scale: 0.1
+  dilation_rates: []
+  use_boundary_residual: false
+  residual_scale: 0.0
+  aux_weight: 0.0
 
 hardware:
   device: cuda
+  gpu_ids: [1]
   mixed_precision: true
 
 training:
@@ -60,6 +64,7 @@ training:
   weight_decay: 0.01
 
 loss:
+  type: bce_dice
   final:
     type: bce_dice
     bce_weight: 1.0
@@ -73,7 +78,24 @@ loss:
 
 metrics:
   allowed: [Pre, Rec, F1, IoU, OA]
+  average_mode: global
+
+eval:
+  threshold: 0.5
+  threshold_sweep:
+    enabled: true
+    values: [0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60]
+  use_ema: true
+  inference_mode: patch
+  crop_size: 256
+  overlap: 0.25
+
+ema:
+  enabled: true
+  decay: 0.999
 
 checkpoint:
   selection_metric: F1
+  monitor: f1
   mode: max
+

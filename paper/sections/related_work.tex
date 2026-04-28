@@ -1,0 +1,10 @@
+\section{Related Work}
+
+\textbf{Change detection.}
+Remote-sensing change detection compares bi-temporal images to predict changed pixels. CNN-based methods such as STANet, SNUNet, and IFNet use Siamese encoders, attention, or dense feature fusion to extract temporal differences \cite{STANet,SNUNet,IFNet}. Transformer-based methods such as BIT and ChangeFormer improve long-range modeling with token interaction and hierarchical attention \cite{BIT,ChangeFormer}. These designs motivate stronger temporal representation, but they do not explicitly separate region and boundary change evidence.
+
+\textbf{Boundary-aware segmentation.}
+Boundary-aware dense prediction methods improve contour quality using edge features, auxiliary boundary heads, or residual refinement. This is relevant to change detection because changed pixels are often sparse and many errors occur around object edges. \ours{} uses boundary evidence as a residual refinement signal rather than as an independent final prediction.
+
+\textbf{Mamba and state-space models.}
+Vision transformers such as ViT and SegFormer show the value of global context and lightweight decoding for dense vision \cite{ViT,SegFormer}. Mamba and state-space vision models provide another route to efficient long-range modeling. \ours{} adapts MambaVision features to binary change detection by adding temporal difference construction, region--boundary interaction, and boundary residual refinement.

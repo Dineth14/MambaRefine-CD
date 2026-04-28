@@ -1,0 +1,107 @@
+experiment:
+  name: a2_mambavision_drbi
+  output_root: outputs/levir/a2_mambavision_drbi
+  seed: 42
+
+dataset:
+  name: LEVIR-CD
+  root: /storage2/ChangeDetection/MV/Datasets/LEVIRCD
+  mode: binary
+  task_type: binary_change
+  image_size: 256
+  batch_size: 8
+  num_workers: 8
+  augmentation: true
+  val_ratio: 0.2
+
+task: binary_cd
+
+model:
+  mode: dual
+  backbone: mambavision
+  variant: base
+  decoder: baseline
+  pretrained: true
+  output_mode: binary
+  enable_semantic_heads: false
+  freeze_backbone: false
+  cram_lite:
+    enabled: false
+
+difference:
+  enabled: true
+  out_channels: 256
+  use_depthwise: true
+  gate_hidden_ratio: 0.25
+  use_absdiff: true
+  use_signed_diff: false
+  use_product: false
+  pre_norm: true
+  use_region_gate: true
+  use_boundary_gate: true
+  region_gate_min: 0.2
+  region_gate_max: 0.8
+  boundary_gate_min: 0.0
+  boundary_gate_max: 0.4
+
+decoder:
+  type: baseline
+  channels: 256
+  dilation_rates: []
+  use_boundary_residual: false
+  residual_scale: 0.0
+  aux_weight: 0.0
+
+hardware:
+  device: cuda
+  gpu_ids: [1]
+  mixed_precision: true
+
+training:
+  max_iterations: 50000
+  batch_size: 8
+  lr: 5.0e-5
+  optimizer: adamw
+  scheduler: cosine
+  warmup_iterations: 2500
+  validate_every: 5000
+  log_every: 20
+  gradient_clip: 0.5
+  weight_decay: 0.01
+
+loss:
+  type: bce_dice
+  final:
+    type: bce_dice
+    bce_weight: 1.0
+    dice_weight: 1.0
+  coarse:
+    enabled: false
+    weight: 0.0
+  boundary:
+    enabled: false
+    weight: 0.0
+
+metrics:
+  allowed: [Pre, Rec, F1, IoU, OA]
+  average_mode: global
+
+eval:
+  threshold: 0.5
+  threshold_sweep:
+    enabled: true
+    values: [0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60]
+  use_ema: true
+  inference_mode: patch
+  crop_size: 256
+  overlap: 0.25
+
+ema:
+  enabled: true
+  decay: 0.999
+
+checkpoint:
+  selection_metric: F1
+  monitor: f1
+  mode: max
+
