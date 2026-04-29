@@ -188,6 +188,56 @@ def _match_dataset_entry(catalog: dict[str, Any], dataset_name: str) -> dict[str
     return None
 
 
+def _has_enabled_flag(section: Any) -> bool:
+    return isinstance(section, dict) and "enabled" in section
+
+
+def _enabled(section: dict[str, Any]) -> bool:
+    return bool(section.get("enabled", False))
+
+
+def _apply_explicit_model_module_flags(data: dict[str, Any]) -> None:
+    """Map explicit ablation flags under model.* to runtime keys.
+
+    Runtime modules are instantiated from historical keys:
+      - D-RBI: difference.enabled
+      - signed diff: difference.use_signed_diff
+      - ARF-FPN: model.decoder / decoder.type
+      - boundary refinement: decoder.use_boundary_residual
+      - boundary loss: loss.boundary.enabled
+
+    Publication configs additionally define model.drbi.enabled,
+    model.signed_diff.enabled, model.arf_fpn.enabled, and
+    model.boundary_refine.enabled. When those explicit keys are present, they
+    are authoritative so a base config cannot silently re-enable modules.
+    """
+    model = data.setdefault("model", {})
+    difference = data.setdefault("difference", {})
+    decoder = data.setdefault("decoder", {})
+
+    drbi = model.get("drbi")
+    if _has_enabled_flag(drbi):
+        difference["enabled"] = _enabled(drbi)
+
+    signed = model.get("signed_diff")
+    if _has_enabled_flag(signed):
+        difference["use_signed_diff"] = _enabled(signed)
+
+    arf = model.get("arf_fpn")
+    if _has_enabled_flag(arf):
+        decoder_name = "adaptive_rf" if _enabled(arf) else "baseline"
+        model["decoder"] = decoder_name
+        decoder["type"] = decoder_name
+        if not _enabled(arf):
+            decoder["dilation_rates"] = []
+
+    boundary_refine = model.get("boundary_refine")
+    if _has_enabled_flag(boundary_refine):
+        decoder["use_boundary_residual"] = _enabled(boundary_refine)
+        if not _enabled(boundary_refine):
+            decoder["residual_scale"] = 0.0
+
+
 def _normalize_config(data: dict[str, Any]) -> dict[str, Any]:
     data.setdefault("experiment", {})
     data.setdefault("hardware", {})
@@ -258,6 +308,7 @@ def _normalize_config(data: dict[str, Any]) -> dict[str, Any]:
     model.setdefault("enable_semantic_heads", False)
     model.setdefault("semantic_head_type", "lightweight")
     data["model"] = model
+    _apply_explicit_model_module_flags(data)
 
     # Preserve checkpoint path for eval/validate in one place.
     checkpoint = data.get("checkpoint", {})

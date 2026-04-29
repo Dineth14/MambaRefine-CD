@@ -69,8 +69,8 @@ hardware:
 training:
   max_iterations: 50000
   batch_size: 8
-  lr: 1.0e-4
-  optimizer: adam
+  lr: 5.0e-5
+  optimizer: adamw
   scheduler: cosine
   warmup_iterations: 2500
   validate_every: 5000

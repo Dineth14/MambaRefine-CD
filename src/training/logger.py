@@ -8,8 +8,10 @@ from pathlib import Path
 
 def get_logger(name: str, log_dir: Path) -> logging.Logger:
     logger = logging.getLogger(name)
-    if logger.handlers:
-        return logger
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
+        handler.close()
+    logger.propagate = False
     logger.setLevel(logging.INFO)
     fmt = logging.Formatter("%(asctime)s  %(levelname)-8s  %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
 

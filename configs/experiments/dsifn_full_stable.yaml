@@ -1,6 +1,6 @@
 experiment:
-  name: a2_mambavision_drbi
-  output_root: outputs/dsifn/a2_mambavision_drbi
+  name: dsifn_full_stable
+  output_root: outputs/dsifn/full_stable
   seed: 42
 
 dataset:
@@ -12,8 +12,10 @@ dataset:
   batch_size: 8
   num_workers: 8
   augmentation: true
-  augmentation_ops: [horizontal_flip, vertical_flip]
   val_ratio: 0.2
+  image_a_dir_candidates: [t1, T1, A, imageA, before, img1]
+  image_b_dir_candidates: [t2, T2, B, imageB, after, img2]
+  label_dir_candidates: [mask, GT, label, labels, OUT, change_map]
 
 task: binary_cd
 
@@ -21,7 +23,7 @@ model:
   mode: dual
   backbone: mambavision
   variant: base
-  decoder: baseline
+  decoder: adaptive_rf
   pretrained: true
   output_mode: binary
   enable_semantic_heads: false
@@ -29,13 +31,16 @@ model:
   drbi:
     enabled: true
   signed_diff:
-    enabled: false
+    enabled: true
   cram_lite:
-    enabled: false
+    enabled: true
+    alpha: 0.5
+    apply_stages: [0, 1, 2]
+    attention_type: spatial
   arf_fpn:
-    enabled: false
+    enabled: true
   boundary_refine:
-    enabled: false
+    enabled: true
 
 difference:
   enabled: true
@@ -43,8 +48,9 @@ difference:
   use_depthwise: true
   gate_hidden_ratio: 0.25
   use_absdiff: true
-  use_signed_diff: false
+  use_signed_diff: true
   use_product: false
+  product_scale: 0.25
   pre_norm: true
   use_region_gate: true
   use_boundary_gate: true
@@ -54,16 +60,17 @@ difference:
   boundary_gate_max: 0.4
 
 decoder:
-  type: baseline
+  type: adaptive_rf
   channels: 256
-  dilation_rates: []
-  use_boundary_residual: false
-  residual_scale: 0.0
-  aux_weight: 0.0
+  dilation_rates: [1, 2, 4, 8]
+  use_boundary_residual: true
+  residual_scale: 0.1
+  use_depthwise: true
+  aux_weight: 0.4
 
 hardware:
   device: cuda
-  gpu_ids: [1]
+  gpu_ids: [0]
   mixed_precision: true
 
 training:
@@ -77,6 +84,8 @@ training:
   log_every: 20
   gradient_clip: 0.5
   weight_decay: 0.01
+  skip_nan_steps: true
+  nan_diag_every: 50
 
 loss:
   type: bce_dice
@@ -85,11 +94,14 @@ loss:
     bce_weight: 1.0
     dice_weight: 1.0
   coarse:
-    enabled: false
-    weight: 0.0
+    enabled: true
+    weight: 0.4
   boundary:
-    enabled: false
-    weight: 0.0
+    enabled: true
+    weight: 0.1
+    type: bce_dice
+    target_type: sobel
+    edge_width: 3
 
 metrics:
   allowed: [Pre, Rec, F1, IoU, OA]
@@ -105,10 +117,19 @@ eval:
   inference_mode: patch
   crop_size: 256
   overlap: 0.25
+  log_mask_debug: true
+  save_debug_outputs: false
+  debug_output_root: debug/dsifn
+  debug_max_samples: 30
 
 ema:
   enabled: true
   decay: 0.999
+
+resume:
+  enabled: false
+  checkpoint_path: null
+  strict: true
 
 checkpoint:
   selection_metric: F1

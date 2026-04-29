@@ -588,12 +588,30 @@ class Evaluator:
                 best_thr,
                 compute_boundary=bool(self.cfg.get("debug", {}).get("metrics", False)),
             )
+            diagnostic_result = dict(result)
             if not bool(self.cfg.get("debug", {}).get("metrics", False)):
                 result = {
                     key: result[key]
                     for key in ("precision", "recall", "f1", "iou", "oa")
                     if key in result
                 }
+                for key in ("pred_positive_ratio", "gt_positive_ratio"):
+                    if key in diagnostic_result:
+                        result[key] = diagnostic_result[key]
+            probs = torch.sigmoid(torch.clamp(all_logits.float(), -20.0, 20.0))
+            result["mean_sigmoid_probability"] = float(probs.mean().item())
+            result["min_sigmoid_probability"] = float(probs.min().item())
+            result["max_sigmoid_probability"] = float(probs.max().item())
+            self.logger.info(
+                "Prediction diagnostic | pred_positive_ratio=%.6f gt_positive_ratio=%.6f "
+                "mean_prob=%.6f min_prob=%.6f max_prob=%.6f threshold=%.2f",
+                float(result.get("pred_positive_ratio", 0.0)),
+                float(result.get("gt_positive_ratio", 0.0)),
+                result["mean_sigmoid_probability"],
+                result["min_sigmoid_probability"],
+                result["max_sigmoid_probability"],
+                best_thr,
+            )
         result["best_threshold"] = best_thr
         result["dataset"]        = dataset_name
         result["num_samples"]    = num_samples

@@ -106,7 +106,7 @@ def _dry_run(cfg: dict, allowed: list[str]) -> None:
     """Build model + dataset, run one forward pass; verify metric restriction."""
     import torch
     from models.mambarefinecd import build_model
-    from datasets import build_dataset
+    from data.dataset_builder import build_dataset
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"Device: {device}")
@@ -134,7 +134,12 @@ def _dry_run(cfg: dict, allowed: list[str]) -> None:
     logger.info(f"Binary head params: {binary_count / 1e6:.2f}M")
 
     # Build dataset
-    ds = build_dataset(cfg, split="train")
+    ds = build_dataset(
+        cfg.get("dataset", {}),
+        split="train",
+        augment=True,
+        seed=int(cfg.get("experiment", {}).get("seed", 42)),
+    )
     logger.info(f"Dataset size (train): {len(ds)}")
 
     # One forward pass
@@ -142,10 +147,20 @@ def _dry_run(cfg: dict, allowed: list[str]) -> None:
     img_a = sample["image_a"].unsqueeze(0).to(device)
     img_b = sample["image_b"].unsqueeze(0).to(device)
 
-    model.eval()
-    with torch.no_grad():
-        out = model(img_a, img_b)
-    logger.info(f"Forward pass OK. Output type: {type(out)}")
+    skip_forward = (
+        device.type == "cpu"
+        and str(cfg.get("model", {}).get("backbone", "")).lower() == "mambavision"
+    )
+    if skip_forward:
+        logger.warning(
+            "Skipping MambaVision CPU forward pass: installed selective_scan kernel requires CUDA."
+        )
+        out = None
+    else:
+        model.eval()
+        with torch.no_grad():
+            out = model(img_a, img_b)
+        logger.info(f"Forward pass OK. Output type: {type(out)}")
 
     # Compute metrics (binary CD)
     is_second = "SECOND" in str(cfg.get("dataset", {}).get("name", "")).upper()

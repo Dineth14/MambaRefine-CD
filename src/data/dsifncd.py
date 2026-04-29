@@ -40,6 +40,7 @@ from torch.utils.data import Dataset
 from data.transforms import build_train_transforms, norm_tensor
 
 _EXTS = {".png", ".jpg", ".tif", ".tiff", ".jpeg"}
+_MASK_EXT_PRIORITY = {".png": 0, ".tif": 1, ".tiff": 2, ".jpg": 3, ".jpeg": 4}
 
 _A_CANDS     = ["t1", "T1", "A", "imageA", "before", "img1", "A_256"]
 _B_CANDS     = ["t2", "T2", "B", "imageB", "after",  "img2", "B_256"]
@@ -64,14 +65,19 @@ def _list_images(d: Path) -> List[str]:
     return sorted(p.name for p in d.iterdir() if p.suffix.lower() in _EXTS)
 
 
-def _build_file_lookup(d: Path) -> dict[str, Path]:
+def _build_file_lookup(d: Path, *, prefer_mask_ext: bool = False) -> dict[str, Path]:
     """Map both exact filenames and filename stems to file paths.
 
     DSIFN layouts sometimes store RGB images as .jpg while masks use .png/.tif.
     Matching by stem keeps paired samples aligned even when extensions differ.
     """
+    paths = [p for p in d.iterdir() if p.suffix.lower() in _EXTS]
+    if prefer_mask_ext:
+        paths = sorted(paths, key=lambda p: (p.stem, _MASK_EXT_PRIORITY.get(p.suffix.lower(), 99), p.name))
+    else:
+        paths = sorted(paths, key=lambda p: p.name)
     lookup: dict[str, Path] = {}
-    for p in d.iterdir():
+    for p in paths:
         if p.suffix.lower() not in _EXTS:
             continue
         lookup[p.name] = p
@@ -158,7 +164,7 @@ class DSIFNCDDataset(Dataset):
         self.transform = build_train_transforms(image_size, augmentation_ops=augmentation_ops) if self.do_augment else None
         self.a_lookup  = _build_file_lookup(self.a_dir)    # type: ignore[arg-type]
         self.b_lookup  = _build_file_lookup(self.b_dir)    # type: ignore[arg-type]
-        self.l_lookup  = _build_file_lookup(self.lbl_dir)  # type: ignore[arg-type]
+        self.l_lookup  = _build_file_lookup(self.lbl_dir, prefer_mask_ext=True)  # type: ignore[arg-type]
         self.tiles     = None if split == "train" else self._build_tiles()
 
     def _check_dirs(self, parent: Path) -> None:
@@ -198,13 +204,57 @@ class DSIFNCDDataset(Dataset):
             )
         return path
 
+    @staticmethod
+    def _to_binary_mask(mask: np.ndarray) -> np.ndarray:
+        if mask.ndim == 3:
+            mask = mask[..., 0]
+        threshold = 0 if int(mask.max()) <= 1 else 127
+        return (mask > threshold).astype(np.uint8)
+
+    def sample_info(self, idx: int) -> dict:
+        if self.split == "train":
+            name = self.names[idx]
+            row = None
+            col = None
+        else:
+            name, row, col = self.tiles[idx]  # type: ignore[index]
+        a_path = self._resolve_path(self.a_lookup, name, "image_a")
+        b_path = self._resolve_path(self.b_lookup, name, "image_b")
+        m_path = self._resolve_path(self.l_lookup, name, "label")
+        tile_suffix = "" if row is None else f"_r{row}_c{col}"
+        return {
+            "name": name,
+            "sample_id": f"{Path(name).stem}{tile_suffix}",
+            "image_t1_path": str(a_path),
+            "image_t2_path": str(b_path),
+            "mask_path": str(m_path),
+            "row": row,
+            "col": col,
+        }
+
+    def raw_mask_stats(self, idx: int) -> dict:
+        info = self.sample_info(idx)
+        raw = np.array(Image.open(info["mask_path"]))
+        converted = self._to_binary_mask(raw)
+        return {
+            **info,
+            "raw_dtype": str(raw.dtype),
+            "raw_shape": list(raw.shape),
+            "raw_unique": sorted(np.unique(raw).tolist())[:32],
+            "converted_dtype": str(converted.dtype),
+            "converted_unique": sorted(np.unique(converted).tolist()),
+            "positive_ratio": float(converted.mean()),
+        }
+
     def __getitem__(self, idx: int) -> dict:
         s = self.size
         if self.split == "train":
-            name   = self.names[idx]
+            info = self.sample_info(idx)
+            name   = info["name"]
             a_full = np.array(Image.open(self._resolve_path(self.a_lookup, name, "image_a")).convert("RGB"))
             b_full = np.array(Image.open(self._resolve_path(self.b_lookup, name, "image_b")).convert("RGB"))
-            l_full = np.array(Image.open(self._resolve_path(self.l_lookup, name, "label")).convert("L"))
+            l_full = np.array(Image.open(self._resolve_path(self.l_lookup, name, "label")))
+            l_full = self._to_binary_mask(l_full)
             H, W   = a_full.shape[:2]
             if H < s or W < s:
                 ph, pw = max(0, s - H), max(0, s - W)
@@ -218,14 +268,14 @@ class DSIFNCDDataset(Dataset):
             img_b = b_full[r:r+s, c:c+s]
             lbl   = l_full[r:r+s, c:c+s]
         else:
-            name, r, c = self.tiles[idx]  # type: ignore
+            info = self.sample_info(idx)
+            name, r, c = info["name"], info["row"], info["col"]
             img_a = np.array(Image.open(self._resolve_path(self.a_lookup, name, "image_a")).convert("RGB"))[r:r+s, c:c+s]
             img_b = np.array(Image.open(self._resolve_path(self.b_lookup, name, "image_b")).convert("RGB"))[r:r+s, c:c+s]
-            lbl   = np.array(Image.open(self._resolve_path(self.l_lookup, name, "label")).convert("L"))[r:r+s, c:c+s]
+            lbl_full = self._to_binary_mask(np.array(Image.open(self._resolve_path(self.l_lookup, name, "label"))))
+            lbl = lbl_full[r:r+s, c:c+s]
 
-        # DSIFN GT may be {0, 255} or {0, 1}; choose the threshold from the mask range.
-        threshold = 0 if int(lbl.max()) <= 1 else 127
-        lbl_bin = (lbl > threshold).astype(np.uint8)
+        lbl_bin = lbl.astype(np.uint8)
 
         if self.do_augment and self.transform is not None:
             aug = self.transform(image=img_a, image_b=img_b, mask=lbl_bin)
@@ -243,5 +293,8 @@ class DSIFNCDDataset(Dataset):
             "label":   tm,
             "mask":    tm,
             "id":      name,
-            "name":    name,
+            "name":    info["sample_id"],
+            "image_t1_path": info["image_t1_path"],
+            "image_t2_path": info["image_t2_path"],
+            "mask_path": info["mask_path"],
         }

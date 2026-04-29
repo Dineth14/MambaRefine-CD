@@ -153,11 +153,12 @@ def main() -> None:
     cfg["output"]["save_predictions"] = save_predictions
     cfg["output"]["save_visualizations"] = save_visualizations
     if args.save_debug:
+        dataset_slug = str(cfg.get("dataset", {}).get("name", "dataset")).lower().replace("-cd", "").replace("-", "_")
         cfg["evaluation"]["save_debug_outputs"] = True
-        cfg["evaluation"]["debug_output_root"] = "debug/levir"
+        cfg["evaluation"]["debug_output_root"] = f"debug/{dataset_slug}"
         cfg["evaluation"]["debug_max_samples"] = 50
         cfg["eval"]["save_debug_outputs"] = True
-        cfg["eval"]["debug_output_root"] = "debug/levir"
+        cfg["eval"]["debug_output_root"] = f"debug/{dataset_slug}"
         cfg["eval"]["debug_max_samples"] = 50
     if args.split == "test" or args.threshold is not None or threshold_source == "checkpoint":
         cfg["evaluation"]["threshold_sweep"] = False
