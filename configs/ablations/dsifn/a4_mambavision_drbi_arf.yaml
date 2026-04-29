@@ -1,17 +1,18 @@
-# LEVIR-CD A3 Boundary Loss
-# signed_diff: true, cram_lite: true, boundary_loss: true
-
 experiment:
-  name: dsifn_a3_boundary_loss
-  output_root: outputs/dsifn/a3_boundary_loss
+  name: a4_mambavision_drbi_arf
+  output_root: outputs/dsifn/a4_mambavision_drbi_arf
+  seed: 42
 
 dataset:
   name: DSIFN-CD
   root: /storage2/ChangeDetection/MV/Datasets/DSIFN-CD/DSIFN
+  mode: binary
+  task_type: binary_change
   image_size: 256
   batch_size: 8
   num_workers: 8
   augmentation: true
+  augmentation_ops: [horizontal_flip, vertical_flip]
   val_ratio: 0.2
 
 task: binary_cd
@@ -24,37 +25,53 @@ model:
   pretrained: true
   output_mode: binary
   enable_semantic_heads: false
-  cram_lite:
+  freeze_backbone: false
+  drbi:
     enabled: true
-    alpha: 0.5
-    apply_stages: [0, 1, 2]
-    attention_type: spatial
+  signed_diff:
+    enabled: true
+  cram_lite:
+    enabled: false
+  arf_fpn:
+    enabled: true
+  boundary_refine:
+    enabled: false
 
 difference:
   enabled: true
   out_channels: 256
+  use_depthwise: true
+  gate_hidden_ratio: 0.25
   use_absdiff: true
   use_signed_diff: true
   use_product: false
   pre_norm: true
   use_region_gate: true
   use_boundary_gate: true
+  region_gate_min: 0.2
+  region_gate_max: 0.8
+  boundary_gate_min: 0.0
+  boundary_gate_max: 0.4
 
 decoder:
+  type: adaptive_rf
   channels: 256
   dilation_rates: [1, 2, 4, 8]
-  use_boundary_residual: true
-  residual_scale: 0.1
+  use_boundary_residual: false
+  residual_scale: 0.0
+  use_depthwise: true
+  aux_weight: 0.0
 
 hardware:
   device: cuda
+  gpu_ids: [1]
   mixed_precision: true
 
 training:
   max_iterations: 50000
   batch_size: 8
-  lr: 5.0e-5
-  optimizer: adamw
+  lr: 1.0e-4
+  optimizer: adam
   scheduler: cosine
   warmup_iterations: 2500
   validate_every: 5000
@@ -63,23 +80,38 @@ training:
   weight_decay: 0.01
 
 loss:
+  type: bce_dice
   final:
     type: bce_dice
     bce_weight: 1.0
     dice_weight: 1.0
   coarse:
-    enabled: true               # <── A3: coarse loss enabled
-    weight: 0.4
+    enabled: false
+    weight: 0.0
   boundary:
-    enabled: true               # <── A3: boundary loss enabled
-    weight: 0.1
-    type: bce_dice
-    target_type: sobel
-    edge_width: 3
+    enabled: false
+    weight: 0.0
 
 metrics:
   allowed: [Pre, Rec, F1, IoU, OA]
+  average_mode: global
+
+eval:
+  threshold: 0.5
+  threshold_sweep:
+    enabled: true
+    values: [0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60]
+  threshold_select_metric: F1_1
+  use_ema: true
+  inference_mode: patch
+  crop_size: 256
+  overlap: 0.25
+
+ema:
+  enabled: true
+  decay: 0.999
 
 checkpoint:
   selection_metric: F1
+  monitor: f1
   mode: max

@@ -146,6 +146,8 @@ def build_dataset(
             "debug_stats": bool(dataset_cfg.get("debug_stats", False)),
         })
     else:
+        if "augmentation_ops" in dataset_cfg:
+            kwargs["augmentation_ops"] = dataset_cfg["augmentation_ops"]
         if "image_a_dir_candidates" in dataset_cfg:
             kwargs["a_candidates"] = dataset_cfg["image_a_dir_candidates"]
         if "image_b_dir_candidates" in dataset_cfg:

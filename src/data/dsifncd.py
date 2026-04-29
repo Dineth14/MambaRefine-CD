@@ -106,6 +106,7 @@ class DSIFNCDDataset(Dataset):
         val_ratio: float = 0.2,
         seed: int = 42,
         augment: bool = True,
+        augmentation_ops: Optional[List[str]] = None,
         a_candidates: Optional[List[str]] = None,
         b_candidates: Optional[List[str]] = None,
         label_candidates: Optional[List[str]] = None,
@@ -154,7 +155,7 @@ class DSIFNCDDataset(Dataset):
                 else:
                     self.names = all_names
 
-        self.transform = build_train_transforms(image_size) if self.do_augment else None
+        self.transform = build_train_transforms(image_size, augmentation_ops=augmentation_ops) if self.do_augment else None
         self.a_lookup  = _build_file_lookup(self.a_dir)    # type: ignore[arg-type]
         self.b_lookup  = _build_file_lookup(self.b_dir)    # type: ignore[arg-type]
         self.l_lookup  = _build_file_lookup(self.lbl_dir)  # type: ignore[arg-type]

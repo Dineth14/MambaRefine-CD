@@ -1,0 +1,111 @@
+experiment:
+  name: a0_fpn_baseline
+  output_root: outputs/dsifn/a0_fpn_baseline
+  seed: 42
+
+dataset:
+  name: DSIFN-CD
+  root: /storage2/ChangeDetection/MV/Datasets/DSIFN-CD/DSIFN
+  mode: binary
+  task_type: binary_change
+  image_size: 256
+  batch_size: 8
+  num_workers: 8
+  augmentation: true
+  augmentation_ops: [horizontal_flip, vertical_flip]
+  val_ratio: 0.2
+
+task: binary_cd
+
+model:
+  mode: dual
+  backbone: simple_cnn
+  baseline_channels: [64, 128, 256, 512]
+  variant: baseline
+  decoder: baseline
+  pretrained: false
+  output_mode: binary
+  enable_semantic_heads: false
+  freeze_backbone: false
+  drbi:
+    enabled: false
+  signed_diff:
+    enabled: false
+  cram_lite:
+    enabled: false
+  arf_fpn:
+    enabled: false
+  boundary_refine:
+    enabled: false
+
+difference:
+  enabled: false
+  out_channels: 256
+  use_absdiff: false
+  use_signed_diff: false
+  use_product: false
+  pre_norm: false
+  use_region_gate: false
+  use_boundary_gate: false
+
+decoder:
+  type: baseline
+  channels: 256
+  dilation_rates: []
+  use_boundary_residual: false
+  residual_scale: 0.0
+  aux_weight: 0.0
+
+hardware:
+  device: cuda
+  gpu_ids: [0]
+  mixed_precision: true
+
+training:
+  max_iterations: 50000
+  batch_size: 8
+  lr: 1.0e-4
+  optimizer: adam
+  scheduler: cosine
+  warmup_iterations: 2500
+  validate_every: 5000
+  log_every: 20
+  gradient_clip: 0.5
+  weight_decay: 0.01
+
+loss:
+  type: bce_dice
+  final:
+    type: bce_dice
+    bce_weight: 1.0
+    dice_weight: 1.0
+  coarse:
+    enabled: false
+    weight: 0.0
+  boundary:
+    enabled: false
+    weight: 0.0
+
+metrics:
+  allowed: [Pre, Rec, F1, IoU, OA]
+  average_mode: global
+
+eval:
+  threshold: 0.5
+  threshold_sweep:
+    enabled: true
+    values: [0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60]
+  threshold_select_metric: F1_1
+  use_ema: true
+  inference_mode: patch
+  crop_size: 256
+  overlap: 0.25
+
+ema:
+  enabled: true
+  decay: 0.999
+
+checkpoint:
+  selection_metric: F1
+  monitor: f1
+  mode: max
