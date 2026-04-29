@@ -3,8 +3,7 @@
 Checks each configured dataset returns correctly shaped tensors and expected keys.
 
 Usage:
-    python tools/validate_dataset.py --config configs/datasets/levir.yaml
-    python tools/validate_dataset.py --config configs/datasets/second.yaml
+    python tools/validate_dataset.py --config configs/datasets/dsifn.yaml
     python tools/validate_dataset.py --all   # validate all known configs
 """
 from __future__ import annotations
@@ -25,14 +24,11 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)-8s  %(
 logger = logging.getLogger(__name__)
 
 _DATASET_CONFIGS = [
-    "configs/datasets/levir.yaml",
     "configs/datasets/whu.yaml",
     "configs/datasets/dsifn.yaml",
-    "configs/datasets/second.yaml",
 ]
 
 _BINARY_KEYS  = {"image_a", "image_b", "mask"}
-_SECOND_KEYS  = {"image_a", "image_b", "label_t1", "label_t2"}
 
 
 def _validate_config(config_path: str) -> bool:
@@ -45,8 +41,7 @@ def _validate_config(config_path: str) -> bool:
         logger.error(f"[FAIL] Could not build dataset from {config_path}: {e}")
         return False
 
-    is_second = "SECOND" in str(cfg.get("dataset", {}).get("name", "")).upper()
-    required  = _SECOND_KEYS if is_second else _BINARY_KEYS
+    required  = _BINARY_KEYS
 
     try:
         sample = ds[0]
@@ -71,17 +66,10 @@ def _validate_config(config_path: str) -> bool:
         return False
 
     # Check label(s)
-    if is_second:
-        for key in ("label_t1", "label_t2"):
-            lbl = sample[key]
-            if not (isinstance(lbl, torch.Tensor) and lbl.ndim == 2):
-                logger.error(f"[FAIL] {key} should be 2D LongTensor, got {type(lbl)} {lbl.shape if hasattr(lbl, 'shape') else ''}")
-                return False
-    else:
-        mask = sample["mask"]
-        if not (isinstance(mask, torch.Tensor)):
-            logger.error(f"[FAIL] mask should be Tensor, got {type(mask)}")
-            return False
+    mask = sample["mask"]
+    if not isinstance(mask, torch.Tensor):
+        logger.error(f"[FAIL] mask should be Tensor, got {type(mask)}")
+        return False
 
     img_size = int(cfg.get("dataset", {}).get("image_size", img_a.shape[-1]))
     if img_a.shape[-1] != img_size or img_a.shape[-2] != img_size:

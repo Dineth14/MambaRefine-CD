@@ -4,8 +4,8 @@ Requires `fvcore` (pip install fvcore).
 Falls back to a manual FLOPs estimate if fvcore is unavailable.
 
 Usage:
-    python scripts/count_params_flops.py --config configs/ablations/levir/a4_full.yaml
-    python scripts/count_params_flops.py --config configs/models/mambarefinecd_base.yaml \\
+    python scripts/count_params_flops.py --config configs/experiments/dsifn_full.yaml
+    python scripts/count_params_flops.py --config configs/models/mambarefinecd_full.yaml \\
                                           --image_size 256
 """
 from __future__ import annotations

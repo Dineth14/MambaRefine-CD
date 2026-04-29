@@ -1,14 +1,8 @@
-"""Training script for MambaRefineCD.
-
-Supports all four datasets with metric restriction per dataset:
-  - LEVIR-CD / WHU-CD / DSIFN-CD: Pre, Rec, F1, IoU, OA
-  - SECOND:                        OA, mIoU, SeK, Fscd
+"""Training script for active MambaRefine-CD binary experiments.
 
 Usage:
-    python scripts/train.py --config configs/ablations/levir/a4_full.yaml
-    python scripts/train.py --config configs/ablations/second/a4_full.yaml
-    python scripts/train.py --config configs/ablations/levir/a4_full.yaml --dry_run
-    python scripts/train.py --config configs/train/levir_cd.yaml  # old-style config
+    python scripts/train.py --config configs/experiments/dsifn_full.yaml
+    python scripts/train.py --config configs/experiments/whu_full.yaml --dry_run
 """
 from __future__ import annotations
 
@@ -38,17 +32,11 @@ logger = logging.getLogger(__name__)
 # Metric restrictions
 # --------------------------------------------------------------------------
 _BINARY_ALLOWED = {"Pre", "Rec", "F1", "IoU", "OA"}
-_SECOND_ALLOWED = {"OA", "mIoU", "SeK", "Fscd"}
-
-
 def _get_allowed_metrics(cfg: dict) -> list[str]:
     """Return the set of allowed metric names for this config."""
     explicit = cfg.get("metrics", {}).get("allowed", None)
     if explicit is not None:
         return list(explicit)
-    task = str(cfg.get("task", cfg.get("dataset", {}).get("task_type", "binary_cd"))).lower()
-    if "SECOND" in str(cfg.get("dataset", {}).get("name", "")).upper() or task == "semantic_cd":
-        return ["OA", "mIoU", "SeK", "Fscd"]
     return ["Pre", "Rec", "F1", "IoU", "OA"]
 
 
@@ -121,7 +109,6 @@ def _dry_run(cfg: dict, allowed: list[str]) -> None:
         ("Backbone params", "encoder"),
         ("Decoder params", "decoder"),
         ("D-RBI params", "diff_modules"),
-        ("Semantic head params", "semantic_head"),
     ]:
         module = getattr(model, module_name, None)
         count = sum(p.numel() for p in module.parameters()) if module is not None else 0
@@ -162,34 +149,16 @@ def _dry_run(cfg: dict, allowed: list[str]) -> None:
             out = model(img_a, img_b)
         logger.info(f"Forward pass OK. Output type: {type(out)}")
 
-    # Compute metrics (binary CD)
-    is_second = "SECOND" in str(cfg.get("dataset", {}).get("name", "")).upper()
-    if is_second:
-        from metrics.second_scd_metrics import SECONDSCDMetrics
-        logger.info(f"Metric class: SECONDSCDMetrics")
-        from training.model_outputs import normalize_model_output
-        outputs = normalize_model_output(out)
-        missing = [key for key in ("sem_logits_t1", "sem_logits_t2") if outputs.get(key) is None]
-        if missing:
-            raise RuntimeError(f"SECOND dry run missing semantic outputs: {missing}")
-        logger.info(
-            "SECOND output shapes: sem_logits_t1=%s sem_logits_t2=%s change_logits=%s",
-            tuple(outputs["sem_logits_t1"].shape),
-            tuple(outputs["sem_logits_t2"].shape),
-            tuple(outputs["change_logits"].shape),
-        )
-    else:
-        from metrics.binary_cd_metrics import BinaryMetrics
-        m = BinaryMetrics()
-        # Fake forward
-        fake_logits = torch.zeros(1, 1, 256, 256)
-        fake_gt     = torch.zeros(1, 256, 256, dtype=torch.long)
-        m.update(fake_logits, fake_gt)
-        results = m.compute()
-        results_filtered = _filter_metrics(results, allowed)
-        logger.info(f"Metric keys (allowed only): {list(results_filtered.keys())}")
-        assert set(results_filtered.keys()) <= set(allowed), \
-            f"Metric keys {set(results_filtered.keys())} not subset of {allowed}"
+    from metrics.binary_cd_metrics import BinaryMetrics
+    m = BinaryMetrics()
+    fake_logits = torch.zeros(1, 1, 256, 256)
+    fake_gt = torch.zeros(1, 256, 256, dtype=torch.long)
+    m.update(fake_logits, fake_gt)
+    results = m.compute()
+    results_filtered = _filter_metrics(results, allowed)
+    logger.info(f"Metric keys (allowed only): {list(results_filtered.keys())}")
+    assert set(results_filtered.keys()) <= set(allowed), \
+        f"Metric keys {set(results_filtered.keys())} not subset of {allowed}"
 
     logger.info("=== DRY RUN PASSED ===")
     logger.info(f"Confirmed log will contain only: {allowed}")

@@ -7,7 +7,7 @@ Usage::
 
     from data.sampler import BalancedChangeSampler
     sampler = BalancedChangeSampler(
-        dataset              = train_ds,    # LEVIRCDTileDataset
+        dataset              = train_ds,
         target_change_ratio  = 0.5,
         seed                 = 42,
     )
@@ -35,8 +35,8 @@ class BalancedChangeSampler(Sampler):
     Parameters
     ----------
     dataset
-        A ``LEVIRCDTileDataset`` (or any dataset whose tile index entries
-        expose ``has_change`` via ``dataset.index[i]["has_change"]``).
+        Any dataset whose tile index entries expose ``has_change`` via
+        ``dataset.index[i]["has_change"]``.
     target_change_ratio
         Fraction of samples per epoch that should be change tiles.
         Default 0.5 (equal balance).
@@ -62,7 +62,7 @@ class BalancedChangeSampler(Sampler):
         if index is None:
             raise AttributeError(
                 "BalancedChangeSampler requires a dataset with a `.index` attribute "
-                "(e.g. LEVIRCDTileDataset)."
+                "with per-tile change metadata."
             )
         for i, entry in enumerate(index):
             if entry["has_change"]:

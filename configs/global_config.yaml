@@ -1,44 +1,51 @@
-# Single runtime config template.
-#
-# All train / eval / validate / benchmark scripts read this file only.
-# Legacy per-experiment YAMLs are no longer part of the runtime path.
-#
-# Active-dataset workflow:
-# 1. Set dataset.name to LEVIR-CD, WHU-CD, SYSU-CD, or DSIFN-CD.
-# 2. The matching base preset is pulled from datasets_catalog below.
-# 3. Only keep top-level dataset overrides that you actually want for this run.
-#
-# Fast switch examples:
-#   LEVIR tile training: dataset.name = LEVIR-CD and keep the LEVIR-only tile overrides.
-#   WHU training:        dataset.name = WHU-CD and comment out the LEVIR-only tile overrides.
-#   DSIFN training:      dataset.name = DSIFN-CD and comment out the LEVIR-only tile overrides.
+# Runtime defaults for active binary change-detection experiments.
 
 experiment:
-  name: whu_experiment
-  output_root: outputs/whu_experiment
+  name: dsifn_full
+  output_root: outputs/dsifn/full
   seed: 42
 
 hardware:
   device: cuda
-  gpu_ids: [1]
+  gpu_ids: [0]
   mixed_precision: true
 
+dataset:
+  name: DSIFN-CD
+  root: /storage2/ChangeDetection/MV/Datasets/DSIFN-CD/DSIFN
+  mode: binary
+  task_type: binary_change
+  image_size: 256
+  num_workers: 8
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 4
+  val_ratio: 0.2
+  augmentation: true
+
 model:
-  mode: "dual"
+  mode: dual
   backbone: mambavision
-  variant: base        # tiny | tiny2 | small | base | large
+  variant: base
   decoder: adaptive_rf
   pretrained: true
-  output_mode: "semantic_change"      # binary | semantic_change
+  output_mode: binary
   num_classes: 1
-  enable_semantic_heads: true
-  semantic_head_type: lightweight
-  semantic_num_classes: 7
-  return_features: false
   freeze_backbone: false
+  drbi:
+    enabled: true
+  signed_diff:
+    enabled: true
+  cram_lite:
+    enabled: true
+    alpha: 0.5
+    apply_stages: [0, 1, 2]
+    attention_type: spatial
+  arf_fpn:
+    enabled: true
+  boundary_refine:
+    enabled: true
 
-# Differential Region-Boundary Interaction (D-RBI) fusion.
-# Set enabled: false to fall back to the legacy abs-diff + sum path.
 difference:
   enabled: true
   type: region_boundary
@@ -47,6 +54,7 @@ difference:
   gate_hidden_ratio: 0.25
   pre_norm: true
   use_absdiff: true
+  use_signed_diff: true
   use_product: false
   product_scale: 0.25
   use_region_gate: true
@@ -62,14 +70,14 @@ decoder:
   channels: 256
   dilation_rates: [1, 2, 4, 8]
   use_boundary_residual: true
-  residual_scale: 0.05
+  residual_scale: 0.1
   use_depthwise: true
   aux_weight: 0.4
 
 training:
   max_iterations: 50000
   batch_size: 8
-  lr: 5e-5
+  lr: 5.0e-5
   optimizer: adamw
   scheduler: cosine
   warmup_iterations: 2500
@@ -81,68 +89,6 @@ training:
   nan_diag_every: 50
   non_blocking_transfer: true
 
-resume:
-  enabled: false
-  checkpoint_path: null
-  strict: true
-
-dataset:
-  # Active dataset selector. Base values are resolved from datasets_catalog.
-  # Supported names: LEVIR-CD | WHU-CD | SYSU-CD | DSIFN-CD | SECOND
-  name: WHU-CD
-  task_type: semantic_change
-  mode: semantic
-  ignore_index: 255
-
-  # Common per-run overrides for the active dataset.
-  image_size: 256
-  num_workers: 8
-  pin_memory: true
-  persistent_workers: true
-  prefetch_factor: 4
-  val_ratio: 0.2
-  augment: true
-  binary: false
-  split: train
-  precompute_second_binary_masks: true
-  second_binary_cache_dir: outputs/second_binary_masks
-  cache_images_in_ram: false
-  cache_masks_in_ram: false
-  second_label_palette: null
-
-  # Uncomment only if your local dataset path differs from datasets_catalog.
-  # root: /storage2/ChangeDetection/MV/Datasets/LEVIRCD
-
-  # SECOND semantic-mode example.
-  # Keep these commented unless you are explicitly training or evaluating
-  # true semantic SECOND with timestamp-wise semantic heads enabled.
-  # name: SECOND
-  # mode: semantic
-  # task_type: semantic_change
-  # binary: false
-  # second_label_palette: [0, 1, 2, 3, 4, 5, 6]
-
-  # LEVIR-only routing overrides.
-  # Keep these for LEVIR experiments.
-  # Comment them out for WHU / SYSU / DSIFN to keep the active block clean.
-  # train_mode: "tile"  -> LEVIRCDTileDataset with stride-based indexing
-  # train_mode: "image" -> original LEVIRCDDataset with random crop per image
-  
-  #train_mode: "tile"
-  #val_mode: "existing"
-  #test_mode: "existing"
-  #tile_size: 256
-  #train_stride: 128
-  #val_stride: 256
-  #test_stride: 256
-  #min_change_pixels: 1
-  #include_empty_ratio: 0.25
-  #use_tile_cache: true
-  #tile_cache_dir: "outputs/dataset_indices"
-  #boundary_aware_sampling: true
-  #balance_change_tiles: true
-  #target_change_tile_ratio: 0.5
-
 validation:
   batch_size: 4
   save_samples: true
@@ -152,18 +98,6 @@ validation:
 evaluation:
   split: test
   threshold: 0.5
-  threshold_sweep: true
-  threshold_list: [0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60]
-  threshold_select_metric: "Fscd"   # options: mF1 | F1_1 | IoU_1 | Fscd
-  second_metrics: true              # applied only when dataset.name: SECOND
-  compute_SeK: true                 # true SeK requires semantic SECOND outputs
-  sek_binary_fallback: false
-  use_tta: false
-  tta_augmentations: [original, hflip, vflip, rot90]
-  save_predictions: false
-
-eval:
-  threshold: 0.5
   threshold_sweep:
     enabled: true
     values: [0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60]
@@ -172,38 +106,42 @@ eval:
   inference_mode: patch
   crop_size: 256
   overlap: 0.25
-  log_mask_debug: true
-  save_debug_outputs: false
-  debug_output_root: outputs/debug_levir_eval
-  debug_max_samples: 20
+  use_tta: false
+  save_predictions: false
 
 loss:
-  type: dice_focal_sek
-  # Use loss.type: second_semantic_cd only for SECOND semantic_change runs.
-  dice_weight: 1.0
-  focal_weight: 0.2
-  focal_gamma: 1.5
-  sek_weight: 0.05
-  sek_mode: binary
-  sek_eps: 1e-6
-  sek_separate_nochange: true
-  bce_weight: 1.0
-  change_loss_weight: 1.0
-  semantic_loss_weight: 0.5
-  consistency_loss_weight: 0.2
-  sek_loss_weight: 0.3
-  ce_weight: 1.0
-  consistency_detach_semantic: true
-  consistency_loss_type: bce
+  type: bce_dice
+  final:
+    type: bce_dice
+    bce_weight: 1.0
+    dice_weight: 1.0
+  coarse:
+    enabled: true
+    weight: 0.4
+  boundary:
+    enabled: true
+    weight: 0.1
+    type: bce_dice
+    target_type: sobel
+    edge_width: 3
+
+metrics:
+  allowed: [Pre, Rec, F1, IoU, OA]
+  average_mode: global
 
 ema:
   enabled: true
   decay: 0.999
   store_on_cpu: true
 
+resume:
+  enabled: false
+  checkpoint_path: null
+  strict: true
+
 checkpoint:
   path: null
-  monitor: Fscd                       # SECOND semantic runs usually prefer Fscd or SeK
+  monitor: f1
   mode: max
   save_best_only: true
 
@@ -214,135 +152,4 @@ boundary_metrics:
 
 debug:
   enabled: false
-  memory_debug: false
-  name: tiny_memory_debug
-  output_root: outputs/memory_debug
-  steps: 3
-  batch_size: 8
-  image_size: 256
-  use_amp: true
-  profile_torch_ops: true
-  profile_one_step_only: true
-  compare_modes:
-    - baseline_forward_only
-    - train_forward_loss_backward
-    - train_with_return_features_false
-    - train_with_return_features_true
-    - train_with_ema_disabled
-    - train_with_ema_enabled
-    - train_with_tta_disabled
-    - eval_no_grad
-    - eval_with_tta
-    - decoder_baseline
-    - decoder_refinement
-    - decoder_adaptive_rf
-  save_memory_summary: true
-
-# Canonical machine-local dataset presets.
-# Training resolves the active top-level dataset block against this catalog.
-# Benchmark and dataset-check scripts also read this section directly.
-datasets_catalog:
-  levir:
-    name: LEVIR-CD
-    root: /storage2/ChangeDetection/MV/Datasets/LEVIRCD
-    image_size: 256
-    num_workers: 8
-    val_ratio: 0.2
-    augment: true
-    binary: true
-    train_split: train
-    val_split: null
-    test_split: test
-    image_a_dir_candidates: [A, imageA, t1, A_256]
-    image_b_dir_candidates: [B, imageB, t2, B_256]
-    label_dir_candidates: [label, labels, mask, OUT]
-
-  whu:
-    name: WHU-CD
-    root: /storage2/ChangeDetection/MV/Datasets/WHU-CD
-    image_size: 256
-    num_workers: 8
-    val_ratio: 0.2
-    augment: true
-    binary: true
-    train_split: train
-    val_split: val
-    test_split: test
-    image_a_dir_candidates: [A, imageA, t1, before, A_256]
-    image_b_dir_candidates: [B, imageB, t2, after, B_256]
-    label_dir_candidates: [OUT, label, labels, mask, change_mask]
-
-  sysu:
-    name: SYSU-CD
-    root: /storage2/ChangeDetection/MV/Datasets/SYSU-CD
-    image_size: 256
-    num_workers: 8
-    val_ratio: 0.2
-    augment: true
-    binary: true
-    train_split: train
-    val_split: val
-    test_split: test
-    image_a_dir_candidates: [A, t1, time1, imageA, T1, img1]
-    image_b_dir_candidates: [B, t2, time2, imageB, T2, img2]
-    label_dir_candidates: [label, mask, OUT, GT, labels, change_map]
-
-  dsifn:
-    name: DSIFN-CD
-    root: /storage2/ChangeDetection/MV/Datasets/DSIFN-CD/DSIFN
-    task_type: binary_change
-    mode: binary
-    image_size: 256
-    num_workers: 8
-    val_ratio: 0.2
-    augment: true
-    binary: true
-    train_split: null
-    val_split: null
-    test_split: null
-    image_a_dir_candidates: [t1, T1, A, imageA, before, img1]
-    image_b_dir_candidates: [t2, T2, B, imageB, after, img2]
-    label_dir_candidates: [mask, GT, label, labels, OUT, change_map]
-
-  SECOND:
-    name: SECOND
-    root: /storage2/ChangeDetection/MV/Datasets/SECOND
-    task_type: semantic_change
-    mode: semantic
-    image_size: 256
-    train_split: train
-    val_split: val
-    test_split: test
-    num_workers: 8
-    pin_memory: true
-    persistent_workers: true
-    prefetch_factor: 4
-    num_classes: 7
-    ignore_index: 255
-    binary_from_semantic: true
-    precompute_second_binary_masks: true
-    second_binary_cache_dir: outputs/second_binary_masks
-    cache_images_in_ram: false
-    cache_masks_in_ram: false
-    image_a_dir_candidates: [A, im1, img1, imageA, T1, time1]
-    image_b_dir_candidates: [B, im2, img2, imageB, T2, time2]
-    label_a_dir_candidates: [label1, labelA, label_t1, semantic1, sem1]
-    label_b_dir_candidates: [label2, labelB, label_t2, semantic2, sem2]
-    binary_label_dir_candidates: [label, change, change_label, mask, binary]
-
-post_training:
-  run_test_eval: true
-  export_best_model: true
-
-benchmark:
-  model_name: levir_rf_tile
-  output_dir: outputs/benchmark_runs/summary
-  datasets: [LEVIR-CD, WHU-CD, SYSU-CD, DSIFN-CD, SECOND]
-  eval_split: test
-  main_dataset: LEVIR-CD
-  checkpoints:
-    levir: null
-    whu: null
-    sysu: null
-    dsifn: null
-    second: null
+  output_root: debug

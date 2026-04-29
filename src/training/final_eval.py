@@ -45,10 +45,6 @@ def _paper_binary_metrics(raw: dict) -> dict:
     }
 
 
-def _is_second_dataset(cfg: dict) -> bool:
-    return "SECOND" in str(cfg.get("dataset", {}).get("name", "")).upper()
-
-
 def run_final_test_evaluation(
     cfg: dict,
     model: nn.Module,
@@ -212,14 +208,7 @@ def run_final_test_evaluation(
             cfg["eval"] = alias_ec
 
     # ── Augment results with metadata ────────────────────────────────────────
-    if _is_second_dataset(cfg):
-        results = {
-            key: raw_results.get(key)
-            for key in ("OA", "mIoU", "SeK", "Fscd")
-            if key in raw_results
-        }
-    else:
-        results = _paper_binary_metrics(raw_results)
+    results = _paper_binary_metrics(raw_results)
     results["threshold"] = threshold
     results["threshold_source"] = threshold_source
     results["checkpoint"] = str(ckpt_path)
@@ -282,7 +271,7 @@ def _save_json(results: dict, path: Path) -> None:
 
 
 def _save_csv(results: dict, path: Path) -> None:
-    metric_order = ["Pre", "Rec", "F1", "IoU", "OA", "mIoU", "SeK", "Fscd"]
+    metric_order = ["Pre", "Rec", "F1", "IoU", "OA"]
     keys = [key for key in metric_order if key in results]
     keys.extend([key for key in ("threshold", "threshold_source", "ema_used", "ema_found", "checkpoint") if key in results])
     with open(path, "w", newline="") as f:
@@ -307,24 +296,6 @@ def _build_summary(results: dict) -> str:
         if isinstance(v, float):
             return f"{label:<16}: {v:.4f}"
         return f"{label:<16}: {v}"
-
-    if "Fscd" in results or "mIoU" in results:
-        for key in ("OA", "mIoU", "SeK", "Fscd"):
-            value = results.get(key)
-            if value is not None:
-                lines.append(f"{key:<16}: {float(value):.4f}")
-        lines.append(_DASH)
-        for key, label in [
-            ("threshold", "Threshold"),
-            ("threshold_source", "Threshold Src"),
-            ("ema_used", "EMA Used"),
-            ("ema_found", "EMA Found"),
-        ]:
-            row = _fmt(key, label)
-            if row:
-                lines.append(row)
-        lines.append(_SEP)
-        return "\n".join(lines) + "\n"
 
     ordered = [("Pre", "Pre"), ("Rec", "Rec"), ("F1", "F1"), ("IoU", "IoU"), ("OA", "OA")]
     for key, label in ordered:

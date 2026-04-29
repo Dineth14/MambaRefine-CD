@@ -9,12 +9,21 @@ __pycache__/
 # PyTorch
 *.pth.tar
 *.pth
+*.pt
+*.ckpt
+checkpoints/
+external_weights/
+archive/**/*.pth
+archive/**/*.pt
 
 # Outputs (not committed — too large)
 outputs/
 outputs/benchmark_runs/
 outputs/eval_runs/
 outputs/dataset_manifests/
+debug/
+wandb/
+runs/
 
 # Keep outputs skeleton
 !outputs/.gitkeep
@@ -25,6 +34,9 @@ Datasets/
 # Logs
 *.log
 logs/
+
+# Test caches
+.pytest_cache/
 
 # Jupyter
 .ipynb_checkpoints/

@@ -22,7 +22,6 @@ import torch.nn.functional as F
 
 from models.backbone.mambavision_builder import build as build_mambavision_backbone
 from models.decoders import DECODER_REGISTRY
-from models.decoders.semantic_heads import LightweightSemanticHead
 
 
 class SimpleCNNFeatureExtractor(nn.Module):
@@ -192,39 +191,15 @@ class DRBISiameseMambaCD(nn.Module):
         dec_name   = model_cfg.get("decoder", "adaptive_rf")
         out_ch     = int(dec_cfg.get("channels", 256))
         self.output_mode = str(model_cfg.get("output_mode", "binary")).lower()
-        semantic_head_cfg = model_cfg.get("semantic_head", {}) or {}
-        self.enable_semantic_heads = bool(
-            semantic_head_cfg.get("enabled", model_cfg.get("enable_semantic_heads", False))
-        )
-        self.semantic_head_type = str(
-            semantic_head_cfg.get("type", model_cfg.get("semantic_head_type", "lightweight"))
-        ).lower()
-        self.semantic_num_classes = int(
-            semantic_head_cfg.get("num_classes", model_cfg.get("semantic_num_classes", dataset_cfg.get("num_classes", 7)))
-        )
+        if self.output_mode != "binary":
+            raise ValueError("Only binary change-detection output is active in this cleaned repository.")
 
         # ── Shared encoder ─────────────────────────────────────────────
         self.encoder = build_encoder(model_cfg)
         self.variant = getattr(self.encoder, "model_name", variant)
         channels: List[int] = self.encoder.channels   # e.g. [80, 160, 320, 640]
 
-        if self.output_mode == "semantic_change":
-            if not self.enable_semantic_heads:
-                raise ValueError(
-                    "model.output_mode=semantic_change requires model.enable_semantic_heads=true."
-                )
-            if self.semantic_head_type != "lightweight":
-                raise ValueError(
-                    f"Unsupported semantic_head_type={self.semantic_head_type!r}. Only 'lightweight' is implemented."
-                )
-            self.semantic_head = LightweightSemanticHead(
-                channels=channels,
-                num_classes=self.semantic_num_classes,
-                hidden_channels=int(semantic_head_cfg.get("channels", model_cfg.get("semantic_head_channels", out_ch))),
-                dropout=float(semantic_head_cfg.get("dropout", 0.0)),
-            )
-        else:
-            self.semantic_head = None
+        self.semantic_head = None
 
         # ── D-RBI fusion (one per encoder scale) ───────────────────────
         self.use_drbi = bool(diff_cfg.get("enabled", True))
@@ -316,20 +291,7 @@ class DRBISiameseMambaCD(nn.Module):
         else:
             change_logits, aux_logits = self.decoder(feats_a, feats_b, out_size)
 
-        if self.output_mode != "semantic_change":
-            return change_logits, aux_logits
-
-        if self.semantic_head is None:
-            raise RuntimeError("semantic_change output requested but semantic_head is not initialized.")
-
-        sem_logits_t1 = self.semantic_head(feats_a, out_size)
-        sem_logits_t2 = self.semantic_head(feats_b, out_size)
-        return {
-            "change_logits": change_logits,
-            "sem_logits_t1": sem_logits_t1,
-            "sem_logits_t2": sem_logits_t2,
-            "aux_logits": aux_logits,
-        }
+        return change_logits, aux_logits
 
 
 def build_model(cfg: dict) -> nn.Module:
@@ -350,13 +312,9 @@ def build_model(cfg: dict) -> nn.Module:
     output_mode = str(model_cfg.get("output_mode", "binary")).lower()
     dataset_mode = str(dataset_cfg.get("mode", "binary")).lower()
 
-    if output_mode not in {"binary", "semantic_change"}:
+    if output_mode != "binary":
         raise ValueError(
-            f"Unsupported model.output_mode={output_mode!r}. Valid options: 'binary' or 'semantic_change'."
-        )
-    if output_mode == "semantic_change" and dataset_mode != "semantic":
-        raise ValueError(
-            "model.output_mode=semantic_change requires dataset.mode=semantic."
+            f"Unsupported model.output_mode={output_mode!r}. Only 'binary' is active."
         )
 
     mode = str(model_cfg.get("mode", "dual")).lower()

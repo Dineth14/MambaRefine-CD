@@ -1,77 +1,42 @@
-"""Multi-dataset builder for change detection benchmarks.
-
-Usage:
-    from data.dataset_builder import build_dataset, build_dataloaders
-
-``build_dataset(dataset_cfg, split)`` dispatches on ``dataset_cfg["name"]``.
-``build_dataloaders(cfg)`` reads the active ``cfg["dataset"]`` block from the
-single global configuration.
-
-Tile-based training (LEVIR-CD):
-  Set ``dataset.train_mode: "tile"`` in global_config.yaml to use
-  ``LEVIRCDTileDataset`` instead of the image-level ``LEVIRCDDataset``.
-  val/test always use existing tiles (``val_mode/test_mode: "existing"``).
-
-Supported dataset names (case-insensitive, flexible aliases):
-  LEVIR-CD / levir / levircd
-  WHU-CD   / whu   / whucd
-  SYSU-CD  / sysu  / sysucd
-  DSIFN-CD / dsifn / dsifncd
-    SECOND   / second
-"""
+"""Dataset and DataLoader builders for active binary CD experiments."""
 from __future__ import annotations
 
 import json
 import logging
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
-from torch.utils.data import DataLoader, Dataset, RandomSampler
+import torch
+from torch.utils.data import DataLoader, Dataset
 
-from data.levircd  import LEVIRCDDataset, LEVIRCDTileDataset
-from data.whucd    import WHUCDDataset
-from data.sysucd   import SYSUCDDataset
-from data.dsifncd  import DSIFNCDDataset
-from data.second   import SECONDDataset
+from data.dsifncd import DSIFNCDDataset
+from data.whucd import WHUCDDataset
 
 logger = logging.getLogger(__name__)
 
-# ── Registry ──────────────────────────────────────────────────────────────────
-_REGISTRY: dict = {
-    "levir-cd":  LEVIRCDDataset,
-    "levir":     LEVIRCDDataset,
-    "levircd":   LEVIRCDDataset,
-    "whu-cd":    WHUCDDataset,
-    "whu":       WHUCDDataset,
-    "whucd":     WHUCDDataset,
-    "sysu-cd":   SYSUCDDataset,
-    "sysu":      SYSUCDDataset,
-    "sysucd":    SYSUCDDataset,
-    "dsifn-cd":  DSIFNCDDataset,
-    "dsifn":     DSIFNCDDataset,
-    "dsifncd":   DSIFNCDDataset,
-    "second":    SECONDDataset,
+_REGISTRY = {
+    "dsifn-cd": DSIFNCDDataset,
+    "dsifn": DSIFNCDDataset,
+    "dsifncd": DSIFNCDDataset,
+    "whu-cd": WHUCDDataset,
+    "whu": WHUCDDataset,
+    "whucd": WHUCDDataset,
 }
 
-_LEVIR_NAMES = {"levir-cd", "levir", "levircd"}
+
+def _dataset_key(name: str) -> str:
+    return str(name).lower().strip().replace("_", "-")
 
 
 def _get_class(name: str):
-    cls = _REGISTRY.get(name.lower())
+    key = _dataset_key(name)
+    cls = _REGISTRY.get(key)
     if cls is None:
-        supported = sorted(set(_REGISTRY.values()), key=lambda c: c.__name__)
         raise ValueError(
-            f"Unknown dataset '{name}'. Supported: "
-            + ", ".join(c.__name__ for c in supported)
+            f"Unknown dataset {name!r}. Active datasets are DSIFN-CD and WHU-CD."
         )
     return cls
 
-
-def _is_levir(name: str) -> bool:
-    return name.lower() in _LEVIR_NAMES
-
-
-# ── Single-split builder ───────────────────────────────────────────────────────
 
 def build_dataset(
     dataset_cfg: dict,
@@ -79,301 +44,85 @@ def build_dataset(
     augment: Optional[bool] = None,
     seed: int = 42,
 ) -> Dataset:
-    """Instantiate a dataset from a dataset-config dict.
-
-    For LEVIR-CD + ``train_mode="tile"``, training uses ``LEVIRCDTileDataset``.
-    Val and test always use the tile-aware path (non-overlapping tiles).
-
-    Args:
-        dataset_cfg: the ``dataset:`` section (must include ``name`` and ``root``).
-        split:       "train", "val", or "test".
-        augment:     override augmentation flag; default is True for train only.
-        seed:        random seed for reproducible val split.
-
-    Returns:
-        Dataset instance.
-    """
-    name      = dataset_cfg.get("name", "LEVIR-CD")
-    root      = dataset_cfg.get("root")
+    """Instantiate an active binary change-detection dataset."""
+    name = dataset_cfg.get("name")
+    root = dataset_cfg.get("root")
+    if not name:
+        raise ValueError("dataset.name is required. Active options: DSIFN-CD, WHU-CD.")
     if root is None:
-        raise ValueError(f"dataset config for '{name}' is missing 'root' key.")
+        raise ValueError(f"dataset config for {name!r} is missing 'root'.")
 
-    do_augment = augment if augment is not None else (split == "train")
-
-    # ── LEVIR-CD tile-mode routing ────────────────────────────────────────────
-    if _is_levir(name):
-        train_mode = str(dataset_cfg.get("train_mode", "image")).lower()
-        use_tiles  = (split == "train" and train_mode == "tile") or split in ("val", "test")
-        if use_tiles:
-            return _build_levircd_tile(dataset_cfg, root, split, do_augment, seed)
-
-    # ── Default / image-level path ────────────────────────────────────────────
-    cls = _get_class(name)
-    kwargs = dict(
-        root       = root,
-        split      = split,
-        image_size = int(dataset_cfg.get("image_size", 256)),
-        val_ratio  = float(dataset_cfg.get("val_ratio", 0.2)),
-        seed       = seed,
-        augment    = do_augment,
-    )
-    if cls is LEVIRCDDataset:
-        kwargs.update({
-            "split_files": dataset_cfg.get("split_files", {}),
-            "test_dir": str(dataset_cfg.get("test_dir", "test")),
-        })
-    elif cls is SECONDDataset:
-        kwargs.update({
-            "mode": str(dataset_cfg.get("mode", "binary")),
-            "task_type": str(dataset_cfg.get("task_type", "semantic_change")),
-            "ignore_index": int(dataset_cfg.get("ignore_index", 255)),
-            "binary_from_semantic": bool(dataset_cfg.get("binary_from_semantic", True)),
-            "num_classes": int(dataset_cfg.get("num_classes", 7)),
-            "a_candidates": dataset_cfg.get("image_a_dir_candidates", []),
-            "b_candidates": dataset_cfg.get("image_b_dir_candidates", []),
-            "label_a_candidates": dataset_cfg.get("label_a_dir_candidates", []),
-            "label_b_candidates": dataset_cfg.get("label_b_dir_candidates", []),
-            "binary_label_candidates": dataset_cfg.get("binary_label_dir_candidates", []),
-            "train_split": dataset_cfg.get("train_split"),
-            "val_split": dataset_cfg.get("val_split"),
-            "test_split": dataset_cfg.get("test_split"),
-            "precompute_binary_masks": bool(dataset_cfg.get("precompute_second_binary_masks", False)),
-            "second_binary_cache_dir": dataset_cfg.get("second_binary_cache_dir"),
-            "cache_images_in_ram": bool(dataset_cfg.get("cache_images_in_ram", False)),
-            "cache_masks_in_ram": bool(dataset_cfg.get("cache_masks_in_ram", False)),
-            "profile_enabled": bool(dataset_cfg.get("profile_enabled", False)),
-            "second_label_palette": dataset_cfg.get("second_label_palette"),
-            "debug_stats": bool(dataset_cfg.get("debug_stats", False)),
-        })
-    else:
-        if "augmentation_ops" in dataset_cfg:
-            kwargs["augmentation_ops"] = dataset_cfg["augmentation_ops"]
-        if "image_a_dir_candidates" in dataset_cfg:
-            kwargs["a_candidates"] = dataset_cfg["image_a_dir_candidates"]
-        if "image_b_dir_candidates" in dataset_cfg:
-            kwargs["b_candidates"] = dataset_cfg["image_b_dir_candidates"]
-        if "label_dir_candidates" in dataset_cfg:
-            kwargs["label_candidates"] = dataset_cfg["label_dir_candidates"]
-
+    cls = _get_class(str(name))
+    do_augment = augment if augment is not None else split == "train"
+    kwargs = {
+        "root": root,
+        "split": split,
+        "image_size": int(dataset_cfg.get("image_size", 256)),
+        "val_ratio": float(dataset_cfg.get("val_ratio", 0.2)),
+        "seed": seed,
+        "augment": do_augment,
+    }
+    if "augmentation_ops" in dataset_cfg and cls is DSIFNCDDataset:
+        kwargs["augmentation_ops"] = dataset_cfg["augmentation_ops"]
+    if "image_a_dir_candidates" in dataset_cfg:
+        kwargs["a_candidates"] = dataset_cfg["image_a_dir_candidates"]
+    if "image_b_dir_candidates" in dataset_cfg:
+        kwargs["b_candidates"] = dataset_cfg["image_b_dir_candidates"]
+    if "label_dir_candidates" in dataset_cfg:
+        kwargs["label_candidates"] = dataset_cfg["label_dir_candidates"]
     return cls(**kwargs)
 
 
-def _build_levircd_tile(
-    dc: dict, root: str, split: str, do_augment: bool, seed: int
-) -> LEVIRCDTileDataset:
-    """Construct a ``LEVIRCDTileDataset`` from dataset config."""
-    cache_dir = dc.get("tile_cache_dir", "outputs/dataset_indices")
-    # Resolve relative cache path relative to repo root
-    cache_path = Path(cache_dir)
-    if not cache_path.is_absolute():
-        repo_root = Path(__file__).resolve().parents[2]
-        cache_path = repo_root / cache_dir
-
-    return LEVIRCDTileDataset(
-        root                = root,
-        split               = split,
-        image_size          = int(dc.get("tile_size", dc.get("image_size", 256))),
-        val_ratio           = float(dc.get("val_ratio", 0.2)),
-        seed                = seed,
-        augment             = do_augment,
-        train_stride        = int(dc.get("train_stride", 128)),
-        val_stride          = int(dc.get("val_stride", 256)),
-        test_stride         = int(dc.get("test_stride", 256)),
-        min_change_pixels   = int(dc.get("min_change_pixels", 1)),
-        include_empty_ratio = float(dc.get("include_empty_ratio", 0.25)),
-        use_cache           = bool(dc.get("use_tile_cache", True)),
-        cache_dir           = cache_path,
-        split_files         = dc.get("split_files", {}),
-        test_dir            = str(dc.get("test_dir", "test")),
-    )
-
-
-# ── Sampler helper ─────────────────────────────────────────────────────────────
-
-def _make_train_sampler(train_ds: Dataset, dc: dict):
-    """Return a ``BalancedChangeSampler`` if enabled, else ``None`` (uses shuffle)."""
-    if not bool(dc.get("balance_change_tiles", False)):
-        return None
-    if not isinstance(train_ds, LEVIRCDTileDataset):
-        return None
-    try:
-        from data.sampler import BalancedChangeSampler
-        ratio = float(dc.get("target_change_tile_ratio", 0.5))
-        return BalancedChangeSampler(train_ds, target_change_ratio=ratio)
-    except Exception as e:
-        logger.warning(f"BalancedChangeSampler unavailable: {e} — using random shuffle.")
-        return None
-
-
-# ── Dataset stats logging ──────────────────────────────────────────────────────
-
-def log_dataset_stats(
-    train_ds: Dataset,
-    val_ds:   Dataset,
-    test_ds:  Optional[Dataset],
-    log: logging.Logger,
-    dc: dict,
-) -> dict:
-    """Print and return dataset statistics for the training run."""
-    stats: dict = {}
-
-    train_mode = str(dc.get("train_mode", "image")).lower()
-    val_mode   = str(dc.get("val_mode",   "existing")).lower()
-    test_mode  = str(dc.get("test_mode",  "existing")).lower()
-
-    sep = "-" * 56
-    log.info(sep)
-    log.info("DATASET STATISTICS")
-    log.info(f"  Train mode : {train_mode}")
-    log.info(f"  Val mode   : {val_mode}")
-    log.info(f"  Test mode  : {test_mode}")
-    log.info(sep)
-
-    if isinstance(train_ds, LEVIRCDTileDataset):
-        n_train     = len(train_ds)
-        n_change    = train_ds.n_change()
-        n_no_change = train_ds.n_no_change()
-        avg_cr      = train_ds.mean_changed_pixel_ratio()
-        cr_frac     = train_ds.change_ratio()
-        log.info(f"  Train image pairs  : (from train/ split, 80%)")
-        log.info(f"  Train tiles        : {n_train}")
-        log.info(f"  Change tiles       : {n_change}")
-        log.info(f"  No-change tiles    : {n_no_change}")
-        log.info(f"  Change tile ratio  : {cr_frac:.1%}")
-        log.info(f"  Avg changed pixels : {avg_cr:.2%}")
-        stats.update({
-            "train_tiles":      n_train,
-            "train_change":     n_change,
-            "train_no_change":  n_no_change,
-            "train_change_ratio": round(cr_frac, 4),
-            "train_avg_pixel_ratio": round(avg_cr, 4),
-        })
-    else:
-        log.info(f"  Train samples : {len(train_ds)} (image-level)")
-        stats["train_samples"] = len(train_ds)
-
-    n_val = len(val_ds)
-    val_pos_ratio = _estimate_positive_ratio(val_ds)
-    log.info(f"  Val tiles          : {n_val}")
-    log.info(f"  Val GT pos ratio   : {val_pos_ratio:.1%}")
-    stats.update({"val_tiles": n_val, "val_pos_ratio": round(val_pos_ratio, 4)})
-
-    if test_ds is not None:
-        n_test = len(test_ds)
-        test_pos_ratio = _estimate_positive_ratio(test_ds)
-        log.info(f"  Test tiles         : {n_test}")
-        log.info(f"  Test GT pos ratio  : {test_pos_ratio:.1%}")
-        stats.update({"test_tiles": n_test, "test_pos_ratio": round(test_pos_ratio, 4)})
-
-    log.info(sep)
-    return stats
+def _extract_mask(item: dict):
+    return item.get("mask", item.get("change_mask", item.get("label")))
 
 
 def _estimate_positive_ratio(ds: Dataset, n: int = 200) -> float:
-    """Quick positive-pixel ratio estimate from first n samples."""
-    import numpy as np
-    import torch
     total, positive = 0, 0
     for i in range(min(n, len(ds))):
         try:
-            item = ds[i]
-            m = item.get("mask", item.get("change_mask", item.get("label")))
-            if m is not None:
-                if isinstance(m, torch.Tensor):
-                    m = m.numpy()
-                positive += int((m > 0.5).sum())
-                total    += m.size
+            mask = _extract_mask(ds[i])
+            if mask is None:
+                continue
+            if isinstance(mask, torch.Tensor):
+                mask_arr = mask.detach().cpu()
+                positive += int((mask_arr > 0.5).sum().item())
+                total += int(mask_arr.numel())
+            else:
+                positive += int((mask > 0.5).sum())
+                total += int(mask.size)
         except Exception:
-            pass
+            continue
     return float(positive / total) if total else 0.0
 
 
-def _dataset_mode_label(ds: Dataset) -> str:
-    if isinstance(ds, LEVIRCDTileDataset):
-        return "tile"
-    if isinstance(ds, LEVIRCDDataset) and getattr(ds, "tiles", None) is not None:
-        return "tile"
-    return "full_image"
-
-
-def _first_shape_info(ds: Dataset) -> dict:
-    from PIL import Image
-    info = {
-        "image_before": "unknown",
-        "mask_before": "unknown",
-        "image_after": "unknown",
-        "mask_after": "unknown",
+def log_dataset_stats(
+    train_ds: Dataset,
+    val_ds: Dataset,
+    test_ds: Optional[Dataset],
+    log: logging.Logger,
+    dc: dict,
+) -> dict:
+    """Log compact binary CD dataset statistics for reproducibility."""
+    stats = {
+        "train_samples": len(train_ds),
+        "val_samples": len(val_ds),
+        "val_pos_ratio": round(_estimate_positive_ratio(val_ds), 6),
     }
-    try:
-        if isinstance(ds, LEVIRCDTileDataset) and getattr(ds, "index", None):
-            entry = ds.index[0]
-            info["image_before"] = list(reversed(Image.open(entry["image_a_path"]).size))
-            info["mask_before"] = list(reversed(Image.open(entry["mask_path"]).size))
-        elif isinstance(ds, LEVIRCDDataset):
-            if getattr(ds, "tiles", None):
-                name, _, _ = ds.tiles[0]
-            else:
-                name = ds.names[0]
-            info["image_before"] = list(reversed(Image.open(ds.a_dir / name).size))
-            info["mask_before"] = list(reversed(Image.open(ds.lbl_dir / name).size))
-        item = ds[0]
-        image = item.get("image_a")
-        mask = item.get("mask", item.get("label", item.get("change_mask")))
-        if image is not None:
-            info["image_after"] = list(image.shape)
-        if mask is not None:
-            info["mask_after"] = list(mask.shape)
-    except Exception as exc:
-        info["error"] = str(exc)
-    return info
+    log.info("-" * 56)
+    log.info("DATASET STATISTICS")
+    log.info("  Dataset       : %s", dc.get("name"))
+    log.info("  Train samples : %d", stats["train_samples"])
+    log.info("  Val samples   : %d", stats["val_samples"])
+    log.info("  Val pos ratio : %.4f", stats["val_pos_ratio"])
+    if test_ds is not None:
+        stats["test_samples"] = len(test_ds)
+        stats["test_pos_ratio"] = round(_estimate_positive_ratio(test_ds), 6)
+        log.info("  Test samples  : %d", stats["test_samples"])
+        log.info("  Test pos ratio: %.4f", stats["test_pos_ratio"])
+    log.info("-" * 56)
+    return stats
 
-
-def log_split_diagnostics(ds: Dataset, split: str, log: logging.Logger) -> None:
-    """Log mode, shape, sample count, and positive-ratio diagnostics."""
-    info = _first_shape_info(ds)
-    log.info(
-        "LEVIR split diagnostics [%s] | mode=%s | samples=%d | "
-        "image_shape_before=%s | image_shape_after=%s | "
-        "mask_shape_before=%s | mask_shape_after=%s | avg_positive_ratio=%.6f",
-        split,
-        _dataset_mode_label(ds),
-        len(ds),
-        info.get("image_before"),
-        info.get("image_after"),
-        info.get("mask_before"),
-        info.get("mask_after"),
-        _estimate_positive_ratio(ds),
-    )
-
-
-def _levir_image_count(ds: Dataset) -> Optional[int]:
-    names = getattr(ds, "names", None)
-    if names is not None:
-        return len(names)
-    if isinstance(ds, LEVIRCDTileDataset) and getattr(ds, "index", None):
-        return len({Path(e["image_a_path"]).name for e in ds.index})
-    return None
-
-
-def log_levir_split_summary(log: logging.Logger, dc: dict, train_ds: Optional[Dataset] = None,
-                            val_ds: Optional[Dataset] = None, test_ds: Optional[Dataset] = None) -> None:
-    root = Path(str(dc.get("root", "")))
-    test_dir = str(dc.get("test_dir", "test"))
-    test_count = _levir_image_count(test_ds) if test_ds is not None else None
-    if test_count is None:
-        try:
-            test_count = len([p for p in (root / test_dir / "A").iterdir() if p.suffix.lower() in {".png", ".jpg", ".jpeg", ".tif", ".tiff"}])
-        except Exception:
-            test_count = None
-    log.info("Split summary:")
-    if train_ds is not None:
-        log.info("  train images: %s", _levir_image_count(train_ds))
-    if val_ds is not None:
-        log.info("  val images: %s", _levir_image_count(val_ds))
-    log.info("  test images: %s", test_count if test_count is not None else "unknown")
-
-
-# ── Dataset manifest ──────────────────────────────────────────────────────────
 
 def save_dataset_manifest(
     stats: dict,
@@ -383,113 +132,81 @@ def save_dataset_manifest(
 ) -> None:
     """Write a JSON dataset manifest for reproducibility."""
     manifest = {
-        "root":               dc.get("root"),
-        "tile_size":          dc.get("tile_size", dc.get("image_size", 256)),
-        "train_stride":       dc.get("train_stride", 128),
-        "val_stride":         dc.get("val_stride", 256),
-        "include_empty_ratio": dc.get("include_empty_ratio", 0.25),
-        "balance_change_tiles": dc.get("balance_change_tiles", True),
-        "target_change_tile_ratio": dc.get("target_change_tile_ratio", 0.5),
+        "name": dc.get("name"),
+        "root": dc.get("root"),
+        "image_size": dc.get("image_size", 256),
+        "val_ratio": dc.get("val_ratio", 0.2),
         "leakage_check_status": leakage_status,
         **stats,
     }
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(out_path, "w") as f:
+    with out_path.open("w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
-    logger.info(f"Dataset manifest saved to {out_path}")
+    logger.info("Dataset manifest saved to %s", out_path)
 
-
-# ── DataLoader builders ────────────────────────────────────────────────────────
 
 def build_dataloaders(cfg: dict, dataset_cfg: Optional[dict] = None):
-    """Build (train_loader, val_loader) from a merged experiment config.
+    """Build train and validation loaders."""
+    dc = dataset_cfg if dataset_cfg is not None else cfg.get("dataset", {})
+    tc = cfg["training"]
+    hw = cfg.get("hardware", {})
+    vc = cfg.get("validation", {})
+    seed = int(cfg.get("experiment", {}).get("seed", 42))
 
-    When ``dataset.train_mode="tile"`` and ``dataset.balance_change_tiles=true``,
-    a ``BalancedChangeSampler`` replaces the default random shuffle.
+    train_ds = build_dataset(dc, "train", augment=True, seed=seed)
+    val_ds = build_dataset(dc, "val", augment=False, seed=seed)
 
-    Returns:
-        (train_loader, val_loader)
-    """
-    dc   = dataset_cfg if dataset_cfg is not None else cfg.get("dataset", {})
-    tc   = cfg["training"]
-    hw   = cfg.get("hardware", {})
-    vc   = cfg.get("validation", {})
-    exp  = cfg.get("experiment", {})
-    seed = int(exp.get("seed", 42))
+    num_workers = int(dc.get("num_workers", 8))
+    pin_memory = bool(dc.get("pin_memory", str(hw.get("device", "cuda")).startswith("cuda")))
+    persistent_workers = bool(dc.get("persistent_workers", True)) and num_workers > 0
+    prefetch_factor = int(dc.get("prefetch_factor", 2)) if num_workers > 0 else None
 
-    train_ds = build_dataset(dc, "train", augment=True,  seed=seed)
-    val_ds   = build_dataset(dc, "val",   augment=False, seed=seed)
-
-    nw = int(dc.get("num_workers", 8))
-    pin = bool(dc.get("pin_memory", str(hw.get("device", "cuda")).startswith("cuda")))
-    persistent_workers = bool(dc.get("persistent_workers", True)) and nw > 0
-    prefetch_factor = int(dc.get("prefetch_factor", 2)) if nw > 0 else None
-
-    sampler = _make_train_sampler(train_ds, dc)
-    use_shuffle = sampler is None
-
-    train_loader_kwargs = {
+    train_kwargs = {
         "dataset": train_ds,
         "batch_size": int(tc["batch_size"]),
-        "shuffle": use_shuffle,
-        "sampler": sampler,
-        "num_workers": nw,
-        "pin_memory": pin,
+        "shuffle": True,
+        "num_workers": num_workers,
+        "pin_memory": pin_memory,
         "drop_last": True,
         "persistent_workers": persistent_workers,
     }
-    if prefetch_factor is not None:
-        train_loader_kwargs["prefetch_factor"] = prefetch_factor
-
-    val_loader_kwargs = {
+    val_kwargs = {
         "dataset": val_ds,
         "batch_size": int(vc.get("batch_size", tc["batch_size"])),
         "shuffle": False,
-        "num_workers": nw,
-        "pin_memory": pin,
+        "num_workers": num_workers,
+        "pin_memory": pin_memory,
         "persistent_workers": persistent_workers,
     }
     if prefetch_factor is not None:
-        val_loader_kwargs["prefetch_factor"] = prefetch_factor
-
-    train_loader = DataLoader(**train_loader_kwargs)
-    val_loader = DataLoader(**val_loader_kwargs)
-    if _is_levir(str(dc.get("name", ""))):
-        log_levir_split_summary(logger, dc, train_ds=train_ds, val_ds=val_ds)
-        log_split_diagnostics(train_ds, "train", logger)
-        log_split_diagnostics(val_ds, "val", logger)
-    return train_loader, val_loader
+        train_kwargs["prefetch_factor"] = prefetch_factor
+        val_kwargs["prefetch_factor"] = prefetch_factor
+    return DataLoader(**train_kwargs), DataLoader(**val_kwargs)
 
 
 def build_test_loader(cfg: dict, dataset_cfg: Optional[dict] = None) -> DataLoader:
-    """Build a test DataLoader from config."""
-    dc   = dataset_cfg if dataset_cfg is not None else cfg.get("dataset", {})
-    tc   = cfg.get("training", {})
-    hw   = cfg.get("hardware", {})
-    vc   = cfg.get("validation", {})
-    exp  = cfg.get("experiment", {})
-    seed = int(exp.get("seed", 42))
-
-    split   = str(cfg.get("evaluation", {}).get("split", "test"))
+    """Build a test loader."""
+    dc = dataset_cfg if dataset_cfg is not None else cfg.get("dataset", {})
+    tc = cfg.get("training", {})
+    hw = cfg.get("hardware", {})
+    vc = cfg.get("validation", {})
+    seed = int(cfg.get("experiment", {}).get("seed", 42))
+    split = str(cfg.get("evaluation", {}).get("split", "test"))
     test_ds = build_dataset(dc, split, augment=False, seed=seed)
 
-    nw = int(dc.get("num_workers", 8))
-    pin = bool(dc.get("pin_memory", str(hw.get("device", "cuda")).startswith("cuda")))
-    persistent_workers = bool(dc.get("persistent_workers", True)) and nw > 0
-    prefetch_factor = int(dc.get("prefetch_factor", 2)) if nw > 0 else None
-    loader_kwargs = {
+    num_workers = int(dc.get("num_workers", 8))
+    pin_memory = bool(dc.get("pin_memory", str(hw.get("device", "cuda")).startswith("cuda")))
+    persistent_workers = bool(dc.get("persistent_workers", True)) and num_workers > 0
+    prefetch_factor = int(dc.get("prefetch_factor", 2)) if num_workers > 0 else None
+    kwargs = {
         "dataset": test_ds,
         "batch_size": int(vc.get("batch_size", tc.get("batch_size", 8))),
         "shuffle": False,
-        "num_workers": nw,
-        "pin_memory": pin,
+        "num_workers": num_workers,
+        "pin_memory": pin_memory,
         "persistent_workers": persistent_workers,
     }
     if prefetch_factor is not None:
-        loader_kwargs["prefetch_factor"] = prefetch_factor
-    loader = DataLoader(**loader_kwargs)
-    if _is_levir(str(dc.get("name", ""))):
-        log_levir_split_summary(logger, dc, test_ds=test_ds)
-        log_split_diagnostics(test_ds, split, logger)
-    return loader
+        kwargs["prefetch_factor"] = prefetch_factor
+    return DataLoader(**kwargs)

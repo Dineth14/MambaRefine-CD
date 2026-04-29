@@ -304,9 +304,6 @@ def _normalize_config(data: dict[str, Any]) -> dict[str, Any]:
     model = data.get("model", {})
     model.setdefault("output_mode", "binary")
     model.setdefault("num_classes", 1)
-    model.setdefault("semantic_num_classes", int(data.get("dataset", {}).get("num_classes", 7)))
-    model.setdefault("enable_semantic_heads", False)
-    model.setdefault("semantic_head_type", "lightweight")
     data["model"] = model
     _apply_explicit_model_module_flags(data)
 
@@ -315,10 +312,7 @@ def _normalize_config(data: dict[str, Any]) -> dict[str, Any]:
     checkpoint.setdefault("path", None)
     if "selection_metric" in checkpoint and "monitor" not in checkpoint:
         checkpoint["monitor"] = checkpoint["selection_metric"]
-    checkpoint.setdefault(
-        "monitor",
-        "Fscd" if str(data.get("task", "")).lower() == "semantic_cd" or str(data.get("dataset", {}).get("name", "")).upper() == "SECOND" else "f1",
-    )
+    checkpoint.setdefault("monitor", "f1")
     checkpoint.setdefault("mode", "max")
     checkpoint.setdefault("save_best_only", True)
     data["checkpoint"] = checkpoint
@@ -335,12 +329,9 @@ def _normalize_config(data: dict[str, Any]) -> dict[str, Any]:
     dataset_cfg.setdefault("pin_memory", True)
     dataset_cfg.setdefault("persistent_workers", True)
     dataset_cfg.setdefault("prefetch_factor", 4)
-    dataset_cfg.setdefault("task_type", "semantic_change" if str(dataset_cfg.get("mode", "binary")).lower() == "semantic" else "binary_change")
-    dataset_cfg.setdefault("precompute_second_binary_masks", False)
-    dataset_cfg.setdefault("second_binary_cache_dir", "outputs/second_binary_masks")
+    dataset_cfg.setdefault("task_type", "binary_change")
     dataset_cfg.setdefault("cache_images_in_ram", False)
     dataset_cfg.setdefault("cache_masks_in_ram", False)
-    dataset_cfg.setdefault("second_label_palette", None)
     data["dataset"] = dataset_cfg
 
     evaluation = data.get("evaluation", {})
@@ -360,13 +351,10 @@ def _normalize_config(data: dict[str, Any]) -> dict[str, Any]:
     else:
         evaluation.setdefault("threshold_sweep", False)
     evaluation.setdefault("tta_augmentations", ["original", "hflip", "vflip", "rot90"])
-    evaluation.setdefault("threshold_select_metric", "mF1")
+    evaluation.setdefault("threshold_select_metric", "F1_1")
     evaluation.setdefault("inference_mode", "patch")
     evaluation.setdefault("crop_size", dataset_cfg.get("image_size", 256))
     evaluation.setdefault("overlap", 0.25)
-    evaluation.setdefault("second_metrics", False)
-    evaluation.setdefault("compute_SeK", True)
-    evaluation.setdefault("sek_binary_fallback", False)
     data["evaluation"] = evaluation
     data["eval"] = evaluation
 
@@ -381,10 +369,8 @@ def _normalize_config(data: dict[str, Any]) -> dict[str, Any]:
         loss_cfg["bce_weight"] = float(final_cfg.get("bce_weight", loss_cfg.get("bce_weight", 1.0)))
         loss_cfg["dice_weight"] = float(final_cfg.get("dice_weight", loss_cfg.get("dice_weight", 1.0)))
         # A nested final loss means the ablation intended the simple binary loss
-        # family, so clear inherited focal/SeK weights unless explicitly set at
-        # the same nested level.
+        # family, so clear inherited focal weight unless explicitly set there.
         loss_cfg["focal_weight"] = float(final_cfg.get("focal_weight", 0.0))
-        loss_cfg["sek_weight"] = float(final_cfg.get("sek_weight", 0.0))
     boundary_cfg = loss_cfg.get("boundary", {}) if isinstance(loss_cfg.get("boundary", {}), dict) else {}
     if boundary_cfg:
         loss_cfg["boundary_weight"] = float(boundary_cfg.get("weight", 0.0)) if bool(boundary_cfg.get("enabled", False)) else 0.0
@@ -397,17 +383,6 @@ def _normalize_config(data: dict[str, Any]) -> dict[str, Any]:
     loss_cfg.setdefault("focal_weight", 0.3)
     loss_cfg.setdefault("focal_gamma", 1.5)
     loss_cfg.setdefault("bce_weight", 1.0)
-    loss_cfg.setdefault("sek_weight", 0.05)
-    loss_cfg.setdefault("change_loss_weight", 1.0)
-    loss_cfg.setdefault("semantic_loss_weight", 0.5)
-    loss_cfg.setdefault("consistency_loss_weight", 0.2)
-    loss_cfg.setdefault("sek_loss_weight", 0.3)
-    loss_cfg.setdefault("ce_weight", 1.0)
-    loss_cfg.setdefault("sek_mode", str(dataset_cfg.get("mode", "binary")))
-    loss_cfg.setdefault("sek_eps", 1e-6)
-    loss_cfg.setdefault("sek_separate_nochange", False)
-    loss_cfg.setdefault("consistency_detach_semantic", True)
-    loss_cfg.setdefault("consistency_loss_type", "bce")
     data["loss"] = loss_cfg
 
     debug = data.get("debug", {})
@@ -440,9 +415,9 @@ def _normalize_config(data: dict[str, Any]) -> dict[str, Any]:
     benchmark = data.get("benchmark", {})
     benchmark.setdefault("model_name", data["experiment"].get("name", "model"))
     benchmark.setdefault("output_dir", "outputs/benchmark_runs/summary")
-    benchmark.setdefault("datasets", ["LEVIR-CD", "WHU-CD", "SYSU-CD", "DSIFN-CD", "SECOND"])
+    benchmark.setdefault("datasets", ["DSIFN-CD", "WHU-CD"])
     benchmark.setdefault("eval_split", "test")
-    benchmark.setdefault("main_dataset", data["dataset"].get("name", "LEVIR-CD"))
+    benchmark.setdefault("main_dataset", data["dataset"].get("name", "DSIFN-CD"))
     benchmark.setdefault("checkpoints", {})
     data["benchmark"] = benchmark
 

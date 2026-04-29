@@ -15,7 +15,7 @@ Features
 Usage
 -----
     evaluator = Evaluator(cfg, device, save_dir=output_dir / "validation")
-    results   = evaluator.evaluate(model, loader, dataset_name="LEVIR-CD")
+    results   = evaluator.evaluate(model, loader, dataset_name="DSIFN-CD")
 
 Config keys
 -----------
@@ -50,7 +50,6 @@ from training.metrics          import StreamingMetrics
 from training.boundary_metrics import BoundaryMetrics
 from training.logger           import log_table
 from training.model_outputs    import normalize_model_output
-from training.second_metrics   import SECONDMetrics
 from training.tta              import apply_tta, build_tta_augmentations
 
 
@@ -123,9 +122,9 @@ class Evaluator:
         self.threshold_select_metric: str = str(
             ec.get("threshold_select_metric", "mF1")
         )
-        self.second_metrics_enabled = bool(ec.get("second_metrics", False))
-        self.compute_sek = bool(ec.get("compute_SeK", True))
-        self.sek_binary_fallback = bool(ec.get("sek_binary_fallback", False))
+        self.archived_metrics_enabled = False
+        self.compute_sek = False
+        self.sek_binary_fallback = False
         self.use_tta          = bool(ec.get("use_tta", False))
         self.tta_augmentations = build_tta_augmentations(cfg)
         self.inference_mode = str(ec.get("inference_mode", "patch")).lower()
@@ -137,7 +136,7 @@ class Evaluator:
         self.save_predictions = bool(ec.get("save_predictions", cfg.get("output", {}).get("save_predictions", False)))
         self.save_visualizations = bool(ec.get("save_visualizations", cfg.get("output", {}).get("save_visualizations", True)))
         self.save_binary_head_change = bool(ec.get("save_binary_head_change", cfg.get("output", {}).get("save_binary_head_change", False)))
-        self.debug_output_root = Path(ec.get("debug_output_root", "outputs/debug_levir_eval"))
+        self.debug_output_root = Path(ec.get("debug_output_root", "debug/eval"))
         self.debug_max_samples = int(ec.get("debug_max_samples", 20))
         self._debug_saved = 0
 
@@ -145,8 +144,8 @@ class Evaluator:
         model_cfg = cfg.get("model", {})
         self.output_mode = str(model_cfg.get("output_mode", "binary")).lower()
         self.dataset_mode = str(dataset_cfg.get("mode", "binary")).lower()
-        self.second_num_classes = int(dataset_cfg.get("num_classes", model_cfg.get("semantic_num_classes", 7)))
-        self.second_ignore_index = int(dataset_cfg.get("ignore_index", 255))
+        self.archived_num_classes = int(dataset_cfg.get("num_classes", 1))
+        self.archived_ignore_index = int(dataset_cfg.get("ignore_index", 255))
 
         bm_cfg           = cfg.get("boundary_metrics", {})
         self.bnd_width   = int(bm_cfg.get("boundary_width", 3))
@@ -184,8 +183,8 @@ class Evaluator:
             return tensor[:, 0]
         return tensor
 
-    def _uses_second_metrics(self, dataset_name: str) -> bool:
-        return dataset_name.strip().upper() == "SECOND" and self.second_metrics_enabled
+    def _uses_archived_metrics(self, dataset_name: str) -> bool:
+        return False
 
     @torch.no_grad()
     def _collect_logits(
@@ -238,7 +237,7 @@ class Evaluator:
             if self.log_mask_debug and batch_start < 5:
                 self._log_mask_debug(batch, lb, batch_start, getattr(loader, "dataset", None))
 
-            if self.save_debug_outputs and self._debug_saved < self.debug_max_samples and not self._uses_second_metrics(dataset_name):
+            if self.save_debug_outputs and self._debug_saved < self.debug_max_samples:
                 self._save_binary_debug_batch(batch, logits, lb, dataset_name)
 
             all_logits.append(logits.cpu())
@@ -247,44 +246,6 @@ class Evaluator:
                 if key in batch:
                     extras[key].append(batch[key].cpu())
             extras["sample_ids"].extend([str(x) for x in batch.get("name", batch.get("id", []))])
-            if outputs.get("sem_logits_t1") is not None:
-                pred_sem1 = torch.argmax(outputs["sem_logits_t1"], dim=1)
-                extras["pred_sem1"].append(pred_sem1.cpu())
-            if outputs.get("sem_logits_t2") is not None:
-                pred_sem2 = torch.argmax(outputs["sem_logits_t2"], dim=1)
-                extras["pred_sem2"].append(pred_sem2.cpu())
-            if (
-                self.save_dir is not None
-                and self.save_predictions
-                and self._uses_second_metrics(dataset_name)
-                and outputs.get("sem_logits_t1") is not None
-                and outputs.get("sem_logits_t2") is not None
-            ):
-                from utils.second_outputs import save_second_prediction_batch, second_semantic_predictions
-
-                pred_t1, pred_t2, pred_change = second_semantic_predictions(outputs)
-                sample_ids = batch.get("sample_id", batch.get("name", batch.get("id", [f"sample_{batch_start + i}" for i in range(ia.shape[0])])))
-                split = str(_merged_eval_cfg(self.cfg).get("split", "eval"))
-                gt_t1 = batch.get("label_t1", batch.get("label_a"))
-                gt_t2 = batch.get("label_t2", batch.get("label_b"))
-                gt_change = batch.get("change_mask")
-                save_second_prediction_batch(
-                    pred_t1=pred_t1,
-                    pred_t2=pred_t2,
-                    pred_change=pred_change,
-                    sample_ids=sample_ids,
-                    output_root=self.save_dir,
-                    split=split,
-                    binary_head_logits=logits,
-                    save_visualizations=self.save_visualizations,
-                    save_binary_head_change=self.save_binary_head_change,
-                    threshold=self.threshold,
-                    image_t1=batch.get("image_t1", batch.get("image_a")),
-                    image_t2=batch.get("image_t2", batch.get("image_b")),
-                    gt_t1=gt_t1,
-                    gt_t2=gt_t2,
-                    gt_change=gt_change,
-                )
 
         all_logits = torch.cat(all_logits, dim=0)   # [N, 1, H, W]
         all_labels = torch.cat(all_labels, dim=0)
@@ -465,63 +426,6 @@ class Evaluator:
             result.setdefault("edge_iou",    0.0)
         return result
 
-    def _second_metrics_at_threshold(
-        self,
-        all_logits: torch.Tensor,
-        all_labels: torch.Tensor,
-        extras: dict,
-        threshold: float,
-    ) -> dict:
-        metrics = SECONDMetrics(
-            num_classes=self.second_num_classes,
-            ignore_index=self.second_ignore_index,
-            compute_sek=self.compute_sek,
-            sek_binary_fallback=self.sek_binary_fallback,
-        )
-        bs = 8
-        n = all_logits.shape[0]
-        for start in range(0, n, bs):
-            end = start + bs
-            logits = all_logits[start:end].float()
-            change_gt = all_labels[start:end] > 0.5
-
-            ignore_mask = self._squeeze_spatial(extras.get("ignore_mask")[start:end] if extras.get("ignore_mask") is not None else None)
-            valid_mask = self._squeeze_spatial(extras.get("valid_mask")[start:end] if extras.get("valid_mask") is not None else None)
-            if valid_mask is None and ignore_mask is not None:
-                valid_mask = ~ignore_mask.bool()
-            label_a = extras.get("label_a")
-            label_b = extras.get("label_b")
-            label_a = label_a[start:end] if label_a is not None else None
-            label_b = label_b[start:end] if label_b is not None else None
-            pred_sem1 = extras.get("pred_sem1")
-            pred_sem2 = extras.get("pred_sem2")
-            pred_sem1 = pred_sem1[start:end] if pred_sem1 is not None else None
-            pred_sem2 = pred_sem2[start:end] if pred_sem2 is not None else None
-            if start == 0 and pred_sem1 is not None and pred_sem2 is not None and label_a is not None and label_b is not None:
-                valid_for_log = (label_a != self.second_ignore_index) & (label_b != self.second_ignore_index)
-                self.logger.info(
-                    "SECOND sanity | gt_t1=%s gt_t2=%s pred_t1=%s pred_t2=%s ignore=%d valid=%d change_ratio=%.6f",
-                    sorted(torch.unique(label_a.detach().cpu()).tolist()),
-                    sorted(torch.unique(label_b.detach().cpu()).tolist()),
-                    sorted(torch.unique(pred_sem1.detach().cpu()).tolist()),
-                    sorted(torch.unique(pred_sem2.detach().cpu()).tolist()),
-                    int((~valid_for_log).sum().item()),
-                    int(valid_for_log.sum().item()),
-                    float((((label_a != label_b) & valid_for_log).sum().float() / valid_for_log.sum().clamp_min(1)).item()),
-                )
-            metrics.update(
-                change_pred_binary=None,
-                change_pred_semantic=None,
-                change_gt=self._squeeze_spatial(change_gt),
-                pred_sem1=pred_sem1,
-                pred_sem2=pred_sem2,
-                gt_sem1=label_a,
-                gt_sem2=label_b,
-                valid_mask=valid_mask,
-            )
-
-        return metrics.compute()
-
     # ------------------------------------------------------------------
     # Public evaluate
     # ------------------------------------------------------------------
@@ -541,7 +445,6 @@ class Evaluator:
         model.eval()
 
         # ── 1. Collect all logits in one pass ────────────────────────────
-        use_second_metrics = self._uses_second_metrics(dataset_name)
         all_logits, all_labels, extras, num_samples = self._collect_logits(
             model, loader, amp, dataset_name
         )
@@ -549,7 +452,7 @@ class Evaluator:
         # ── 2. Threshold selection ────────────────────────────────────────
         if self.do_sweep:
             best_thr, best_f1, sweep_log = self._threshold_sweep(
-                all_logits, all_labels, extras=extras, use_second_metrics=use_second_metrics
+                all_logits, all_labels, extras=extras
             )
         else:
             best_thr = self.threshold
@@ -557,61 +460,36 @@ class Evaluator:
             sweep_log = None
 
         # ── 3. Full metrics at best threshold (including boundary) ────────
-        if use_second_metrics:
-            result = self._second_metrics_at_threshold(
-                all_logits, all_labels, extras, best_thr
-            )
-            if self.save_dir is not None and self.save_predictions:
-                from utils.second_outputs import assert_second_prediction_dirs, save_second_prediction_batch
-
-                pred_sem1 = extras.get("pred_sem1")
-                pred_sem2 = extras.get("pred_sem2")
-                sample_ids = extras.get("sample_ids") or [f"sample_{i}" for i in range(pred_sem1.shape[0] if pred_sem1 is not None else 0)]
-                if pred_sem1 is not None and pred_sem2 is not None:
-                    save_second_prediction_batch(
-                        pred_t1=pred_sem1,
-                        pred_t2=pred_sem2,
-                        pred_change=pred_sem1 != pred_sem2,
-                        sample_ids=sample_ids,
-                        output_root=self.save_dir,
-                        split=str(_merged_eval_cfg(self.cfg).get("split", "eval")),
-                        binary_head_logits=all_logits if self.save_binary_head_change else None,
-                        save_visualizations=self.save_visualizations,
-                        save_binary_head_change=self.save_binary_head_change,
-                        threshold=best_thr,
-                    )
-                    assert_second_prediction_dirs(self.save_dir, split=str(_merged_eval_cfg(self.cfg).get("split", "eval")))
-        else:
-            result = self._metrics_at_threshold(
-                all_logits,
-                all_labels,
-                best_thr,
-                compute_boundary=bool(self.cfg.get("debug", {}).get("metrics", False)),
-            )
-            diagnostic_result = dict(result)
-            if not bool(self.cfg.get("debug", {}).get("metrics", False)):
-                result = {
-                    key: result[key]
-                    for key in ("precision", "recall", "f1", "iou", "oa")
-                    if key in result
-                }
-                for key in ("pred_positive_ratio", "gt_positive_ratio"):
-                    if key in diagnostic_result:
-                        result[key] = diagnostic_result[key]
-            probs = torch.sigmoid(torch.clamp(all_logits.float(), -20.0, 20.0))
-            result["mean_sigmoid_probability"] = float(probs.mean().item())
-            result["min_sigmoid_probability"] = float(probs.min().item())
-            result["max_sigmoid_probability"] = float(probs.max().item())
-            self.logger.info(
-                "Prediction diagnostic | pred_positive_ratio=%.6f gt_positive_ratio=%.6f "
-                "mean_prob=%.6f min_prob=%.6f max_prob=%.6f threshold=%.2f",
-                float(result.get("pred_positive_ratio", 0.0)),
-                float(result.get("gt_positive_ratio", 0.0)),
-                result["mean_sigmoid_probability"],
-                result["min_sigmoid_probability"],
-                result["max_sigmoid_probability"],
-                best_thr,
-            )
+        result = self._metrics_at_threshold(
+            all_logits,
+            all_labels,
+            best_thr,
+            compute_boundary=bool(self.cfg.get("debug", {}).get("metrics", False)),
+        )
+        diagnostic_result = dict(result)
+        if not bool(self.cfg.get("debug", {}).get("metrics", False)):
+            result = {
+                key: result[key]
+                for key in ("precision", "recall", "f1", "iou", "oa")
+                if key in result
+            }
+            for key in ("pred_positive_ratio", "gt_positive_ratio"):
+                if key in diagnostic_result:
+                    result[key] = diagnostic_result[key]
+        probs = torch.sigmoid(torch.clamp(all_logits.float(), -20.0, 20.0))
+        result["mean_sigmoid_probability"] = float(probs.mean().item())
+        result["min_sigmoid_probability"] = float(probs.min().item())
+        result["max_sigmoid_probability"] = float(probs.max().item())
+        self.logger.info(
+            "Prediction diagnostic | pred_positive_ratio=%.6f gt_positive_ratio=%.6f "
+            "mean_prob=%.6f min_prob=%.6f max_prob=%.6f threshold=%.2f",
+            float(result.get("pred_positive_ratio", 0.0)),
+            float(result.get("gt_positive_ratio", 0.0)),
+            result["mean_sigmoid_probability"],
+            result["min_sigmoid_probability"],
+            result["max_sigmoid_probability"],
+            best_thr,
+        )
         result["best_threshold"] = best_thr
         result["dataset"]        = dataset_name
         result["num_samples"]    = num_samples
@@ -625,7 +503,7 @@ class Evaluator:
     # ------------------------------------------------------------------
     # Threshold sweep
     # ------------------------------------------------------------------
-    def _threshold_sweep(self, all_logits, all_labels, extras=None, use_second_metrics: bool = False):
+    def _threshold_sweep(self, all_logits, all_labels, extras=None):
         """Try all thresholds in threshold_list.
 
         Selects the best threshold by ``self.threshold_select_metric``
@@ -636,52 +514,34 @@ class Evaluator:
         Returns:
             (best_thr, best_score, sweep_log)
         """
-        if use_second_metrics:
-            tracked_metrics = ["OA", "mIoU", "SeK", "Fscd"]
-            primary_key = self.threshold_select_metric if self.threshold_select_metric in tracked_metrics else "Fscd"
-            best_by = {key: (-1.0, None) for key in tracked_metrics}
-            sweep_log: dict = {}
-            for thr in self.threshold_list:
-                m = self._second_metrics_at_threshold(all_logits, all_labels, extras or {}, thr)
-                sweep_log[f"{thr:.2f}"] = {
-                    key: round(float(m.get(key, 0.0) or 0.0), 6)
-                    for key in tracked_metrics
-                }
-                for key in tracked_metrics:
-                    value = float(m.get(key, 0.0) or 0.0)
-                    if value > best_by[key][0]:
-                        best_by[key] = (value, thr)
-            best_thr = best_by[primary_key][1] if best_by[primary_key][1] is not None else self.threshold
-            best_score = best_by[primary_key][0]
-        else:
-            _metric_key_map = {
-                "mF1":  "mf1",
-                "F1_1": "f1_1",
-                "IoU_1": "iou_1",
+        _metric_key_map = {
+            "mF1":  "mf1",
+            "F1_1": "f1_1",
+            "IoU_1": "iou_1",
+        }
+        primary_key = _metric_key_map.get(self.threshold_select_metric, "mf1")
+
+        best_by: dict = {"mf1": (-1.0, None), "f1_1": (-1.0, None), "iou_1": (-1.0, None)}
+        sweep_log: dict = {}
+
+        for thr in self.threshold_list:
+            m = self._metrics_at_threshold(
+                all_logits, all_labels, thr, compute_boundary=False
+            )
+            mf1_val  = float(m.get("mf1",  m.get("f1", 0.0)))
+            f1_1_val = float(m.get("f1_1", m.get("f1", 0.0)))
+            iou_1_val = float(m.get("iou_1", m.get("iou", 0.0)))
+            sweep_log[f"{thr:.2f}"] = {
+                "mf1":  round(mf1_val, 6),
+                "f1_1": round(f1_1_val, 6),
+                "iou_1": round(iou_1_val, 6),
             }
-            primary_key = _metric_key_map.get(self.threshold_select_metric, "mf1")
+            for mk, val in [("mf1", mf1_val), ("f1_1", f1_1_val), ("iou_1", iou_1_val)]:
+                if val > best_by[mk][0]:
+                    best_by[mk] = (val, thr)
 
-            best_by: dict = {"mf1": (-1.0, None), "f1_1": (-1.0, None), "iou_1": (-1.0, None)}
-            sweep_log: dict = {}
-
-            for thr in self.threshold_list:
-                m = self._metrics_at_threshold(
-                    all_logits, all_labels, thr, compute_boundary=False
-                )
-                mf1_val  = float(m.get("mf1",  m.get("f1", 0.0)))
-                f1_1_val = float(m.get("f1_1", m.get("f1", 0.0)))
-                iou_1_val = float(m.get("iou_1", m.get("iou", 0.0)))
-                sweep_log[f"{thr:.2f}"] = {
-                    "mf1":  round(mf1_val, 6),
-                    "f1_1": round(f1_1_val, 6),
-                    "iou_1": round(iou_1_val, 6),
-                }
-                for mk, val in [("mf1", mf1_val), ("f1_1", f1_1_val), ("iou_1", iou_1_val)]:
-                    if val > best_by[mk][0]:
-                        best_by[mk] = (val, thr)
-
-            best_thr   = best_by[primary_key][1]
-            best_score = best_by[primary_key][0]
+        best_thr   = best_by[primary_key][1]
+        best_score = best_by[primary_key][0]
 
         self.logger.info(
             f"  Threshold sweep → best={best_thr:.2f}  "
@@ -691,31 +551,18 @@ class Evaluator:
         # Save best_thresholds.json if save_dir is configured
         if self.save_dir is not None:
             self.save_dir.mkdir(parents=True, exist_ok=True)
-            if use_second_metrics:
-                thr_data = {
-                    "select_metric": self.threshold_select_metric,
-                    "best_thresholds": {
-                        key: {"threshold": best_by[key][1], "value": round(best_by[key][0], 6)}
-                        for key in tracked_metrics
-                    },
-                    "sweep": sweep_log,
-                }
-                (self.save_dir / "best_thresholds_SECOND.json").write_text(
-                    json.dumps(thr_data, indent=2)
-                )
-            else:
-                thr_data = {
-                    "select_metric": self.threshold_select_metric,
-                    "best_thresholds": {
-                        "mF1":  {"threshold": best_by["mf1"][1],  "value": round(best_by["mf1"][0],  6)},
-                        "F1_1": {"threshold": best_by["f1_1"][1], "value": round(best_by["f1_1"][0], 6)},
-                        "IoU_1": {"threshold": best_by["iou_1"][1], "value": round(best_by["iou_1"][0], 6)},
-                    },
-                    "sweep": sweep_log,
-                }
-                (self.save_dir / "best_thresholds.json").write_text(
-                    json.dumps(thr_data, indent=2)
-                )
+            thr_data = {
+                "select_metric": self.threshold_select_metric,
+                "best_thresholds": {
+                    "mF1":  {"threshold": best_by["mf1"][1],  "value": round(best_by["mf1"][0],  6)},
+                    "F1_1": {"threshold": best_by["f1_1"][1], "value": round(best_by["f1_1"][0], 6)},
+                    "IoU_1": {"threshold": best_by["iou_1"][1], "value": round(best_by["iou_1"][0], 6)},
+                },
+                "sweep": sweep_log,
+            }
+            (self.save_dir / "best_thresholds.json").write_text(
+                json.dumps(thr_data, indent=2)
+            )
 
         return best_thr, best_score, sweep_log
 
@@ -724,10 +571,6 @@ class Evaluator:
     # ------------------------------------------------------------------
     def _save_outputs(self, result: dict, sweep_log, dataset_name: str) -> None:
         self.save_dir.mkdir(parents=True, exist_ok=True)
-
-        if result.get("metric_family") == "second":
-            self._save_second_outputs(result, sweep_log, dataset_name)
-            return
 
         # best_thresholds.json (written by _threshold_sweep when sweep is on;
         # write a simple single-threshold version when sweep is off)
@@ -786,49 +629,6 @@ class Evaluator:
                 tta_data["sweep"] = sweep_log
             tta_path.write_text(json.dumps(tta_data, indent=2))
 
-    def _save_second_outputs(self, result: dict, sweep_log, dataset_name: str) -> None:
-        if not self.do_sweep:
-            thr_data = {
-                "select_metric": self.threshold_select_metric,
-                "best_thresholds": {
-                    "Fscd": {
-                        "threshold": result["best_threshold"],
-                        "value": round(float(result.get("Fscd", 0.0)), 6),
-                    },
-                },
-            }
-            (self.save_dir / "best_thresholds_SECOND.json").write_text(json.dumps(thr_data, indent=2))
-
-        second_payload = {
-            "dataset": dataset_name,
-            "evaluation_mode": result.get("second_eval_level", "semantic_change"),
-            "output_mode": self.output_mode,
-            "metrics": {
-                "OA": result.get("OA"),
-                "mIoU": result.get("mIoU"),
-                "SeK": result.get("SeK"),
-                "Fscd": result.get("Fscd"),
-            },
-        }
-        if sweep_log:
-            second_payload["sweep"] = sweep_log
-        (self.save_dir / "second_metrics.json").write_text(json.dumps(second_payload, indent=2))
-        if result.get("second_eval_level") == "semantic_change":
-            (self.save_dir / "second_semantic_metrics.json").write_text(json.dumps(second_payload, indent=2))
-
-        csv_path = self.save_dir / "second_metrics.csv"
-        headers = ["dataset", "OA", "mIoU", "SeK", "Fscd"]
-        with open(csv_path, "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(headers)
-            writer.writerow([
-                dataset_name,
-                result.get("OA", ""),
-                result.get("mIoU", ""),
-                result.get("SeK", ""),
-                result.get("Fscd", ""),
-            ])
-
     # ------------------------------------------------------------------
     # Pretty-print
     # ------------------------------------------------------------------
@@ -838,21 +638,6 @@ class Evaluator:
         self.logger.info(sep)
         self.logger.info(title)
         self.logger.info(sep)
-
-        if results.get("metric_family") == "second":
-            rows = [
-                ("OA", results.get("OA")),
-                ("mIoU", results.get("mIoU")),
-                ("SeK", results.get("SeK")),
-                ("Fscd", results.get("Fscd")),
-            ]
-            for label, val in rows:
-                if isinstance(val, (int, float)):
-                    self.logger.info(f"{label:<22}: {val:.4f}")
-                elif val is None and label in {"SeK"}:
-                    self.logger.info(f"{label:<22}: N/A")
-            self.logger.info(sep)
-            return
 
         # Ordered display list — canonical new keys preferred, fallback to aliases
         def _v(key: str, alias: str | None = None) -> float | None:

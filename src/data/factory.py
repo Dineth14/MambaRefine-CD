@@ -11,11 +11,10 @@ from data.dataset_builder import build_dataloaders as _build_dataloaders
 def build_dataloaders(cfg: dict):
     """Build (train_loader, val_loader) from config.
 
-    Supports LEVIR-CD, WHU-CD, SYSU-CD, DSIFN-CD via ``dataset.name``.
-    Defaults to LEVIR-CD when ``dataset.name`` is absent.
+    Supports DSIFN-CD and WHU-CD via ``dataset.name``.
     """
     # Inject default dataset name for backward compatibility
     dc = cfg.setdefault("dataset", {})
     if "name" not in dc:
-        dc["name"] = "LEVIR-CD"
+        dc["name"] = "DSIFN-CD"
     return _build_dataloaders(cfg)

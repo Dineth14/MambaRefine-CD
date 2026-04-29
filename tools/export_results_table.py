@@ -4,13 +4,12 @@ Reads all metrics.json files under the outputs/ folder and writes
 a consolidated CSV and Markdown table.
 
 Columns:
-  - Binary CD (LEVIR/WHU/DSIFN): Dataset | Experiment | Pre | Rec | F1 | IoU | OA | Params(M) | FLOPs(G)
-  - SECOND:                       Dataset | Experiment | OA  | mIoU | SeK | Fscd | Params(M) | FLOPs(G)
+  - Binary CD: Dataset | Experiment | Pre | Rec | F1 | IoU | OA | Params(M) | FLOPs(G)
 
 Usage:
     python tools/export_results_table.py --outputs_root outputs/
     python tools/export_results_table.py --outputs_root outputs/ --format markdown
-    python tools/export_results_table.py --outputs_root outputs/levir/  --out results/levir_table.csv
+    python tools/export_results_table.py --outputs_root outputs/dsifn/ --out results/dsifn_table.csv
 """
 from __future__ import annotations
 
@@ -24,19 +23,6 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)-8s  %(
 logger = logging.getLogger(__name__)
 
 _BINARY_COLS = ["Pre", "Rec", "F1", "IoU", "OA"]
-_SECOND_COLS = ["OA", "mIoU", "SeK", "Fscd"]
-
-_SECOND_DATASETS = {"second", "scd"}
-
-
-def _is_second(record: dict) -> bool:
-    return record.get("dataset", "").lower() in _SECOND_DATASETS
-
-
-def _cols_for(record: dict) -> list[str]:
-    return _SECOND_COLS if _is_second(record) else _BINARY_COLS
-
-
 def _load_record(metrics_path: Path) -> dict:
     """Load metrics.json and optional params_flops.json from the same directory."""
     record: dict = {}
@@ -122,10 +108,6 @@ def main() -> None:
         logger.warning("No valid records.")
         return
 
-    # Separate binary and SECOND records
-    binary_recs = [r for r in records if not _is_second(r)]
-    second_recs = [r for r in records if _is_second(r)]
-
     def _write(recs: list[dict], metric_cols: list[str], label: str) -> None:
         if not recs:
             return
@@ -147,8 +129,7 @@ def main() -> None:
 
         logger.info(f"Saved {label} table ({len(recs)} rows) → {out_path}")
 
-    _write(binary_recs, _BINARY_COLS, "binary")
-    _write(second_recs, _SECOND_COLS, "second")
+    _write(records, _BINARY_COLS, "binary")
 
 
 if __name__ == "__main__":

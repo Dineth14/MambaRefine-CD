@@ -1,4 +1,4 @@
-"""Binary change detection metrics for LEVIR-CD, WHU-CD, and DSIFN-CD.
+"""Binary change detection metrics for WHU-CD and DSIFN-CD.
 
 Computes ONLY the metrics used in the Mamba-CD paper:
   Pre, Rec, F1, IoU, OA

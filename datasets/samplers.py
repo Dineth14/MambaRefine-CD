@@ -1,7 +1,7 @@
 """Balanced sampler for binary change detection datasets.
 
-Addresses the common problem of change/no-change imbalance in LEVIR-CD
-and similar datasets.
+Addresses the common problem of change/no-change imbalance in binary
+change detection datasets.
 
 Config keys (dataset.balance section)
 ---------------------------------------

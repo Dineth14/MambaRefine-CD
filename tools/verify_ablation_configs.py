@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify LEVIR ablation configs instantiate different models."""
+"""Verify active DSIFN ablation configs instantiate different models."""
 from __future__ import annotations
 
 import argparse
@@ -105,7 +105,7 @@ def verify_one(path: Path, device: torch.device, image_size: int) -> dict:
     flags = module_flags(cfg)
     expected = EXPECTED.get(path.name)
     if expected is None:
-        raise AssertionError(f"Unexpected LEVIR ablation config: {path.name}")
+        raise AssertionError(f"Unexpected DSIFN ablation config: {path.name}")
     mismatched = {k: (flags.get(k), v) for k, v in expected.items() if flags.get(k) != v}
     if mismatched:
         raise AssertionError(f"{path.name} flag mismatch: {mismatched}")
@@ -178,8 +178,8 @@ def write_report(rows: list[dict], path: Path) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Verify LEVIR ablation model/config switches.")
-    parser.add_argument("--config_dir", default="configs/ablations/levir")
+    parser = argparse.ArgumentParser(description="Verify DSIFN ablation model/config switches.")
+    parser.add_argument("--config_dir", default="configs/ablations/dsifn")
     parser.add_argument("--report", default="docs/ABLATION_CONFIG_VERIFICATION.md")
     parser.add_argument("--image_size", type=int, default=64)
     parser.add_argument("--cpu", action="store_true")

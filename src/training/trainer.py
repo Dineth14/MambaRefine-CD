@@ -157,11 +157,7 @@ class Trainer:
         self.dataset_name  = cfg.get("dataset", {}).get("name", "unknown")
         self.model_output_mode = str(cfg.get("model", {}).get("output_mode", "binary")).lower()
         self.dataset_mode = str(cfg.get("dataset", {}).get("mode", "binary")).lower()
-        self.second_semantic_mode = (
-            str(self.dataset_name).upper() == "SECOND"
-            and self.model_output_mode == "semantic_change"
-            and self.dataset_mode == "semantic"
-        )
+        self.archived_semantic_mode = False
 
         # NaN detection / diagnostics
         self.skip_nan_steps   = bool(tc.get("skip_nan_steps", True))
@@ -277,7 +273,7 @@ class Trainer:
         if ignore_mask is not None and torch.is_tensor(ignore_mask):
             ignore_mask = ignore_mask.to(self.device, non_blocking=self.non_blocking_transfer)
             valid_mask = (ignore_mask <= 0.5).float()
-        if self.second_semantic_mode:
+        if self.archived_semantic_mode:
             lb = batch["change_mask"].to(self.device, non_blocking=self.non_blocking_transfer)
             if "valid_mask" in batch and torch.is_tensor(batch["valid_mask"]):
                 valid_mask = batch["valid_mask"].to(self.device, non_blocking=self.non_blocking_transfer).float()
@@ -307,7 +303,7 @@ class Trainer:
             if aux is not None:
                 outputs["aux_logits"] = torch.clamp(aux, -20.0, 20.0)
 
-            if self.second_semantic_mode:
+            if self.archived_semantic_mode:
                 total = self.loss_fn(outputs, semantic_batch)
                 loss_stats = dict(getattr(self.loss_fn, "latest_stats", {}))
                 if not loss_stats:
@@ -353,7 +349,7 @@ class Trainer:
                 "logits": logits,
                 "loss":   total,
             }
-            if self.second_semantic_mode:
+            if self.archived_semantic_mode:
                 if outputs.get("sem_logits_t1") is not None:
                     tensor_checks["sem_logits_t1"] = outputs["sem_logits_t1"]
                 if outputs.get("sem_logits_t2") is not None:
@@ -402,13 +398,13 @@ class Trainer:
 
         if loss_stats.get("sek_was_sanitized"):
             self.logger.warning(
-                "[SeK loss @ iter %s] SeK-inspired loss became NaN/Inf; using sek_loss=0 for this batch.",
+                "[archived loss @ iter %s] archived auxiliary loss became NaN/Inf; using auxiliary_loss=0 for this batch.",
                 iteration,
             )
 
         return {
             "loss": loss_val,
-            "dice_loss": float(loss_stats.get("dice_loss", 0.0 if self.second_semantic_mode else float(dice.detach().item()))),
+            "dice_loss": float(loss_stats.get("dice_loss", 0.0 if self.archived_semantic_mode else float(dice.detach().item()))),
             "focal_loss": float(loss_stats.get("focal_loss", 0.0)),
             "sek_loss": float(loss_stats.get("sek_loss", 0.0)),
             "soft_kappa": float(loss_stats.get("soft_kappa", 0.0)),
@@ -469,21 +465,16 @@ class Trainer:
             train_ds = self.train_loader.dataset
             val_ds   = self.val_loader.dataset
             stats = log_dataset_stats(train_ds, val_ds, None, self.logger, dc)
-            manifest_path = self.output_dir / "dataset_manifests" / "levircd_manifest.json"
+            manifest_path = self.output_dir / "dataset_manifests" / "dataset_manifest.json"
             save_dataset_manifest(stats, dc, manifest_path)
         except Exception as _e:
             self.logger.warning(f"Dataset stats logging skipped: {_e}")
 
-        if self.second_semantic_mode:
-            csv_cols = [
-                "iteration", "dataset", "OA", "mIoU", "SeK", "Fscd",
-            ]
-        else:
-            csv_cols = [
-                "iteration", "dataset",
-                "precision", "recall", "f1", "iou", "oa",
-                "best_threshold",
-            ]
+        csv_cols = [
+            "iteration", "dataset",
+            "precision", "recall", "f1", "iou", "oa",
+            "best_threshold",
+        ]
         if not self.val_csv.exists():
             with open(self.val_csv, "w", newline="") as f:
                 csv.writer(f).writerow(csv_cols)
@@ -516,7 +507,7 @@ class Trainer:
                 def _fmt(v):
                     return f"{v:.4f}" if isinstance(v, float) and not (v != v) else "NaN"
                 loss_type = str(self.cfg.get("loss", {}).get("type", "bce_dice")).lower().replace("-", "_")
-                if self.second_semantic_mode:
+                if self.archived_semantic_mode:
                     msg = (
                         f"[{iteration+1}/{self.max_iter}] "
                         f"loss={_fmt(step_stats['loss'])} "
@@ -553,7 +544,7 @@ class Trainer:
                     self.writer.add_scalar("train/sek_loss", step_stats["sek_loss"], iteration)
                     self.writer.add_scalar("train/soft_kappa", step_stats["soft_kappa"], iteration)
                     self.writer.add_scalar("train/bce", step_stats["bce_loss"], iteration)
-                    if self.second_semantic_mode:
+                    if self.archived_semantic_mode:
                         self.writer.add_scalar("train/change_loss", step_stats["change_loss"], iteration)
                         self.writer.add_scalar("train/sem_t1_loss", step_stats["sem_t1_loss"], iteration)
                         self.writer.add_scalar("train/sem_t2_loss", step_stats["sem_t2_loss"], iteration)
@@ -570,7 +561,7 @@ class Trainer:
                 log_table(self.logger, vm, title="")  # detailed table
 
                 if self.writer:
-                    writer_keys = set(csv_cols[2:]) if not self.second_semantic_mode else None
+                    writer_keys = set(csv_cols[2:]) if not self.archived_semantic_mode else None
                     for k, v in vm.items():
                         if writer_keys is not None and k not in writer_keys:
                             continue
@@ -620,12 +611,10 @@ class Trainer:
         sep = "-" * 42
         self.logger.info(sep)
         self.logger.info(f"Validation Results  (iter {iteration})")
-        if self.second_semantic_mode:
+        if self.archived_semantic_mode:
             self.logger.info(f"  OA              : {vm.get('OA', 0.0):.4f}")
             self.logger.info(f"  mIoU            : {vm.get('mIoU', 0.0):.4f}")
-            sek_val = vm.get('SeK')
-            self.logger.info(f"  SeK             : {'N/A' if sek_val is None else f'{sek_val:.4f}'}")
-            self.logger.info(f"  Fscd            : {vm.get('Fscd', 0.0):.4f}")
+            
             self.logger.info(sep)
             return
         self.logger.info(f"  Best Threshold  : {vm.get('best_threshold', self.threshold):.2f}")

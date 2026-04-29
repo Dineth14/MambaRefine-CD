@@ -1,11 +1,7 @@
-"""Test script — evaluates on the held-out test split and saves predictions.
+"""Test script for active DSIFN/WHU binary change-detection experiments.
 
 Usage:
-    python scripts/test.py --config configs/ablations/levir/a4_full.yaml \\
-                           --ckpt outputs/levir/a4_full/checkpoints/best.pth
-    python scripts/test.py --config configs/ablations/second/a4_full.yaml \\
-                           --ckpt outputs/second/a4_full/checkpoints/best.pth \\
-                           --save_predictions
+    python scripts/test.py --config configs/experiments/dsifn_full.yaml --ckpt <checkpoint>
 """
 from __future__ import annotations
 
@@ -33,16 +29,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 _BINARY_ALLOWED = {"Pre", "Rec", "F1", "IoU", "OA"}
-_SECOND_ALLOWED = {"OA", "mIoU", "SeK", "Fscd"}
-
-
 def _get_allowed_metrics(cfg: dict) -> list[str]:
     explicit = cfg.get("metrics", {}).get("allowed", None)
     if explicit is not None:
         return list(explicit)
-    task = str(cfg.get("task", cfg.get("dataset", {}).get("task_type", "binary_cd"))).lower()
-    if "SECOND" in str(cfg.get("dataset", {}).get("name", "")).upper() or task == "semantic_cd":
-        return ["OA", "mIoU", "SeK", "Fscd"]
     return ["Pre", "Rec", "F1", "IoU", "OA"]
 
 
@@ -118,9 +108,8 @@ def main() -> None:
         cfg.setdefault("dataset", {})["num_workers"] = int(args.num_workers)
     allowed = _get_allowed_metrics(cfg)
     device  = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    is_second = "SECOND" in str(cfg.get("dataset", {}).get("name", "")).upper()
-    save_predictions = bool(args.save_predictions) if args.save_predictions is not None else bool(is_second)
-    save_visualizations = bool(args.save_visualizations) if args.save_visualizations is not None else bool(is_second)
+    save_predictions = bool(args.save_predictions) if args.save_predictions is not None else False
+    save_visualizations = bool(args.save_visualizations) if args.save_visualizations is not None else False
 
     logger.info(f"Config: {args.config}")
     logger.info(f"Checkpoint: {args.ckpt}")
@@ -198,7 +187,7 @@ def main() -> None:
 
     effective_threshold = float(raw.get("best_threshold", threshold))
     effective_source = "validation-sweep" if effective_threshold != threshold and args.split == "val" else threshold_source
-    results = _filter_metrics(raw, allowed) if is_second else _paper_binary_metrics(raw)
+    results = _paper_binary_metrics(raw)
     results["threshold"] = effective_threshold
     results["threshold_source"] = effective_source
     results["ema_used"] = bool(load_info["ema_used"])

@@ -5,13 +5,13 @@ Outputs change probability maps (PNG) and optionally binary masks.
 
 Usage:
     # Single pair
-    python scripts/infer.py --config configs/ablations/levir/a4_full.yaml \\
-                             --ckpt outputs/levir/a4_full/checkpoints/best.pth \\
+    python scripts/infer.py --config configs/experiments/dsifn_full.yaml \\
+                             --ckpt <checkpoint> \\
                              --img_a /path/to/t1.png --img_b /path/to/t2.png
 
     # Folder of pairs (expects subfolders A/ and B/ with matching filenames)
-    python scripts/infer.py --config configs/ablations/levir/a4_full.yaml \\
-                             --ckpt outputs/levir/a4_full/checkpoints/best.pth \\
+    python scripts/infer.py --config configs/experiments/whu_full.yaml \\
+                             --ckpt <checkpoint> \\
                              --folder /path/to/pairs/ --out /path/to/output/
 """
 from __future__ import annotations
@@ -52,19 +52,15 @@ def _load_image(path: str | Path) -> torch.Tensor:
 
 
 def _run_pair(model: torch.nn.Module, path_a: Path, path_b: Path,
-              device: torch.device, threshold: float, is_second: bool = False):
+              device: torch.device, threshold: float):
     """Run one pair."""
     from training.model_outputs import normalize_model_output
-    from utils.second_outputs import second_semantic_predictions
 
     with torch.no_grad():
         img_a = _load_image(path_a).to(device)
         img_b = _load_image(path_b).to(device)
         out   = model(img_a, img_b)
         outputs = normalize_model_output(out)
-        if is_second:
-            pred_t1, pred_t2, pred_change = second_semantic_predictions(outputs)
-            return pred_t1, pred_t2, pred_change, outputs.get("change_logits")
         logits = outputs["change_logits"]
         prob = torch.sigmoid(logits[0, 0]).cpu().numpy()
 
@@ -93,7 +89,6 @@ def main() -> None:
 
     cfg    = load_config(args.config)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    is_second = "SECOND" in str(cfg.get("dataset", {}).get("name", "")).upper() or str(cfg.get("task", "")).lower() == "semantic_cd"
 
     from models.mambarefinecd import build_model
     from training.checkpoint import load as load_ckpt
@@ -107,28 +102,12 @@ def main() -> None:
 
     if args.img_a is not None:
         # Single pair
-        result = _run_pair(model, Path(args.img_a), Path(args.img_b), device, args.threshold, is_second=is_second)
+        result = _run_pair(model, Path(args.img_a), Path(args.img_b), device, args.threshold)
         out_root.mkdir(parents=True, exist_ok=True)
         stem = Path(args.img_a).stem
-        if is_second:
-            from utils.second_outputs import assert_second_prediction_dirs, save_second_prediction_batch
-            pred_t1, pred_t2, pred_change, binary_head = result
-            save_second_prediction_batch(
-                pred_t1=pred_t1,
-                pred_t2=pred_t2,
-                pred_change=pred_change,
-                sample_ids=[stem],
-                output_root=out_root,
-                binary_head_logits=binary_head,
-                save_visualizations=bool(cfg.get("output", {}).get("save_visualizations", True)),
-                save_binary_head_change=bool(cfg.get("output", {}).get("save_binary_head_change", False)),
-                threshold=args.threshold,
-            )
-            assert_second_prediction_dirs(out_root)
-        else:
-            prob, binary = result
-            PILImage.fromarray(prob).save(out_root / f"{stem}_prob.png")
-            PILImage.fromarray(binary).save(out_root / f"{stem}_binary.png")
+        prob, binary = result
+        PILImage.fromarray(prob).save(out_root / f"{stem}_prob.png")
+        PILImage.fromarray(binary).save(out_root / f"{stem}_binary.png")
         logger.info(f"Saved to {out_root}")
     else:
         # Folder mode
@@ -152,28 +131,10 @@ def main() -> None:
             if not path_b.exists():
                 logger.warning(f"No matching B for {path_a.name}, skipping.")
                 continue
-            result = _run_pair(model, path_a, path_b, device, args.threshold, is_second=is_second)
-            if is_second:
-                from utils.second_outputs import save_second_prediction_batch
-                pred_t1, pred_t2, pred_change, binary_head = result
-                save_second_prediction_batch(
-                    pred_t1=pred_t1,
-                    pred_t2=pred_t2,
-                    pred_change=pred_change,
-                    sample_ids=[path_a.stem],
-                    output_root=out_root,
-                    binary_head_logits=binary_head,
-                    save_visualizations=bool(cfg.get("output", {}).get("save_visualizations", True)),
-                    save_binary_head_change=bool(cfg.get("output", {}).get("save_binary_head_change", False)),
-                    threshold=args.threshold,
-                )
-            else:
-                prob, binary = result
-                PILImage.fromarray(prob).save(prob_dir / path_a.name)
-                PILImage.fromarray(binary).save(binary_dir / path_a.name)
-        if is_second:
-            from utils.second_outputs import assert_second_prediction_dirs
-            assert_second_prediction_dirs(out_root)
+            result = _run_pair(model, path_a, path_b, device, args.threshold)
+            prob, binary = result
+            PILImage.fromarray(prob).save(prob_dir / path_a.name)
+            PILImage.fromarray(binary).save(binary_dir / path_a.name)
 
         logger.info(f"Inference complete. Results in {out_root}")
 

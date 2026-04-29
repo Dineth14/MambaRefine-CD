@@ -4,8 +4,6 @@ Supported loss types (config: loss.type)
 -----------------------------------------
 bce_dice         BCE + Dice
 dice_focal       Dice + Focal
-dice_focal_sek   Dice + Focal + SeK-inspired soft-kappa surrogate
-second_semantic_cd   SECOND semantic change loss
 """
 from __future__ import annotations
 
@@ -14,9 +12,6 @@ from typing import Optional, Tuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-from training.sek_loss import SeKLoss
-
 
 def _resolve_valid_mask(
     reference: torch.Tensor,
@@ -193,91 +188,6 @@ class DiceFocalLoss(nn.Module):
         return total, focal, dice
 
 
-class DiceFocalSeKLoss(nn.Module):
-    """Dice + Focal + SeK-inspired soft-kappa surrogate.
-
-    Binary mode uses a binary soft-kappa / SeK-inspired loss.
-    Semantic mode uses a general semantic soft-kappa surrogate and leaves
-    separated semantic SeK as a future TODO.
-    """
-
-    def __init__(
-        self,
-        *,
-        dice_w: float = 1.0,
-        focal_w: float = 0.2,
-        sek_w: float = 0.05,
-        focal_gamma: float = 1.5,
-        sek_mode: str = "binary",
-        sek_eps: float = 1e-6,
-        sek_separate_nochange: bool = False,
-        num_classes: int = 7,
-        ignore_index: int = 255,
-        safe_on_invalid: bool = True,
-    ) -> None:
-        super().__init__()
-        self.dice_w = float(dice_w)
-        self.focal_w = float(focal_w)
-        self.sek_w = float(sek_w)
-        self.sek_mode = str(sek_mode).lower()
-        self.safe_on_invalid = bool(safe_on_invalid)
-        self.dice = DiceLoss()
-        self.focal = FocalLoss(gamma=focal_gamma)
-        self.sek = SeKLoss(
-            mode=self.sek_mode,
-            num_classes=num_classes,
-            ignore_index=ignore_index,
-            eps=sek_eps,
-            separate_nochange=sek_separate_nochange,
-        )
-        self.latest_stats: dict[str, float | str | bool] = {}
-
-    def forward(
-        self,
-        logits: torch.Tensor,
-        targets: torch.Tensor,
-        valid_mask: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        use_semantic_mode = self.sek_mode == "semantic" or logits.shape[1] > 1
-        if use_semantic_mode:
-            dice = logits.new_zeros(())
-            focal = logits.new_zeros(())
-        else:
-            dice = self.dice(logits, targets, valid_mask=valid_mask)
-            focal = self.focal(logits, targets, valid_mask=valid_mask)
-        sek_result = self.sek(logits, targets, valid_mask=valid_mask)
-        sek_loss = sek_result.loss
-        soft_kappa = sek_result.soft_kappa
-        sek_was_sanitized = False
-
-        if not torch.isfinite(sek_loss) or not torch.isfinite(soft_kappa):
-            if self.safe_on_invalid:
-                sek_loss = logits.new_zeros(())
-                soft_kappa = logits.new_zeros(())
-                sek_was_sanitized = True
-            else:
-                raise FloatingPointError("SeK-inspired loss became NaN/Inf and safe_on_invalid=false.")
-
-        total = self.dice_w * dice + self.focal_w * focal + self.sek_w * sek_loss
-        self.latest_stats = {
-            "total_loss": float(total.detach().item()),
-            "dice_loss": float(dice.detach().item()),
-            "focal_loss": float(focal.detach().item()),
-            "sek_loss": float(sek_loss.detach().item()),
-            "soft_kappa": float(soft_kappa.detach().item()),
-            "sek_mode": self.sek_mode,
-            "primary_name": "focal_loss",
-            "sek_name": "binary soft-kappa / SeK-inspired loss" if self.sek_mode == "binary" else "semantic soft-kappa / SeK-style surrogate",
-            "sek_was_sanitized": sek_was_sanitized,
-            "change_agreement": (
-                None
-                if sek_result.change_agreement is None
-                else float(sek_result.change_agreement.detach().item())
-            ),
-        }
-        return total, focal, dice
-
-
 def build_loss(cfg: dict) -> nn.Module:
     """Build loss function from config."""
     lc = cfg.get("loss", {})
@@ -286,40 +196,10 @@ def build_loss(cfg: dict) -> nn.Module:
     tc = cfg.get("training", {})
     kind = str(lc.get("type", "bce_dice")).lower().replace("-", "_")
 
-    if kind == "second_semantic_cd":
-        from training.second_loss import SecondSemanticChangeLoss
-        second_cfg = lc.get("second", {}) or {}
-
-        return SecondSemanticChangeLoss(
-            num_classes=int(dc.get("num_classes", mc.get("semantic_num_classes", 7))),
-            ignore_index=int(second_cfg.get("ignore_index", dc.get("ignore_index", 255))),
-            change_loss_weight=float(second_cfg.get("change_weight", lc.get("change_loss_weight", 1.0))),
-            semantic_loss_weight=float(second_cfg.get("sem_ce_weight", lc.get("semantic_loss_weight", 0.5))),
-            semantic_dice_weight=float(second_cfg.get("sem_dice_weight", lc.get("semantic_dice_weight", 0.0))),
-            consistency_loss_weight=float(second_cfg.get("consistency_weight", lc.get("consistency_loss_weight", 0.2))),
-            sek_loss_weight=float(lc.get("sek_loss_weight", 0.3)),
-            dice_weight=float(lc.get("dice_weight", 1.0)),
-            focal_weight=float(lc.get("focal_weight", 0.2)),
-            focal_gamma=float(lc.get("focal_gamma", 1.5)),
-            ce_weight=float(lc.get("ce_weight", 1.0)),
-            sek_eps=float(lc.get("sek_eps", 1e-6)),
-            consistency_detach_semantic=bool(lc.get("consistency_detach_semantic", True)),
-            consistency_loss_type=str(lc.get("consistency_loss_type", "bce")),
-            safe_on_invalid=bool(tc.get("skip_nan_steps", True)),
-        )
-
-    if kind == "dice_focal_sek":
-        return DiceFocalSeKLoss(
-            dice_w=float(lc.get("dice_weight", 1.0)),
-            focal_w=float(lc.get("focal_weight", 0.2)),
-            sek_w=float(lc.get("sek_weight", 0.05)),
-            focal_gamma=float(lc.get("focal_gamma", 1.5)),
-            sek_mode=str(lc.get("sek_mode", dc.get("mode", "binary"))),
-            sek_eps=float(lc.get("sek_eps", 1e-6)),
-            sek_separate_nochange=bool(lc.get("sek_separate_nochange", False)),
-            num_classes=int(dc.get("num_classes", mc.get("semantic_num_classes", 7))),
-            ignore_index=int(dc.get("ignore_index", 255)),
-            safe_on_invalid=bool(tc.get("skip_nan_steps", True)),
+    if kind in {"dice_focal_kappa", "semantic_change_archived"}:
+        raise ValueError(
+            f"loss.type={kind!r} has been archived with the removed semantic-CD support. "
+            "Use 'bce_dice' or 'dice_focal' for active DSIFN/WHU binary experiments."
         )
 
     if kind == "dice_focal":

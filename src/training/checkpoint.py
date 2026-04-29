@@ -53,7 +53,7 @@ def save(
         payload["best_threshold"] = float(best_threshold)
     if val_metrics is not None:
         payload["val_metrics"] = _checkpoint_safe(val_metrics)
-        for key in ("Fscd", "OA", "mIoU", "SeK"):
+        for key in ("F1", "IoU", "OA", "f1", "iou", "oa"):
             if key in val_metrics:
                 payload[f"best_{key}"] = _checkpoint_safe(val_metrics[key])
     if scaler_state is not None:

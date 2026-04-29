@@ -23,7 +23,7 @@ _TRACKED = ["f1", "iou", "miou", "boundary_f1", "edge_iou"]
 
 def compute_generalization(
     results: Dict[str, dict],
-    main_dataset: str = "LEVIR-CD",
+    main_dataset: str = "DSIFN-CD",
 ) -> dict:
     """Compute generalization statistics across datasets.
 
