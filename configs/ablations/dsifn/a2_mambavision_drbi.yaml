@@ -6,6 +6,8 @@ experiment:
 dataset:
   name: DSIFN-CD
   root: /storage2/ChangeDetection/MV/Datasets/DSIFN-CD/DSIFN
+  split_dir: /storage2/ChangeDetection/MV/Datasets/DSIFN-CD/DSIFN/splits
+  require_explicit_splits: true
   mode: binary
   task_type: binary_change
   image_size: 256
@@ -20,7 +22,7 @@ task: binary_cd
 model:
   mode: dual
   backbone: mambavision
-  variant: base
+  variant: small
   decoder: baseline
   pretrained: true
   output_mode: binary
@@ -63,11 +65,11 @@ decoder:
 
 hardware:
   device: cuda
-  gpu_ids: [1]
+  gpu_ids: [0]
   mixed_precision: true
 
 training:
-  max_iterations: 50000
+  max_iterations: 30000
   batch_size: 8
   lr: 5.0e-5
   optimizer: adamw

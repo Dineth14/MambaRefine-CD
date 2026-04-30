@@ -2,6 +2,8 @@
 dataset:
   name: DSIFN-CD
   root: /storage2/ChangeDetection/MV/Datasets/DSIFN-CD/DSIFN        # update to actual path
+  split_dir: /storage2/ChangeDetection/MV/Datasets/DSIFN-CD/DSIFN/splits
+  require_explicit_splits: true
   train_split: train
   val_split: val
   test_split: test

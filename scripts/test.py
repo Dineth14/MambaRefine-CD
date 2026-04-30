@@ -19,6 +19,7 @@ sys.path.insert(0, str(_REPO))
 
 import torch
 
+from data.dsifncd import dsifn_result_split_metadata
 from utils.config import load_config
 from utils.ablation import compare_checkpoint_config, config_fingerprint, log_parameter_breakdown, log_startup_config, module_flags
 from utils.checkpoint_identity import checkpoint_identity
@@ -242,6 +243,11 @@ def main() -> None:
     results["threshold_source"] = effective_source
     results["ema_used"] = bool(load_info["ema_used"])
     results["ema_found"] = bool(load_info["ema_found"])
+    results["dataset_name"] = str(cfg.get("dataset", {}).get("name", "unknown"))
+    results["split"] = args.split
+    results["num_samples"] = int(raw.get("num_samples", len(loader.dataset)))
+    results["dataset_root"] = str(cfg.get("dataset", {}).get("root", "unknown"))
+    results.update(dsifn_result_split_metadata(cfg.get("dataset", {}), num_tiles=results["num_samples"]))
     results["config_path"] = str(Path(args.config).resolve())
     results["variant_name"] = variant_name
     results["run_dir"] = str(out_root.resolve())

@@ -20,6 +20,7 @@ import torch
 import torch.nn as nn
 
 from data.dataset_builder  import build_test_loader
+from data.dsifncd          import dsifn_result_split_metadata
 from training.checkpoint   import load_for_eval
 from training.evaluator    import Evaluator
 from training.ema          import EMA
@@ -220,6 +221,11 @@ def run_final_test_evaluation(
     results["threshold"] = threshold
     results["threshold_source"] = threshold_source
     results["checkpoint"] = str(ckpt_path)
+    results["dataset_name"] = str(cfg.get("dataset", {}).get("name", "unknown"))
+    results["split"] = "test"
+    results["num_samples"] = int(raw_results.get("num_samples", num_test))
+    results["dataset_root"] = str(cfg.get("dataset", {}).get("root", "unknown"))
+    results.update(dsifn_result_split_metadata(cfg.get("dataset", {}), num_tiles=results["num_samples"]))
     results["config_path"] = str(cfg.get("_meta", {}).get("config_path", "unknown"))
     results["variant_name"] = str(cfg.get("experiment", {}).get("name", "unknown"))
     results["run_dir"] = str(Path(output_dir).resolve())
@@ -293,6 +299,22 @@ def _save_csv(results: dict, path: Path) -> None:
             "threshold_source",
             "ema_used",
             "ema_found",
+            "dataset_name",
+            "split",
+            "num_samples",
+            "dataset_root",
+            "split_dir",
+            "split_file_train",
+            "split_file_val",
+            "split_file_test",
+            "split_metadata_json",
+            "split_hash_train",
+            "split_hash_val",
+            "split_hash_test",
+            "split_integrity_verdict",
+            "num_test_images",
+            "num_test_tiles",
+            "old_leakage_protocol_used",
             "config_path",
             "variant_name",
             "run_dir",

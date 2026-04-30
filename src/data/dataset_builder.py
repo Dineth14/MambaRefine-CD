@@ -9,7 +9,7 @@ from typing import Optional
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-from data.dsifncd import DSIFNCDDataset
+from data.dsifncd import DSIFNCDDataset, dsifn_result_split_metadata, validate_dsifn_split_files
 from data.whucd import WHUCDDataset
 
 logger = logging.getLogger(__name__)
@@ -38,6 +38,25 @@ def _get_class(name: str):
     return cls
 
 
+def _is_dsifn(name: str | None) -> bool:
+    return _dataset_key(str(name or "")) in {"dsifn-cd", "dsifn", "dsifncd"}
+
+
+def validate_dataset_split_integrity(dataset_cfg: dict, *, require_test_split: bool = False) -> dict:
+    """Fail fast for DSIFN if explicit split files are absent or overlapping."""
+    if not _is_dsifn(dataset_cfg.get("name")):
+        return {"split_integrity_verdict": "not_applicable"}
+    metadata = validate_dsifn_split_files(dataset_cfg["root"], dataset_cfg.get("split_dir"))
+    if require_test_split and metadata.get("num_test_images", 0) <= 0:
+        raise RuntimeError("DATA LEAKAGE FOUND: refusing to train/evaluate. DSIFN test split is empty.")
+    logger.info("DSIFN split integrity: %s", metadata["split_integrity_verdict"])
+    logger.info("  split_dir        : %s", metadata["split_dir"])
+    logger.info("  train images     : %d", metadata["num_train_images"])
+    logger.info("  val images       : %d", metadata["num_val_images"])
+    logger.info("  test images      : %d", metadata["num_test_images"])
+    return metadata
+
+
 def build_dataset(
     dataset_cfg: dict,
     split: str,
@@ -62,6 +81,9 @@ def build_dataset(
         "seed": seed,
         "augment": do_augment,
     }
+    if cls is DSIFNCDDataset:
+        kwargs["split_dir"] = dataset_cfg.get("split_dir")
+        kwargs["require_explicit_splits"] = bool(dataset_cfg.get("require_explicit_splits", True))
     if "augmentation_ops" in dataset_cfg and cls is DSIFNCDDataset:
         kwargs["augmentation_ops"] = dataset_cfg["augmentation_ops"]
     if "image_a_dir_candidates" in dataset_cfg:
@@ -139,6 +161,7 @@ def save_dataset_manifest(
         "leakage_check_status": leakage_status,
         **stats,
     }
+    manifest.update(dsifn_result_split_metadata(dc))
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with out_path.open("w", encoding="utf-8") as f:
@@ -155,6 +178,7 @@ def build_dataloaders(cfg: dict, dataset_cfg: Optional[dict] = None):
     vc = cfg.get("validation", {})
     seed = int(cfg.get("experiment", {}).get("seed", 42))
 
+    validate_dataset_split_integrity(dc, require_test_split=True)
     train_ds = build_dataset(dc, "train", augment=True, seed=seed)
     val_ds = build_dataset(dc, "val", augment=False, seed=seed)
 
@@ -196,6 +220,9 @@ def build_test_loader(cfg: dict, dataset_cfg: Optional[dict] = None) -> DataLoad
     vc = cfg.get("validation", {})
     seed = int(cfg.get("experiment", {}).get("seed", 42))
     split = str(cfg.get("evaluation", {}).get("split", "test"))
+    if _is_dsifn(dc.get("name")) and split != "test":
+        raise RuntimeError("DATA LEAKAGE FOUND: refusing to train/evaluate. DSIFN test script must use split='test'.")
+    validate_dataset_split_integrity(dc, require_test_split=True)
     test_ds = build_dataset(dc, split, augment=False, seed=seed)
 
     num_workers = int(dlc.get("num_workers", dc.get("num_workers", 8)))
