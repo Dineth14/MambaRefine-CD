@@ -51,6 +51,7 @@ from training.boundary_metrics import BoundaryMetrics
 from training.logger           import log_table
 from training.model_outputs    import normalize_model_output
 from training.tta              import apply_tta, build_tta_augmentations
+from utils.precision           import amp_dtype_from_config, channels_last_enabled, maybe_channels_last_image
 
 
 _LABELS = {
@@ -108,6 +109,8 @@ class Evaluator:
 
         ec = _merged_eval_cfg(cfg)
         self.threshold        = float(ec.get("threshold", 0.5))
+        self.amp_dtype = amp_dtype_from_config(cfg, device)
+        self.channels_last = channels_last_enabled(cfg)
         sweep_cfg = ec.get("threshold_sweep", False)
         if isinstance(sweep_cfg, dict):
             self.do_sweep = bool(sweep_cfg.get("enabled", False))
@@ -134,7 +137,8 @@ class Evaluator:
         self.log_mask_debug = bool(ec.get("log_mask_debug", True))
         self.save_debug_outputs = bool(ec.get("save_debug_outputs", False))
         self.save_predictions = bool(ec.get("save_predictions", cfg.get("output", {}).get("save_predictions", False)))
-        self.save_visualizations = bool(ec.get("save_visualizations", cfg.get("output", {}).get("save_visualizations", True)))
+        self.save_visualizations = bool(ec.get("save_visualizations", cfg.get("output", {}).get("save_visualizations", False)))
+        self.memory_efficient = bool(ec.get("memory_efficient", True))
         self.save_binary_head_change = bool(ec.get("save_binary_head_change", cfg.get("output", {}).get("save_binary_head_change", False)))
         self.debug_output_root = Path(ec.get("debug_output_root", "debug/eval"))
         self.debug_max_samples = int(ec.get("debug_max_samples", 20))
@@ -215,8 +219,8 @@ class Evaluator:
         bar  = tqdm(loader, desc=desc, leave=False, unit="batch") if _TQDM else loader
 
         for batch in bar:
-            ia  = batch["image_a"].to(self.device, non_blocking=True)
-            ib  = batch["image_b"].to(self.device, non_blocking=True)
+            ia  = maybe_channels_last_image(batch["image_a"].to(self.device, non_blocking=True), self.channels_last)
+            ib  = maybe_channels_last_image(batch["image_b"].to(self.device, non_blocking=True), self.channels_last)
             if "change_mask" in batch:
                 lbl_key = "change_mask"
             else:
@@ -262,7 +266,7 @@ class Evaluator:
                 amp=amp,
                 augmentations=self.tta_augmentations,
             ))
-        with torch.amp.autocast("cuda", enabled=(amp and self.device.type == "cuda")):
+        with torch.amp.autocast("cuda", enabled=(amp and self.device.type == "cuda"), dtype=self.amp_dtype):
             return normalize_model_output(model(ia, ib))
 
     @staticmethod
@@ -426,6 +430,80 @@ class Evaluator:
             result.setdefault("edge_iou",    0.0)
         return result
 
+    @torch.inference_mode()
+    def _evaluate_streaming(
+        self,
+        model: nn.Module,
+        loader: DataLoader,
+        dataset_name: str,
+        amp: bool,
+    ) -> dict:
+        """Evaluate without retaining full-dataset logits in memory."""
+        pix = StreamingMetrics(threshold=self.threshold)
+        bnd = BoundaryMetrics(
+            boundary_width=self.bnd_width,
+            tolerance=self.bnd_tol,
+            threshold=self.threshold,
+        ) if (self.bnd_enabled and bool(self.cfg.get("debug", {}).get("metrics", False))) else None
+
+        prob_sum = 0.0
+        prob_count = 0
+        prob_min = float("inf")
+        prob_max = float("-inf")
+        num_samples = 0
+        desc = f"Eval [{dataset_name}]"
+        bar = tqdm(loader, desc=desc, leave=False, unit="batch") if _TQDM else loader
+        for batch in bar:
+            ia = maybe_channels_last_image(batch["image_a"].to(self.device, non_blocking=True), self.channels_last)
+            ib = maybe_channels_last_image(batch["image_b"].to(self.device, non_blocking=True), self.channels_last)
+            lbl_key = "change_mask" if "change_mask" in batch else ("label" if "label" in batch else "mask")
+            lb = batch[lbl_key].to(self.device, non_blocking=True)
+            batch_start = num_samples
+            num_samples += ia.shape[0]
+
+            if self.inference_mode == "sliding_window":
+                logits = self._sliding_window_logits(model, ia, ib, amp)
+            else:
+                outputs = self._forward_outputs(model, ia, ib, amp)
+                logits = torch.clamp(outputs["change_logits"], -20.0, 20.0)
+            if logits.shape[-2:] != lb.shape[-2:]:
+                logits = F.interpolate(logits, size=lb.shape[-2:], mode="bilinear", align_corners=False)
+
+            if self.log_mask_debug and batch_start < 5:
+                self._log_mask_debug(batch, lb, batch_start, getattr(loader, "dataset", None))
+            if self.save_debug_outputs and self._debug_saved < self.debug_max_samples:
+                self._save_binary_debug_batch(batch, logits, lb, dataset_name)
+
+            pix.update(logits, lb)
+            if bnd is not None:
+                bnd.update(logits, lb)
+            probs = torch.sigmoid(torch.clamp(logits.float(), -20.0, 20.0))
+            prob_sum += float(probs.sum().item())
+            prob_count += int(probs.numel())
+            prob_min = min(prob_min, float(probs.min().item()))
+            prob_max = max(prob_max, float(probs.max().item()))
+
+        result = pix.compute()
+        if bnd is not None:
+            result.update(bnd.compute())
+        diagnostic_result = dict(result)
+        if not bool(self.cfg.get("debug", {}).get("metrics", False)):
+            result = {
+                key: result[key]
+                for key in ("precision", "recall", "f1", "iou", "oa")
+                if key in result
+            }
+            for key in ("pred_positive_ratio", "gt_positive_ratio"):
+                if key in diagnostic_result:
+                    result[key] = diagnostic_result[key]
+        result["mean_sigmoid_probability"] = prob_sum / max(prob_count, 1)
+        result["min_sigmoid_probability"] = prob_min if prob_count else 0.0
+        result["max_sigmoid_probability"] = prob_max if prob_count else 0.0
+        result["best_threshold"] = self.threshold
+        result["dataset"] = dataset_name
+        result["num_samples"] = num_samples
+        return result
+
     # ------------------------------------------------------------------
     # Public evaluate
     # ------------------------------------------------------------------
@@ -443,6 +521,22 @@ class Evaluator:
             dict with all metrics + "dataset", "num_samples", "best_threshold".
         """
         model.eval()
+
+        if self.memory_efficient and not self.do_sweep:
+            result = self._evaluate_streaming(model, loader, dataset_name, amp)
+            self.logger.info(
+                "Prediction diagnostic | pred_positive_ratio=%.6f gt_positive_ratio=%.6f "
+                "mean_prob=%.6f min_prob=%.6f max_prob=%.6f threshold=%.2f",
+                float(result.get("pred_positive_ratio", 0.0)),
+                float(result.get("gt_positive_ratio", 0.0)),
+                result["mean_sigmoid_probability"],
+                result["min_sigmoid_probability"],
+                result["max_sigmoid_probability"],
+                result["best_threshold"],
+            )
+            if self.save_dir is not None:
+                self._save_outputs(result, None, dataset_name)
+            return result
 
         # ── 1. Collect all logits in one pass ────────────────────────────
         all_logits, all_labels, extras, num_samples = self._collect_logits(

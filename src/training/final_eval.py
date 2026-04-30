@@ -23,6 +23,9 @@ from data.dataset_builder  import build_test_loader
 from training.checkpoint   import load_for_eval
 from training.evaluator    import Evaluator
 from training.ema          import EMA
+from training.checkpoint   import peek as peek_ckpt
+from utils.checkpoint_identity import checkpoint_identity
+from utils.memory          import params_m, peak_memory_gb, reset_peak_memory
 
 
 _SEP  = "=" * 40
@@ -100,6 +103,9 @@ def run_final_test_evaluation(
 
     # ── Load best weights into model ──────────────────────────────────────────
     logger.info(f"Loading best checkpoint: {ckpt_path}")
+    ckpt_meta = peek_ckpt(ckpt_path, map_location=device)
+    ckpt_identity = checkpoint_identity(ckpt_path, ckpt_meta)
+    logger.info(f"  Checkpoint SHA256    : {ckpt_identity['checkpoint_sha256']}")
     eval_cfg = cfg.get("eval", cfg.get("evaluation", {}))
     use_ema_cfg = bool(eval_cfg.get("use_ema", cfg.get("training", {}).get("use_ema", ema is not None)))
     load_info = load_for_eval(
@@ -195,7 +201,9 @@ def run_final_test_evaluation(
     evaluator = Evaluator(cfg, device, logger=logger, save_dir=test_results_dir)
 
     try:
+        reset_peak_memory(device)
         raw_results = evaluator.evaluate(model, test_loader, dataset_name=dataset_name, amp=amp)
+        peak_test_mem_gb = peak_memory_gb(device)
     finally:
         ec["split"] = original_split
         ec["threshold"] = original_threshold
@@ -212,8 +220,14 @@ def run_final_test_evaluation(
     results["threshold"] = threshold
     results["threshold_source"] = threshold_source
     results["checkpoint"] = str(ckpt_path)
+    results["config_path"] = str(cfg.get("_meta", {}).get("config_path", "unknown"))
+    results["variant_name"] = str(cfg.get("experiment", {}).get("name", "unknown"))
+    results["run_dir"] = str(Path(output_dir).resolve())
+    results.update(ckpt_identity)
     results["ema_used"] = ema_applied
     results["ema_found"] = bool(load_info["ema_found"])
+    results["peak_test_mem_GB"] = peak_test_mem_gb
+    results["params_M"] = params_m(model)
 
     # ── Save test_metrics.json ────────────────────────────────────────────────
     json_path = test_results_dir / "test_metrics.json"
@@ -273,7 +287,26 @@ def _save_json(results: dict, path: Path) -> None:
 def _save_csv(results: dict, path: Path) -> None:
     metric_order = ["Pre", "Rec", "F1", "IoU", "OA"]
     keys = [key for key in metric_order if key in results]
-    keys.extend([key for key in ("threshold", "threshold_source", "ema_used", "ema_found", "checkpoint") if key in results])
+    keys.extend([
+        key for key in (
+            "threshold",
+            "threshold_source",
+            "ema_used",
+            "ema_found",
+            "config_path",
+            "variant_name",
+            "run_dir",
+            "checkpoint",
+            "checkpoint_path",
+            "checkpoint_file_size_MB",
+            "checkpoint_sha256",
+            "checkpoint_epoch_or_iter",
+            "checkpoint_best_metric_if_available",
+            "peak_test_mem_GB",
+            "params_M",
+        )
+        if key in results
+    ])
     with open(path, "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(keys)

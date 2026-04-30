@@ -149,6 +149,7 @@ def save_dataset_manifest(
 def build_dataloaders(cfg: dict, dataset_cfg: Optional[dict] = None):
     """Build train and validation loaders."""
     dc = dataset_cfg if dataset_cfg is not None else cfg.get("dataset", {})
+    dlc = cfg.get("dataloader", {})
     tc = cfg["training"]
     hw = cfg.get("hardware", {})
     vc = cfg.get("validation", {})
@@ -157,10 +158,11 @@ def build_dataloaders(cfg: dict, dataset_cfg: Optional[dict] = None):
     train_ds = build_dataset(dc, "train", augment=True, seed=seed)
     val_ds = build_dataset(dc, "val", augment=False, seed=seed)
 
-    num_workers = int(dc.get("num_workers", 8))
-    pin_memory = bool(dc.get("pin_memory", str(hw.get("device", "cuda")).startswith("cuda")))
-    persistent_workers = bool(dc.get("persistent_workers", True)) and num_workers > 0
-    prefetch_factor = int(dc.get("prefetch_factor", 2)) if num_workers > 0 else None
+    num_workers = int(dlc.get("num_workers", dc.get("num_workers", 8)))
+    pin_memory = bool(dlc.get("pin_memory", dc.get("pin_memory", str(hw.get("device", "cuda")).startswith("cuda"))))
+    persistent_workers = bool(dlc.get("persistent_workers", dc.get("persistent_workers", True))) and num_workers > 0
+    prefetch_factor = int(dlc.get("prefetch_factor", dc.get("prefetch_factor", 2))) if num_workers > 0 else None
+    drop_last = bool(dlc.get("drop_last", True))
 
     train_kwargs = {
         "dataset": train_ds,
@@ -168,7 +170,7 @@ def build_dataloaders(cfg: dict, dataset_cfg: Optional[dict] = None):
         "shuffle": True,
         "num_workers": num_workers,
         "pin_memory": pin_memory,
-        "drop_last": True,
+        "drop_last": drop_last,
         "persistent_workers": persistent_workers,
     }
     val_kwargs = {
@@ -188,6 +190,7 @@ def build_dataloaders(cfg: dict, dataset_cfg: Optional[dict] = None):
 def build_test_loader(cfg: dict, dataset_cfg: Optional[dict] = None) -> DataLoader:
     """Build a test loader."""
     dc = dataset_cfg if dataset_cfg is not None else cfg.get("dataset", {})
+    dlc = cfg.get("dataloader", {})
     tc = cfg.get("training", {})
     hw = cfg.get("hardware", {})
     vc = cfg.get("validation", {})
@@ -195,10 +198,10 @@ def build_test_loader(cfg: dict, dataset_cfg: Optional[dict] = None) -> DataLoad
     split = str(cfg.get("evaluation", {}).get("split", "test"))
     test_ds = build_dataset(dc, split, augment=False, seed=seed)
 
-    num_workers = int(dc.get("num_workers", 8))
-    pin_memory = bool(dc.get("pin_memory", str(hw.get("device", "cuda")).startswith("cuda")))
-    persistent_workers = bool(dc.get("persistent_workers", True)) and num_workers > 0
-    prefetch_factor = int(dc.get("prefetch_factor", 2)) if num_workers > 0 else None
+    num_workers = int(dlc.get("num_workers", dc.get("num_workers", 8)))
+    pin_memory = bool(dlc.get("pin_memory", dc.get("pin_memory", str(hw.get("device", "cuda")).startswith("cuda"))))
+    persistent_workers = bool(dlc.get("persistent_workers", dc.get("persistent_workers", True))) and num_workers > 0
+    prefetch_factor = int(dlc.get("prefetch_factor", dc.get("prefetch_factor", 2))) if num_workers > 0 else None
     kwargs = {
         "dataset": test_ds,
         "batch_size": int(vc.get("batch_size", tc.get("batch_size", 8))),

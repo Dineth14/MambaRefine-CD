@@ -1,1 +1,8 @@
-dataset,experiment,method,F1_1,IoU_1,OA,Precision_1,Recall_1,Boundary_F1,best_threshold,delta_F1,eval_file
+dataset,experiment,method,F1_1,IoU_1,OA,Precision_1,Recall_1,Boundary_F1,best_threshold,delta_F1,iteration,run_dir,eval_file,status
+DSIFN-CD,a0_fpn_baseline,A0 FPN baseline,,,,,,,,,NA,MV/MambaRefine-CD/outputs/dsifn/a0_fpn_baseline,validation/val_metrics.csv,no completed validation row
+DSIFN-CD,a1_mambavision_fpn,A1 MambaVision + FPN,0.960359,0.923741,0.971904,0.958888,0.961835,,0.35,0.000000,35000,MV/MambaRefine-CD/outputs/dsifn/a1_mambavision_fpn/run_20260430_090222_a1_mambavision_fpn_DSIFN-CD,validation/val_metrics.csv,ok
+DSIFN-CD,a2_mambavision_drbi,A2 + D-RBI,0.949533,0.903915,0.964347,0.951167,0.947905,,0.60,-0.010826,20000,MV/MambaRefine-CD/outputs/dsifn/a2_mambavision_drbi/run_20260429_190341_a2_mambavision_drbi_DSIFN-CD,validation/val_metrics.csv,ok
+DSIFN-CD,a3_mambavision_drbi_signed,A3 + signed diff,0.953310,0.910785,0.966590,0.942904,0.963948,,0.60,0.003777,25000,MV/MambaRefine-CD/outputs/dsifn/a3_mambavision_drbi_signed/run_20260429_202218_a3_mambavision_drbi_signed_DSIFN-CD,validation/val_metrics.csv,ok
+DSIFN-CD,a4_mambavision_drbi_arf,A4 + adaptive RF,0.936980,0.881434,0.954828,0.925218,0.949047,,0.60,-0.016330,15000,MV/MambaRefine-CD/outputs/dsifn/a4_mambavision_drbi_arf/run_20260430_090114_a4_mambavision_drbi_arf_DSIFN-CD,validation/val_metrics.csv,ok
+DSIFN-CD,a5_mambavision_drbi_arf_boundary,A5 + boundary refine,0.948313,0.901708,0.963216,0.943023,0.953664,,0.60,0.011333,20000,MV/MambaRefine-CD/outputs/dsifn/a5_mambavision_drbi_arf_boundary/run_20260429_183105_a5_mambavision_drbi_arf_boundary_DSIFN-CD,validation/val_metrics.csv,ok
+DSIFN-CD,a6_full,A6 full,0.889947,0.801717,0.921638,0.884526,0.895436,,0.45,-0.058366,5000,MV/MambaRefine-CD/outputs/dsifn/a6_full/run_20260429_220818_a6_full_DSIFN-CD,validation/val_metrics.csv,ok

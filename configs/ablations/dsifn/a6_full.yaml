@@ -20,7 +20,7 @@ task: binary_cd
 model:
   mode: dual
   backbone: mambavision
-  variant: base
+  variant: small
   decoder: adaptive_rf
   pretrained: true
   output_mode: binary
@@ -67,7 +67,7 @@ decoder:
 
 hardware:
   device: cuda
-  gpu_ids: [0]
+  gpu_ids: [1]
   mixed_precision: true
 
 training:

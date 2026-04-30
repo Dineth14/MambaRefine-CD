@@ -141,7 +141,12 @@ def peek(path: Path | str, map_location: str = "cpu") -> dict:
 
 
 def find_latest(outputs_root: Path) -> Optional[Path]:
-    """Scan outputs_root for the newest run_*/checkpoints/best.pth."""
+    """Scan outputs_root for the newest resumable checkpoint.
+
+    Prefer ``latest.pth`` because it tracks the most recent training state.
+    Fall back to ``best.pth`` for older runs created before latest checkpoints
+    were written.
+    """
     if not outputs_root.exists():
         return None
     runs = sorted(
@@ -149,7 +154,9 @@ def find_latest(outputs_root: Path) -> Optional[Path]:
         key=lambda d: d.name,
     )
     for run in reversed(runs):
-        ckpt = run / "checkpoints" / "best.pth"
-        if ckpt.exists():
-            return ckpt
+        ckpt_dir = run / "checkpoints"
+        for name in ("latest.pth", "best.pth"):
+            ckpt = ckpt_dir / name
+            if ckpt.exists():
+                return ckpt
     return None

@@ -17,6 +17,7 @@ import csv
 import json
 import logging
 import math
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -38,6 +39,8 @@ from training.logger           import log_table
 from training.ema              import EMA
 from training.model_outputs    import normalize_model_output
 from utils.visualization       import save_prediction_grid
+from utils.memory              import params_m, peak_memory_gb, reset_peak_memory, write_json
+from utils.precision           import amp_dtype_from_config, channels_last_enabled, maybe_channels_last_image
 
 
 # ---------------------------------------------------------------------------
@@ -148,6 +151,9 @@ class Trainer:
         self.log_every     = int(tc.get("log_every", 20))
         self.grad_clip     = float(tc.get("gradient_clip", 1.0))
         self.amp           = bool(cfg.get("hardware", {}).get("mixed_precision", True))
+        self.amp_dtype     = amp_dtype_from_config(cfg, device)
+        self.channels_last = channels_last_enabled(cfg)
+        self.gradient_checkpointing = bool(cfg.get("training", {}).get("gradient_checkpointing", False))
         self.non_blocking_transfer = bool(tc.get("non_blocking_transfer", True))
         self.aux_weight    = float(cfg.get("decoder", {}).get("aux_weight", 0.4))
         self.threshold     = float(cfg.get("evaluation", {}).get("threshold", 0.5))
@@ -173,6 +179,9 @@ class Trainer:
         ck = cfg.get("checkpoint", {})
         self.monitor      = ck.get("monitor", "f1")
         self.monitor_mode = ck.get("mode", "max")
+        self.save_latest  = bool(ck.get("save_latest", True))
+        self.latest_every = int(ck.get("latest_every", self.val_every))
+        self.save_every = ck.get("save_every", None)
 
         vc = cfg.get("validation", {})
         self.save_samples = bool(vc.get("save_samples", True))
@@ -180,6 +189,10 @@ class Trainer:
 
         self.best_metric  = float("-inf") if self.monitor_mode == "max" else float("inf")
         self.start_iter   = 0
+        self.peak_train_mem_gb = 0.0
+        self.peak_val_mem_gb = 0.0
+        self.params_m = params_m(self.model)
+        self._forward_trace_written = False
 
         self.ckpt_dir   = self.output_dir / "checkpoints"
         self.sample_dir = self.output_dir / "samples"
@@ -195,6 +208,59 @@ class Trainer:
 
         self.scaler = torch.amp.GradScaler(
             "cuda", enabled=self.amp and device.type == "cuda"
+        )
+
+    def _trace_source_model(self) -> nn.Module:
+        return getattr(self.model, "_orig_mod", self.model)
+
+    def _maybe_save_forward_trace(self) -> None:
+        if self._forward_trace_written:
+            return
+        if not bool(self.cfg.get("debug", {}).get("ablation_trace", False)):
+            return
+        model = self._trace_source_model()
+        if not hasattr(model, "get_forward_trace"):
+            return
+        trace = model.get_forward_trace()
+        if not trace:
+            return
+        path = self.output_dir / "forward_trace_first_batch.json"
+        write_json(path, trace)
+        self.logger.info("Saved first-batch forward trace: %s", path)
+        self._forward_trace_written = True
+
+    def _sync(self) -> None:
+        if self.device.type == "cuda":
+            torch.cuda.synchronize(self.device)
+
+    def _move_image(self, tensor: torch.Tensor) -> torch.Tensor:
+        tensor = tensor.to(self.device, non_blocking=self.non_blocking_transfer)
+        return maybe_channels_last_image(tensor, self.channels_last)
+
+    def _checkpoint_ema_state(self) -> Optional[dict]:
+        return self.ema.state_dict() if self.ema is not None else None
+
+    def _save_training_checkpoint(
+        self,
+        path: Path,
+        iteration: int,
+        *,
+        best_threshold: Optional[float] = None,
+        val_metrics: Optional[dict] = None,
+    ) -> None:
+        save_ckpt(
+            path,
+            self.model,
+            self.optimizer,
+            self.scheduler,
+            iteration,
+            self.best_metric,
+            self.cfg,
+            ema_state=self._checkpoint_ema_state(),
+            best_threshold=best_threshold,
+            val_metrics=val_metrics,
+            scaler_state=self.scaler.state_dict(),
+            best_metric_name=self.monitor,
         )
 
     # ------------------------------------------------------------------
@@ -213,6 +279,21 @@ class Trainer:
             return resolve_name(v)
         except Exception:
             return v
+
+    def _move_optimizer_state_to_device(self) -> None:
+        for state in self.optimizer.state.values():
+            for k, v in state.items():
+                if isinstance(v, torch.Tensor):
+                    state[k] = v.to(self.device)
+
+    def _move_ema_state_to_device(self) -> None:
+        if self.ema is None:
+            return
+        state = self.ema.state_dict()
+        shadow = state.get("shadow", {})
+        for name, value in list(shadow.items()):
+            if isinstance(value, torch.Tensor):
+                shadow[name] = value.to(self.device)
 
     def resume(self, resume_cfg: dict) -> None:
         raw = resume_cfg.get("checkpoint_path")
@@ -241,13 +322,22 @@ class Trainer:
 
         if ckpt.get("optimizer") and self.optimizer:
             self.optimizer.load_state_dict(ckpt["optimizer"])
-            for state in self.optimizer.state.values():
-                for k, v in state.items():
-                    if isinstance(v, torch.Tensor):
-                        state[k] = v.to(self.device)
+            self._move_optimizer_state_to_device()
 
         if ckpt.get("scheduler") and self.scheduler:
             self.scheduler.load_state_dict(ckpt["scheduler"])
+
+        if ckpt.get("scaler"):
+            self.scaler.load_state_dict(ckpt["scaler"])
+
+        if self.ema is not None:
+            if ckpt.get("ema"):
+                self.ema.load_state_dict(ckpt["ema"])
+                self._move_ema_state_to_device()
+            else:
+                self.logger.warning(
+                    "Resume checkpoint has no EMA state; EMA shadow was initialised from resumed model weights."
+                )
 
         self.start_iter  = ckpt.get("iteration", 0)
         self.best_metric = ckpt.get("best_metric", self.best_metric)
@@ -260,14 +350,16 @@ class Trainer:
         self.logger.info(f"  Best Metric : {self.best_metric:.4f}")
         if ckpt_var:
             self.logger.info(f"  Variant     : {ckpt_var}")
+        self.logger.info(f"  EMA State   : {'loaded' if self.ema is not None and ckpt.get('ema') else 'not loaded'}")
+        self.logger.info(f"  AMP Scaler  : {'loaded' if ckpt.get('scaler') else 'not loaded'}")
         self.logger.info(sep)
 
     # ------------------------------------------------------------------
     # Training step
     # ------------------------------------------------------------------
     def _step(self, batch: dict):
-        ia = batch["image_a"].to(self.device, non_blocking=self.non_blocking_transfer)
-        ib = batch["image_b"].to(self.device, non_blocking=self.non_blocking_transfer)
+        ia = self._move_image(batch["image_a"])
+        ib = self._move_image(batch["image_b"])
         ignore_mask = batch.get("ignore_mask")
         valid_mask = None
         if ignore_mask is not None and torch.is_tensor(ignore_mask):
@@ -295,7 +387,11 @@ class Trainer:
             debug_info["f1"] = ia   # raw image; real F1 would need hooks
             debug_info["f2"] = ib
 
-        with torch.amp.autocast("cuda", enabled=self.amp and self.device.type == "cuda"):
+        with torch.amp.autocast(
+            "cuda",
+            enabled=self.amp and self.device.type == "cuda",
+            dtype=self.amp_dtype,
+        ):
             outputs = normalize_model_output(self.model(ia, ib))
             logits = torch.clamp(outputs["change_logits"], -20.0, 20.0)
             outputs["change_logits"] = logits
@@ -343,6 +439,7 @@ class Trainer:
             or not torch.isfinite(logits).all()
         )
         if nan_detected:
+            config_path = self.cfg.get("_meta", {}).get("config_path", "unknown")
             tensor_checks = {
                 "ia":     ia,
                 "ib":     ib,
@@ -363,6 +460,12 @@ class Trainer:
                     )
             self.nan_diag.write(iteration, debug_info, logits, float("nan"))
             self._nan_skipped += 1
+            if self.amp:
+                raise RuntimeError(
+                    "NaN/Inf detected during AMP training. "
+                    f"config_path={config_path} iteration={iteration} "
+                    f"loss={loss_val} amp={self.amp} batch_index={iteration}"
+                )
             if self.skip_nan_steps:
                 self.optimizer.zero_grad(set_to_none=True)
                 self.logger.warning(
@@ -416,11 +519,205 @@ class Trainer:
             "consistency_loss": float(loss_stats.get("consistency_loss", 0.0)),
         }
 
+    def _profile_iteration(self, batch: dict, iteration: int) -> dict:
+        times = {
+            "h2d_time_ms": 0.0,
+            "forward_time_ms": 0.0,
+            "loss_time_ms": 0.0,
+            "backward_time_ms": 0.0,
+            "optimizer_time_ms": 0.0,
+            "validation_time_ms": 0.0,
+        }
+        t0 = time.perf_counter()
+        ia = self._move_image(batch["image_a"])
+        ib = self._move_image(batch["image_b"])
+        lb = batch["label"].to(self.device, non_blocking=self.non_blocking_transfer)
+        self._sync()
+        times["h2d_time_ms"] = (time.perf_counter() - t0) * 1000.0
+
+        t0 = time.perf_counter()
+        with torch.amp.autocast(
+            "cuda",
+            enabled=self.amp and self.device.type == "cuda",
+            dtype=self.amp_dtype,
+        ):
+            outputs = normalize_model_output(self.model(ia, ib))
+            logits = torch.clamp(outputs["change_logits"], -20.0, 20.0)
+            aux = outputs.get("aux_logits")
+            if aux is not None:
+                aux = torch.clamp(aux, -20.0, 20.0)
+        self._sync()
+        times["forward_time_ms"] = (time.perf_counter() - t0) * 1000.0
+
+        t0 = time.perf_counter()
+        total, primary_loss, dice = self.loss_fn(logits, lb)
+        if aux is not None:
+            aux_total, _, _ = self.loss_fn(aux, lb)
+            total = total + self.aux_weight * aux_total
+        if not torch.isfinite(total):
+            stats = dict(getattr(self.loss_fn, "latest_stats", {}))
+            raise RuntimeError(
+                "NaN/Inf during profiling. "
+                f"config_path={self.cfg.get('_meta', {}).get('config_path', 'unknown')} "
+                f"iteration={iteration} loss={float(total.detach().item())} "
+                f"amp={self.amp} loss_stats={stats}"
+            )
+        self._sync()
+        times["loss_time_ms"] = (time.perf_counter() - t0) * 1000.0
+
+        t0 = time.perf_counter()
+        self.scaler.scale(total).backward()
+        self.scaler.unscale_(self.optimizer)
+        if self.grad_clip > 0:
+            nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
+        self._sync()
+        times["backward_time_ms"] = (time.perf_counter() - t0) * 1000.0
+
+        t0 = time.perf_counter()
+        self.scaler.step(self.optimizer)
+        self.scaler.update()
+        self.optimizer.zero_grad(set_to_none=True)
+        if self.scheduler:
+            self.scheduler.step()
+        if self.ema is not None:
+            self.ema.update(self.model)
+        self._sync()
+        times["optimizer_time_ms"] = (time.perf_counter() - t0) * 1000.0
+        return times
+
+    def _write_profiling_outputs(self, rows: list[dict], profile_rows: list[dict]) -> None:
+        csv_path = self.output_dir / "profiling_summary.csv"
+        fields = [
+            "iteration",
+            "data_time_ms",
+            "h2d_time_ms",
+            "forward_time_ms",
+            "loss_time_ms",
+            "backward_time_ms",
+            "optimizer_time_ms",
+            "validation_time_ms",
+            "total_iter_time_ms",
+            "samples_per_sec",
+            "peak_mem_GB",
+        ]
+        with csv_path.open("w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fields)
+            writer.writeheader()
+            writer.writerows(rows)
+
+        def avg(key: str) -> float:
+            return sum(float(row[key]) for row in profile_rows) / max(len(profile_rows), 1)
+
+        component_keys = [
+            "data_time_ms",
+            "h2d_time_ms",
+            "forward_time_ms",
+            "loss_time_ms",
+            "backward_time_ms",
+            "optimizer_time_ms",
+            "validation_time_ms",
+        ]
+        avg_total = avg("total_iter_time_ms")
+        summary = {
+            "profile_iters": len(profile_rows),
+            "batch_size": int(self.cfg.get("training", {}).get("batch_size", 0)),
+            "image_size": int(self.cfg.get("dataset", {}).get("image_size", 0)),
+            "amp": bool(self.amp),
+            "amp_dtype": str(self.amp_dtype).replace("torch.", ""),
+            "channels_last": bool(self.channels_last),
+            "gradient_checkpointing": bool(self.gradient_checkpointing),
+            "avg_iter_time_ms": avg_total,
+            "samples_per_sec": sum(float(row["samples_per_sec"]) for row in profile_rows) / max(len(profile_rows), 1),
+            "peak_mem_GB": max(float(row["peak_mem_GB"]) for row in rows) if rows else 0.0,
+            "components_ms": {key: avg(key) for key in component_keys},
+            "components_pct": {key: (avg(key) / avg_total * 100.0 if avg_total > 0 else 0.0) for key in component_keys},
+        }
+        write_json(self.output_dir / "profiling_summary.json", summary)
+
+        self.logger.info("Profiling bottleneck summary:")
+        label_map = {
+            "data_time_ms": "Data loading",
+            "h2d_time_ms": "H2D transfer",
+            "forward_time_ms": "Forward",
+            "loss_time_ms": "Loss",
+            "backward_time_ms": "Backward",
+            "optimizer_time_ms": "Optimizer",
+            "validation_time_ms": "Validation/logging",
+        }
+        for key in component_keys:
+            self.logger.info("  %-20s: %.2f%%", label_map[key], summary["components_pct"][key])
+        if summary["components_pct"]["data_time_ms"] > 25.0 and int(self.cfg.get("dataloader", {}).get("num_workers", 0)) == 0:
+            self.logger.warning("Data loading is a bottleneck and num_workers=0; increase dataloader.num_workers.")
+        self.logger.info("Saved profiling CSV: %s", csv_path)
+        self.logger.info("Saved profiling JSON: %s", self.output_dir / "profiling_summary.json")
+
+    def _run_profiling(self) -> None:
+        pcfg = self.cfg.get("profiling", {})
+        warmup = int(pcfg.get("warmup_iters", 20))
+        profile_iters = int(pcfg.get("profile_iters", 100))
+        log_interval = int(pcfg.get("log_interval", 10))
+        total_iters = warmup + profile_iters
+        self.logger.info(
+            "Profiling mode enabled | warmup_iters=%d profile_iters=%d amp=%s channels_last=%s",
+            warmup,
+            profile_iters,
+            self.amp,
+            self.channels_last,
+        )
+        if self.use_ema:
+            self.ema = EMA(self.model, decay=self.ema_decay)
+        loader_iter = iter(self.train_loader)
+        self.model.train()
+        self.optimizer.zero_grad(set_to_none=True)
+        reset_peak_memory(self.device)
+        rows: list[dict] = []
+        for local_iter in range(total_iters):
+            data_start = time.perf_counter()
+            try:
+                batch = next(loader_iter)
+            except StopIteration:
+                loader_iter = iter(self.train_loader)
+                batch = next(loader_iter)
+            data_time_ms = (time.perf_counter() - data_start) * 1000.0
+            iter_start = time.perf_counter()
+            times = self._profile_iteration(batch, local_iter)
+            val_time_ms = 0.0
+            if (local_iter + 1) % self.val_every == 0:
+                t0 = time.perf_counter()
+                self._validate(local_iter + 1)
+                self._sync()
+                val_time_ms = (time.perf_counter() - t0) * 1000.0
+            total_iter_time_ms = (time.perf_counter() - iter_start) * 1000.0 + data_time_ms
+            row = {
+                "iteration": local_iter + 1,
+                "data_time_ms": data_time_ms,
+                **times,
+                "validation_time_ms": val_time_ms,
+                "total_iter_time_ms": total_iter_time_ms,
+                "samples_per_sec": int(self.cfg.get("training", {}).get("batch_size", 1)) / max(total_iter_time_ms / 1000.0, 1e-9),
+                "peak_mem_GB": peak_memory_gb(self.device),
+            }
+            rows.append(row)
+            if (local_iter + 1) % max(log_interval, 1) == 0:
+                self.logger.info(
+                    "[profile %d/%d] iter=%.2fms data=%.2fms fwd=%.2fms bwd=%.2fms mem=%.3fGB",
+                    local_iter + 1,
+                    total_iters,
+                    total_iter_time_ms,
+                    data_time_ms,
+                    times["forward_time_ms"],
+                    times["backward_time_ms"],
+                    row["peak_mem_GB"],
+                )
+        profile_rows = rows[warmup:] if warmup < len(rows) else rows
+        self._write_profiling_outputs(rows, profile_rows)
+
     # ------------------------------------------------------------------
     # Validation
     # ------------------------------------------------------------------
     @torch.no_grad()
     def _validate(self, iteration: int) -> dict:
+        reset_peak_memory(self.device)
         # Apply EMA weights for validation if enabled
         if self.ema is not None:
             self.ema.apply_shadow(self.model)
@@ -437,6 +734,8 @@ class Trainer:
         self.model.train()
         result["ema_enabled"] = self.ema is not None
         result["ema_weights_found"] = self.ema is not None
+        result["peak_val_mem_GB"] = peak_memory_gb(self.device)
+        self.peak_val_mem_gb = max(self.peak_val_mem_gb, float(result["peak_val_mem_GB"]))
         return result
 
     # ------------------------------------------------------------------
@@ -444,19 +743,24 @@ class Trainer:
     # ------------------------------------------------------------------
     def train(self) -> None:
         resume_cfg = self.cfg.get("resume", {})
-        if resume_cfg.get("enabled", False):
-            self.resume(resume_cfg)
-
-        # Initialise EMA after potential resume so shadow copies loaded weights
         if self.use_ema:
             self.ema = EMA(self.model, decay=self.ema_decay)
             self.logger.info(f"EMA enabled (decay={self.ema_decay})")
 
+        if resume_cfg.get("enabled", False):
+            self.resume(resume_cfg)
+
+        if bool(self.cfg.get("profiling", {}).get("enabled", False)):
+            self._run_profiling()
+            return
+
         self._current_iter = self.start_iter
         self.logger.info(
             f"Training | max_iter={self.max_iter} | "
-            f"val_every={self.val_every} | amp={self.amp}"
+            f"val_every={self.val_every} | amp={self.amp} | "
+            f"gradient_checkpointing={self.gradient_checkpointing}"
         )
+        reset_peak_memory(self.device)
 
         # ── Dataset statistics ────────────────────────────────────────────────
         try:
@@ -497,6 +801,8 @@ class Trainer:
 
             self._current_iter = iteration
             step_stats = self._step(batch)
+            self._maybe_save_forward_trace()
+            self.peak_train_mem_gb = max(self.peak_train_mem_gb, peak_memory_gb(self.device))
 
             if self.scheduler:
                 self.scheduler.step()
@@ -555,7 +861,16 @@ class Trainer:
             if pbar:
                 pbar.update(1)
 
+            if self.save_latest and (iteration + 1) % max(self.latest_every, 1) == 0:
+                self._save_training_checkpoint(self.ckpt_dir / "latest.pth", iteration + 1)
+                self.logger.info(f"  Latest checkpoint saved at iter {iteration + 1}.")
+
+            if self.save_every is not None and (iteration + 1) % int(self.save_every) == 0:
+                self._save_training_checkpoint(self.ckpt_dir / f"iter_{iteration + 1}.pth", iteration + 1)
+                self.logger.info(f"  Periodic checkpoint saved at iter {iteration + 1}.")
+
             if (iteration + 1) % self.val_every == 0:
+                self.peak_train_mem_gb = max(self.peak_train_mem_gb, peak_memory_gb(self.device))
                 vm  = self._validate(iteration + 1)
                 self._print_val_block(vm, iteration + 1)
                 log_table(self.logger, vm, title="")  # detailed table
@@ -587,22 +902,40 @@ class Trainer:
                 )
                 if is_best:
                     self.best_metric = monitor_val
-                    save_ckpt(
+                    self._save_training_checkpoint(
                         self.ckpt_dir / "best.pth",
-                        self.model, self.optimizer, self.scheduler,
-                        iteration + 1, self.best_metric, self.cfg,
-                        ema_state=self.ema.state_dict() if self.ema is not None else None,
+                        iteration + 1,
                         best_threshold=vm.get("best_threshold"),
                         val_metrics=vm,
-                        scaler_state=self.scaler.state_dict(),
-                        best_metric_name=self.monitor,
                     )
                     self.logger.info(
                         f"  ✓ New best {self.monitor}={self.best_metric:.4f} saved."
                     )
+                reset_peak_memory(self.device)
 
         if pbar:
             pbar.close()
+
+        if self.save_latest:
+            self._save_training_checkpoint(self.ckpt_dir / "latest.pth", self.max_iter)
+            self.logger.info(f"  Latest checkpoint saved at iter {self.max_iter}.")
+
+        memory_summary = {
+            "peak_train_mem_GB": self.peak_train_mem_gb,
+            "peak_val_mem_GB": self.peak_val_mem_gb,
+            "batch_size": int(self.cfg.get("training", {}).get("batch_size", 0)),
+            "crop_size": int(self.cfg.get("evaluation", {}).get("crop_size", self.cfg.get("dataset", {}).get("image_size", 0))),
+            "amp_enabled": bool(self.amp),
+            "gradient_checkpointing_enabled": bool(self.gradient_checkpointing),
+            "params_M": self.params_m,
+        }
+        write_json(self.output_dir / "memory_summary.json", memory_summary)
+        self.logger.info(
+            "Memory summary | peak_train_mem_GB=%.4f peak_val_mem_GB=%.4f params_M=%.4f",
+            self.peak_train_mem_gb,
+            self.peak_val_mem_gb,
+            self.params_m,
+        )
 
     # ------------------------------------------------------------------
     # Validation summary block
@@ -614,7 +947,6 @@ class Trainer:
         if self.archived_semantic_mode:
             self.logger.info(f"  OA              : {vm.get('OA', 0.0):.4f}")
             self.logger.info(f"  mIoU            : {vm.get('mIoU', 0.0):.4f}")
-            
             self.logger.info(sep)
             return
         self.logger.info(f"  Best Threshold  : {vm.get('best_threshold', self.threshold):.2f}")

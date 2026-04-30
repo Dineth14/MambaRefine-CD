@@ -43,7 +43,12 @@ def module_flags(cfg: dict) -> dict[str, Any]:
         "decoder_name": decoder,
         "mambavision_enabled": backbone == "mambavision",
         "drbi_enabled": bool(diff.get("enabled", True)),
+        "raw_pair_enabled": True,
+        "abs_diff_enabled": bool(diff.get("use_absdiff", True)) if bool(diff.get("enabled", True)) else True,
         "signed_diff_enabled": bool(diff.get("use_signed_diff", False)),
+        "feature_product_enabled": bool(diff.get("use_product", False)),
+        "region_gate_enabled": bool(diff.get("use_region_gate", True)) and bool(diff.get("enabled", True)),
+        "boundary_gate_enabled": bool(diff.get("use_boundary_gate", True)) and bool(diff.get("enabled", True)),
         "cram_lite_enabled": bool((model.get("cram_lite", {}) or {}).get("enabled", False)),
         "arf_fpn_enabled": decoder == "adaptive_rf",
         "boundary_refine_enabled": bool(dec.get("use_boundary_residual", False)) and decoder == "adaptive_rf",
@@ -157,8 +162,17 @@ def compare_checkpoint_config(logger, cfg: dict, ckpt: dict, *, strict: bool = T
     logger.info("Checkpoint stored module flags    : %s", ckpt_flags or "missing")
     if ckpt_fp and ckpt_fp != current_fp:
         logger.warning("Checkpoint was trained with a different config.")
-    if ckpt_flags and ckpt_flags != current_flags:
-        msg = f"Checkpoint module flags do not match current config: checkpoint={ckpt_flags}, current={current_flags}"
+    if ckpt_flags:
+        common_keys = set(ckpt_flags).intersection(current_flags)
+        mismatched = {
+            key: (ckpt_flags[key], current_flags[key])
+            for key in sorted(common_keys)
+            if ckpt_flags[key] != current_flags[key]
+        }
+    else:
+        mismatched = {}
+    if mismatched:
+        msg = f"Checkpoint module flags do not match current config: {mismatched}"
         if strict:
             raise RuntimeError(msg)
         logger.warning(msg)

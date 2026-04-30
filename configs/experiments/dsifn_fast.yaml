@@ -1,45 +1,12 @@
-# Runtime defaults for active binary change-detection experiments.
+# DSIFN speed-oriented efficiency variant.
+# Not the verified full model. Keeps dataset split, binary metrics, binary loss,
+# shared MambaVision encoder, D-RBI, and boundary refinement. Reduces
+# fusion/decoder width and ARF branches for faster experiments.
 
 experiment:
-  name: dsifn_full
-  output_root: outputs/dsifn/full
+  name: dsifn_fast
+  output_root: outputs/dsifn/fast
   seed: 42
-
-hardware:
-  device: cuda
-  gpu_ids: [0]
-  mixed_precision: true
-
-efficiency:
-  amp: true
-  amp_dtype: fp16
-  channels_last: false
-  gradient_checkpointing: false
-  compile: false
-  compile_mode: reduce-overhead
-  fast_mode: false
-  channels_multiplier: 1.0
-
-profiling:
-  enabled: false
-  warmup_iters: 20
-  profile_iters: 100
-  log_interval: 10
-
-dataloader:
-  num_workers: 8
-  pin_memory: true
-  persistent_workers: true
-  prefetch_factor: 4
-  drop_last: true
-
-logging:
-  train_metrics_every_iter: false
-  save_visualizations: false
-  log_interval: 20
-
-optimizer:
-  grad_clip_norm: 0.5
 
 dataset:
   name: DSIFN-CD
@@ -47,12 +14,15 @@ dataset:
   mode: binary
   task_type: binary_change
   image_size: 256
+  batch_size: 8
   num_workers: 8
-  pin_memory: true
-  persistent_workers: true
-  prefetch_factor: 4
-  val_ratio: 0.2
   augmentation: true
+  val_ratio: 0.2
+  image_a_dir_candidates: [t1, T1, A, imageA, before, img1]
+  image_b_dir_candidates: [t2, T2, B, imageB, after, img2]
+  label_dir_candidates: [mask, GT, label, labels, OUT, change_map]
+
+task: binary_cd
 
 model:
   mode: dual
@@ -61,7 +31,7 @@ model:
   decoder: adaptive_rf
   pretrained: true
   output_mode: binary
-  num_classes: 1
+  enable_semantic_heads: false
   freeze_backbone: false
   drbi:
     enabled: true
@@ -70,7 +40,7 @@ model:
   cram_lite:
     enabled: true
     alpha: 0.5
-    apply_stages: [0, 1, 2]
+    apply_stages: [0, 1]
     attention_type: spatial
   arf_fpn:
     enabled: true
@@ -79,31 +49,44 @@ model:
 
 difference:
   enabled: true
-  type: region_boundary
-  out_channels: 256
+  out_channels: 128
   use_depthwise: true
   gate_hidden_ratio: 0.25
-  pre_norm: true
   use_absdiff: true
   use_signed_diff: true
   use_product: false
   product_scale: 0.25
+  pre_norm: true
   use_region_gate: true
   use_boundary_gate: true
   region_gate_min: 0.2
   region_gate_max: 0.8
   boundary_gate_min: 0.0
   boundary_gate_max: 0.4
-  return_debug: false
 
 decoder:
   type: adaptive_rf
-  channels: 256
-  dilation_rates: [1, 2, 4, 8]
+  decoder_channels: 128
+  dilation_rates: [1, 2]
   use_boundary_residual: true
   residual_scale: 0.1
   use_depthwise: true
   aux_weight: 0.4
+
+efficiency:
+  amp: true
+  amp_dtype: fp16
+  channels_last: false
+  gradient_checkpointing: false
+  compile: false
+  compile_mode: reduce-overhead
+  fast_mode: true
+  channels_multiplier: 1.0
+
+hardware:
+  device: cuda
+  gpu_ids: [0]
+  mixed_precision: true
 
 training:
   max_iterations: 50000
@@ -118,29 +101,6 @@ training:
   weight_decay: 0.01
   skip_nan_steps: true
   nan_diag_every: 50
-  non_blocking_transfer: true
-
-validation:
-  batch_size: 4
-  save_samples: true
-  sample_count: 16
-  split: val
-
-evaluation:
-  split: test
-  threshold: 0.5
-  threshold_sweep:
-    enabled: true
-    values: [0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60]
-  threshold_select_metric: F1_1
-  use_ema: true
-  inference_mode: patch
-  crop_size: 256
-  overlap: 0.25
-  use_tta: false
-  save_predictions: false
-  save_visualizations: false
-  memory_efficient: true
 
 loss:
   type: bce_dice
@@ -162,10 +122,23 @@ metrics:
   allowed: [Pre, Rec, F1, IoU, OA]
   average_mode: global
 
+eval:
+  threshold: 0.5
+  threshold_sweep:
+    enabled: true
+    values: [0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60]
+  threshold_select_metric: F1_1
+  use_ema: true
+  inference_mode: patch
+  crop_size: 256
+  overlap: 0.25
+  save_predictions: false
+  save_visualizations: false
+  memory_efficient: true
+
 ema:
   enabled: true
   decay: 0.999
-  store_on_cpu: true
 
 resume:
   enabled: false
@@ -173,17 +146,6 @@ resume:
   strict: true
 
 checkpoint:
-  path: null
+  selection_metric: F1
   monitor: f1
   mode: max
-  save_best_only: true
-
-boundary_metrics:
-  enabled: true
-  boundary_width: 3
-  tolerance: 2
-
-debug:
-  enabled: false
-  output_root: debug
-  ablation_trace: false

@@ -1,6 +1,11 @@
+# WHU speed-oriented efficiency variant.
+# Not the verified full model. Keeps dataset split, binary metrics, binary loss,
+# shared MambaVision encoder, D-RBI, and boundary refinement. Reduces
+# fusion/decoder width and ARF branches for faster experiments.
+
 experiment:
-  name: whu_full
-  output_root: outputs/whu/full
+  name: whu_fast
+  output_root: outputs/whu/fast
   seed: 42
 
 dataset:
@@ -19,7 +24,7 @@ task: binary_cd
 model:
   mode: dual
   backbone: mambavision
-  variant: small
+  variant: base
   decoder: adaptive_rf
   pretrained: true
   output_mode: binary
@@ -32,7 +37,7 @@ model:
   cram_lite:
     enabled: true
     alpha: 0.5
-    apply_stages: [0, 1, 2]
+    apply_stages: [0, 1]
     attention_type: spatial
   arf_fpn:
     enabled: true
@@ -41,7 +46,7 @@ model:
 
 difference:
   enabled: true
-  out_channels: 256
+  out_channels: 128
   use_depthwise: true
   gate_hidden_ratio: 0.25
   use_absdiff: true
@@ -58,16 +63,26 @@ difference:
 
 decoder:
   type: adaptive_rf
-  channels: 256
-  dilation_rates: [1, 2, 4, 8]
+  decoder_channels: 128
+  dilation_rates: [1, 2]
   use_boundary_residual: true
   residual_scale: 0.1
   use_depthwise: true
   aux_weight: 0.4
 
+efficiency:
+  amp: true
+  amp_dtype: fp16
+  channels_last: false
+  gradient_checkpointing: false
+  compile: false
+  compile_mode: reduce-overhead
+  fast_mode: true
+  channels_multiplier: 1.0
+
 hardware:
   device: cuda
-  gpu_ids: [1]
+  gpu_ids: [0]
   mixed_precision: true
 
 training:
@@ -114,8 +129,9 @@ eval:
   inference_mode: patch
   crop_size: 256
   overlap: 0.25
-  log_mask_debug: true
-  save_debug_outputs: false
+  save_predictions: false
+  save_visualizations: false
+  memory_efficient: true
 
 ema:
   enabled: true

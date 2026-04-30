@@ -152,6 +152,7 @@ class AdaptiveRFDecoder(nn.Module):
     ) -> None:
         super().__init__()
         rates = dilation_rates or [1, 2, 4, 8]
+        self.dilation_rates         = list(rates)
         self.residual_scale        = residual_scale
         self.use_boundary_residual = use_boundary_residual
 

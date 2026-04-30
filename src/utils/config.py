@@ -254,6 +254,11 @@ def _normalize_config(data: dict[str, Any]) -> dict[str, Any]:
     data.setdefault("decoder", {})
     data.setdefault("boundary_metrics", {})
     data.setdefault("post_training", {})
+    data.setdefault("efficiency", {})
+    data.setdefault("profiling", {})
+    data.setdefault("dataloader", {})
+    data.setdefault("logging", {})
+    data.setdefault("optimizer", {})
 
     # Resolve active dataset from one-file catalog.
     catalog = data.get("datasets_catalog", {})
@@ -263,6 +268,25 @@ def _normalize_config(data: dict[str, Any]) -> dict[str, Any]:
         base_ds = _match_dataset_entry(catalog, ds_name)
         if base_ds is not None:
             data["dataset"] = _deep_merge(base_ds, dataset)
+
+    efficiency = data.get("efficiency", {})
+    hardware = data.get("hardware", {})
+    training = data.get("training", {})
+    if "amp" in efficiency:
+        hardware["mixed_precision"] = bool(efficiency.get("amp"))
+    if "gradient_checkpointing" in efficiency:
+        training["gradient_checkpointing"] = bool(efficiency.get("gradient_checkpointing"))
+    efficiency.setdefault("amp", bool(hardware.get("mixed_precision", True)))
+    efficiency.setdefault("amp_dtype", "fp16")
+    efficiency.setdefault("gradient_checkpointing", bool(training.get("gradient_checkpointing", False)))
+    efficiency.setdefault("channels_last", False)
+    efficiency.setdefault("compile", False)
+    efficiency.setdefault("compile_mode", "reduce-overhead")
+    efficiency.setdefault("fast_mode", False)
+    efficiency.setdefault("channels_multiplier", 1.0)
+    data["efficiency"] = efficiency
+    data["hardware"] = hardware
+    data["training"] = training
 
     # EMA lives in one top-level section, but training internals still expect keys under training.
     train_alias = data.get("train", {})
@@ -274,11 +298,37 @@ def _normalize_config(data: dict[str, Any]) -> dict[str, Any]:
         if "save_best_by" in train_alias:
             data.setdefault("checkpoint", {})["selection_metric"] = train_alias["save_best_by"]
     ema = data.get("ema", {})
-    training = data.get("training", {})
     training["use_ema"] = bool(ema.get("enabled", training.get("use_ema", False)))
     training["ema_decay"] = float(ema.get("decay", training.get("ema_decay", 0.999)))
     training.setdefault("non_blocking_transfer", True)
+    training.setdefault("gradient_checkpointing", bool(efficiency.get("gradient_checkpointing", False)))
+    training.setdefault("overwrite_output_dir", False)
+    training.setdefault("allow_resume_for_ablation", False)
+    if "val_interval" in training and "validate_every" not in training:
+        training["validate_every"] = training["val_interval"]
+    training.setdefault("validate_every", training.get("val_interval", 5000))
     data["training"] = training
+
+    resume = data.get("resume", {})
+    resume.setdefault("enabled", False)
+    resume.setdefault("checkpoint_path", None)
+    resume.setdefault("strict", True)
+    data["resume"] = resume
+
+    optimizer_cfg = data.get("optimizer", {})
+    optimizer_cfg.setdefault("grad_clip_norm", training.get("gradient_clip", None))
+    if optimizer_cfg.get("grad_clip_norm", None) is None:
+        training["gradient_clip"] = 0.0
+    else:
+        training["gradient_clip"] = float(optimizer_cfg["grad_clip_norm"])
+    data["optimizer"] = optimizer_cfg
+
+    logging_cfg = data.get("logging", {})
+    logging_cfg.setdefault("train_metrics_every_iter", False)
+    logging_cfg.setdefault("save_visualizations", False)
+    logging_cfg.setdefault("log_interval", training.get("log_every", 20))
+    training["log_every"] = int(logging_cfg.get("log_interval", training.get("log_every", 20)))
+    data["logging"] = logging_cfg
 
     # Normalize optimizer names for torch.optim getattr usage.
     opt_name = str(training.get("optimizer", "AdamW"))
@@ -307,6 +357,17 @@ def _normalize_config(data: dict[str, Any]) -> dict[str, Any]:
     data["model"] = model
     _apply_explicit_model_module_flags(data)
 
+    decoder = data.get("decoder", {})
+    if "decoder_channels" in decoder:
+        decoder["channels"] = int(decoder["decoder_channels"])
+    else:
+        channel_multiplier = float(efficiency.get("channels_multiplier", 1.0))
+        if channel_multiplier != 1.0:
+            decoder["channels"] = max(1, int(round(int(decoder.get("channels", 256)) * channel_multiplier)))
+            difference = data.setdefault("difference", {})
+            difference["out_channels"] = max(1, int(round(int(difference.get("out_channels", 256)) * channel_multiplier)))
+    data["decoder"] = decoder
+
     # Preserve checkpoint path for eval/validate in one place.
     checkpoint = data.get("checkpoint", {})
     checkpoint.setdefault("path", None)
@@ -315,6 +376,11 @@ def _normalize_config(data: dict[str, Any]) -> dict[str, Any]:
     checkpoint.setdefault("monitor", "f1")
     checkpoint.setdefault("mode", "max")
     checkpoint.setdefault("save_best_only", True)
+    checkpoint.setdefault("save_best", True)
+    checkpoint.setdefault("save_last", True)
+    checkpoint.setdefault("save_every", None)
+    checkpoint.setdefault("save_latest", bool(checkpoint.get("save_last", True)))
+    checkpoint.setdefault("latest_every", training.get("validate_every", 5000))
     data["checkpoint"] = checkpoint
 
     validation = data.get("validation", {})
@@ -325,14 +391,21 @@ def _normalize_config(data: dict[str, Any]) -> dict[str, Any]:
     data["validation"] = validation
 
     dataset_cfg = data.get("dataset", {})
-    dataset_cfg.setdefault("num_workers", 8)
-    dataset_cfg.setdefault("pin_memory", True)
-    dataset_cfg.setdefault("persistent_workers", True)
-    dataset_cfg.setdefault("prefetch_factor", 4)
+    dataloader_cfg = data.get("dataloader", {})
+    dataloader_cfg.setdefault("num_workers", dataset_cfg.get("num_workers", 8))
+    dataloader_cfg.setdefault("pin_memory", dataset_cfg.get("pin_memory", True))
+    dataloader_cfg.setdefault("persistent_workers", dataset_cfg.get("persistent_workers", True))
+    dataloader_cfg.setdefault("prefetch_factor", dataset_cfg.get("prefetch_factor", 4))
+    dataloader_cfg.setdefault("drop_last", True)
+    dataset_cfg["num_workers"] = int(dataloader_cfg["num_workers"])
+    dataset_cfg["pin_memory"] = bool(dataloader_cfg["pin_memory"])
+    dataset_cfg["persistent_workers"] = bool(dataloader_cfg["persistent_workers"])
+    dataset_cfg["prefetch_factor"] = int(dataloader_cfg["prefetch_factor"])
     dataset_cfg.setdefault("task_type", "binary_change")
     dataset_cfg.setdefault("cache_images_in_ram", False)
     dataset_cfg.setdefault("cache_masks_in_ram", False)
     data["dataset"] = dataset_cfg
+    data["dataloader"] = dataloader_cfg
 
     evaluation = data.get("evaluation", {})
     eval_alias = data.get("eval", {})
@@ -355,6 +428,10 @@ def _normalize_config(data: dict[str, Any]) -> dict[str, Any]:
     evaluation.setdefault("inference_mode", "patch")
     evaluation.setdefault("crop_size", dataset_cfg.get("image_size", 256))
     evaluation.setdefault("overlap", 0.25)
+    evaluation.setdefault("save_predictions", False)
+    evaluation.setdefault("save_visualizations", False)
+    evaluation.setdefault("memory_efficient", True)
+    evaluation.setdefault("use_cached_predictions", False)
     data["evaluation"] = evaluation
     data["eval"] = evaluation
 
@@ -386,6 +463,7 @@ def _normalize_config(data: dict[str, Any]) -> dict[str, Any]:
     data["loss"] = loss_cfg
 
     debug = data.get("debug", {})
+    debug.setdefault("ablation_trace", False)
     debug.setdefault("name", "memory_debug")
     debug.setdefault("output_root", "outputs/memory_debug")
     debug.setdefault("steps", 3)
@@ -411,6 +489,13 @@ def _normalize_config(data: dict[str, Any]) -> dict[str, Any]:
     debug.setdefault("save_memory_summary", True)
     debug.setdefault("seed", data["experiment"].get("seed", 42))
     data["debug"] = debug
+
+    profiling = data.get("profiling", {})
+    profiling.setdefault("enabled", False)
+    profiling.setdefault("warmup_iters", 20)
+    profiling.setdefault("profile_iters", 100)
+    profiling.setdefault("log_interval", 10)
+    data["profiling"] = profiling
 
     benchmark = data.get("benchmark", {})
     benchmark.setdefault("model_name", data["experiment"].get("name", "model"))

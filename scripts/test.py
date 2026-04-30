@@ -10,6 +10,7 @@ import csv
 import json
 import logging
 import sys
+from datetime import datetime
 from pathlib import Path
 
 _REPO = Path(__file__).resolve().parents[1]
@@ -20,6 +21,8 @@ import torch
 
 from utils.config import load_config
 from utils.ablation import compare_checkpoint_config, config_fingerprint, log_parameter_breakdown, log_startup_config, module_flags
+from utils.checkpoint_identity import checkpoint_identity
+from utils.memory import params_m, peak_memory_gb, reset_peak_memory
 
 logging.basicConfig(
     level=logging.INFO,
@@ -86,6 +89,45 @@ def _save_results(metrics: dict, save_dir: Path) -> None:
     logger.info(f"Saved results to {save_dir}")
 
 
+def _slug(value: str) -> str:
+    return str(value).strip().lower().replace("-cd", "").replace("/", "-").replace(" ", "_")
+
+
+def _make_eval_dir(cfg: dict, ckpt_identity: dict) -> Path:
+    base = Path(cfg.get("experiment", {}).get("output_root", "outputs/test"))
+    variant = str(cfg.get("experiment", {}).get("name", "unknown"))
+    dataset = _slug(str(cfg.get("dataset", {}).get("name", "dataset")))
+    ckpt_hash = str(ckpt_identity.get("checkpoint_sha256", "nohash"))[:12]
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out = base / f"eval_{dataset}_{variant}_{ckpt_hash}_{ts}"
+    if not out.exists():
+        return out
+    for idx in range(2, 10000):
+        candidate = out.with_name(f"{out.name}_{idx}")
+        if not candidate.exists():
+            return candidate
+    raise RuntimeError(f"Could not create unique eval output directory under {base}")
+
+
+def _warn_same_checkpoint_hash(base: Path, current_hash: str, current_variant: str) -> None:
+    if not base.exists() or not current_hash:
+        return
+    matches: list[tuple[str, str]] = []
+    for path in base.rglob("metrics.json"):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if data.get("checkpoint_sha256") == current_hash:
+            variant = str(data.get("variant_name", "unknown"))
+            if variant != current_variant:
+                matches.append((variant, str(path)))
+    if matches:
+        logger.warning("WARNING: multiple ablations are using the same checkpoint file.")
+        for variant, path in matches:
+            logger.warning("  same checkpoint hash as variant=%s results=%s", variant, path)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Test MambaRefineCD on held-out test split.")
     parser.add_argument("--config",          required=True)
@@ -123,7 +165,9 @@ def main() -> None:
     from training.evaluator import Evaluator
 
     ckpt_meta = peek_ckpt(args.ckpt, map_location=device)
+    ckpt_identity = checkpoint_identity(args.ckpt, ckpt_meta)
     logger.info("Config ablation name: %s", cfg.get("experiment", {}).get("name", "unknown"))
+    logger.info("Checkpoint SHA256: %s", ckpt_identity["checkpoint_sha256"])
     compare_checkpoint_config(logger, cfg, ckpt_meta, strict=bool(args.strict))
     threshold, threshold_source = _resolve_threshold(args, cfg, ckpt_meta)
     use_ema_requested = _resolve_use_ema(args, cfg)
@@ -157,6 +201,7 @@ def main() -> None:
 
     model = build_model(cfg).to(device)
     log_parameter_breakdown(logger, model)
+    model_params_m = params_m(model)
     load_info = load_for_eval(
         args.ckpt,
         model,
@@ -176,14 +221,19 @@ def main() -> None:
     logger.info(f"Missing keys: {load_info['missing_keys']}")
     logger.info(f"Unexpected keys: {load_info['unexpected_keys']}")
 
-    out_root = Path(cfg.get("experiment", {}).get("output_root", "outputs/test"))
+    base_output_root = Path(cfg.get("experiment", {}).get("output_root", "outputs/test"))
+    variant_name = str(cfg.get("experiment", {}).get("name", "unknown"))
+    _warn_same_checkpoint_hash(base_output_root, str(ckpt_identity.get("checkpoint_sha256", "")), variant_name)
+    out_root = _make_eval_dir(cfg, ckpt_identity)
     evaluator = Evaluator(cfg, device, logger=logger, save_dir=out_root)
+    reset_peak_memory(device)
     raw = evaluator.evaluate(
         model,
         loader,
         dataset_name=cfg.get("dataset", {}).get("name", "unknown"),
         amp=bool(cfg.get("hardware", {}).get("mixed_precision", True)),
     )
+    peak_test_mem_gb = peak_memory_gb(device)
 
     effective_threshold = float(raw.get("best_threshold", threshold))
     effective_source = "validation-sweep" if effective_threshold != threshold and args.split == "val" else threshold_source
@@ -192,8 +242,14 @@ def main() -> None:
     results["threshold_source"] = effective_source
     results["ema_used"] = bool(load_info["ema_used"])
     results["ema_found"] = bool(load_info["ema_found"])
+    results["config_path"] = str(Path(args.config).resolve())
+    results["variant_name"] = variant_name
+    results["run_dir"] = str(out_root.resolve())
+    results.update(ckpt_identity)
     results["config_fingerprint"] = cfg.get("_meta", {}).get("config_fingerprint", config_fingerprint(cfg))
     results["module_flags"] = module_flags(cfg)
+    results["peak_test_mem_GB"] = peak_test_mem_gb
+    results["params_M"] = model_params_m
 
     logger.info("=" * 50)
     logger.info("Test Results:")
@@ -204,7 +260,7 @@ def main() -> None:
         logger.info(f"  {k:16s}: {float(v):.4f}")
     logger.info("-" * 50)
     logger.info("Evaluation metadata:")
-    for k in ("threshold", "threshold_source", "ema_used", "ema_found"):
+    for k in ("threshold", "threshold_source", "ema_used", "ema_found", "peak_test_mem_GB", "params_M"):
         v = results.get(k)
         if v is None:
             continue

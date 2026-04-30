@@ -56,6 +56,8 @@ def main() -> None:
                         help="Build model and run one batch; do not train.")
     parser.add_argument("--resume", type=str, default=None,
                         help="Path to checkpoint to resume from.")
+    parser.add_argument("--profile", action="store_true",
+                        help="Run short profiling mode and exit.")
     args = parser.parse_args()
 
     config_path = Path(args.config)
@@ -75,6 +77,9 @@ def main() -> None:
         cfg.setdefault("resume", {})
         cfg["resume"]["enabled"] = True
         cfg["resume"]["checkpoint_path"] = args.resume
+    if args.profile:
+        cfg.setdefault("profiling", {})
+        cfg["profiling"]["enabled"] = True
 
     if args.dry_run:
         logger.info("=== DRY RUN MODE ===")
