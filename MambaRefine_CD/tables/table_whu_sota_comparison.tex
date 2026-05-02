@@ -1,0 +1,28 @@
+\begin{table}[t]
+\centering
+\caption{Comparison with recent methods on WHU-CD. Literature values are reported by Peng et al.~\cite{peng2026mambacd}.}
+\label{tab:whu_sota_comparison}
+\scriptsize
+\setlength{\tabcolsep}{2.2pt}
+\begin{tabular}{l c c c c c c}
+\hline
+Method & Year & Pre & Rec & F1 & IoU & OA \\
+\hline
+FC-EF~\cite{daudt2018fully}           & 2018 & 71.63 & 67.25 & 69.37 & 53.11 & 97.61 \\
+FC-Siam-Di~\cite{daudt2018fully}      & 2018 & 47.33 & 77.66 & 58.81 & 41.66 & 95.63 \\
+FC-Siam-Conc~\cite{daudt2018fully}    & 2018 & 60.88 & 73.58 & 66.63 & 49.95 & 97.04 \\
+DTCDSCN                               & 2020 & 63.92 & 82.30 & 71.95 & 56.19 & 97.42 \\
+STANet                                & 2020 & 79.37 & 85.50 & 82.32 & 69.95 & 98.52 \\
+IFNet                                 & 2020 & \best{96.91} & 73.19 & 83.40 & 71.52 & 98.83 \\
+SNUNet~\cite{fang2022snunet}          & 2021 & 85.60 & 81.49 & 83.50 & 71.67 & 98.71 \\
+ChangeFormer~\cite{bandara2022changeformer} & 2022 & 91.83 & 88.02 & 89.88 & 81.63 & 99.12 \\
+BiFA                                  & 2024 & 95.15 & \third{93.60} & \third{94.37} & \third{89.34} & \second{99.56} \\
+RSM-CD                                & 2024 & 93.37 & 90.42 & 91.87 & 84.96 & --    \\
+SChanger                              & 2025 & 94.62 & 91.83 & 93.20 & 87.27 & --    \\
+CDMamba                               & 2025 & \third{95.58} & 92.01 & 93.76 & 88.26 & 99.51 \\
+Mamba-CD~\cite{peng2026mambacd}       & 2026 & \second{96.52} & \second{93.91} & \best{95.20} & \best{90.83} & \best{99.62} \\
+\hline
+\textbf{\ours{} (ours)}               & 2026 & \third{95.58} & \best{94.74} & \second{95.15} & \second{90.76} & \third{99.54} \\
+\hline
+\end{tabular}
+\end{table}

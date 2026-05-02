@@ -23,6 +23,17 @@ Table~\ref{tab:main_results} reports the full model performance on both datasets
 
 \input{tables/table_main_results}
 
+\subsection{Comparison with Recent Change Detection Methods}
+\label{sec:sota_comparison}
+We compare \ours{} with recent CNN-, Transformer-, hybrid-, and Mamba-based binary change detection methods reported by Peng et al.~\cite{peng2026mambacd}. The WHU-CD comparison follows the standard WHU test setting used in recent literature. For DSIFN-CD, we report the literature values from Peng et al.\ together with our verified clean-split result; because the DSIFN split differs (Peng et al.\ use a 14400/1360/192 patch-pair partition, while we use 2758/394/789 images with 3156 test tiles from non-overlapping hash-locked splits), the DSIFN table should be interpreted as an indicative comparison rather than a strict same-protocol ranking.
+
+\emph{Colored cells denote the best, second-best, and third-best values within each metric column.}
+
+\input{tables/table_whu_sota_comparison}
+\input{tables/table_dsifn_sota_comparison}
+
+On WHU-CD, \ours{} obtains 95.15\% F1 and 90.76\% IoU, which is close to the recent Mamba-CD baseline~\cite{peng2026mambacd} with only a 0.05\% F1 and 0.07\% IoU difference, while achieving higher recall. On DSIFN-CD, \ours{} obtains 95.67\% F1 and 91.71\% IoU on the verified clean split, with a best single run of 96.40\% F1 and 93.04\% IoU. Since the DSIFN split differs from the literature table, this result is reported as an indicative comparison rather than a strict same-protocol SOTA claim.
+
 \subsection{Ablation Study}
 \label{sec:ablation}
 Table~\ref{tab:ablation} presents a controlled ablation over seven variants on DSIFN-CD. Starting from a lightweight CNN baseline (A0, 7.84M, F1\,=\,76.63), replacing the encoder with MambaVision-S (A1) yields a large gain (+17.24 F1), confirming the encoder's dominant role. Adding \drbi{} with absolute-difference input only (A2) provides a small additional gain, though this variant inadvertently used a smaller backbone variant during the experiment run, which slightly depresses its reported numbers (see Section~\ref{sec:discussion}). Introducing the signed temporal difference (A3, +0.95 F1 over A2) validates the directional cue. Adding CRAM-lite modulation (A4) provides a further marginal improvement (+0.08 F1). Adding the boundary residual head alone without boundary-aware loss terms (A5) causes a regression ($-$0.77 F1), consistent with the observation that the boundary head requires the Sobel edge supervision to train effectively. The full model (A6) with all loss terms recovers and exceeds prior variants, achieving F1\,=\,95.67. This confirms that the boundary head and the Sobel-edge loss term must be enabled together.

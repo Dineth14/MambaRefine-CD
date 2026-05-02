@@ -1,0 +1,139 @@
+experiment:
+  name: dsifn_literature_patch
+  output_root: outputs/dsifn/literature_patch
+  seed: 42
+
+dataset:
+  name: DSIFN-CD
+  root: /storage2/ChangeDetection/MV/Datasets/DSIFN-CD/DSIFN_lit_patch
+  split_dir: /storage2/ChangeDetection/MV/Datasets/DSIFN-CD/DSIFN_lit_patch/splits
+  require_explicit_splits: true
+  mode: binary
+  task_type: binary_change
+  image_size: 256
+  batch_size: 8
+  num_workers: 8
+  augmentation: true
+  val_ratio: 0.2
+  image_a_dir_candidates: [t1, T1, A, imageA, before, img1]
+  image_b_dir_candidates: [t2, T2, B, imageB, after, img2]
+  label_dir_candidates: [mask, GT, label, labels, OUT, change_map]
+
+task: binary_cd
+
+model:
+  mode: dual
+  backbone: mambavision
+  variant: small
+  decoder: adaptive_rf
+  pretrained: true
+  output_mode: binary
+  enable_semantic_heads: false
+  freeze_backbone: false
+  drbi:
+    enabled: true
+  signed_diff:
+    enabled: true
+  cram_lite:
+    enabled: true
+    alpha: 0.5
+    apply_stages: [0, 1, 2]
+    attention_type: spatial
+  arf_fpn:
+    enabled: true
+  boundary_refine:
+    enabled: true
+
+difference:
+  enabled: true
+  out_channels: 256
+  use_depthwise: true
+  gate_hidden_ratio: 0.25
+  use_absdiff: true
+  use_signed_diff: true
+  use_product: false
+  product_scale: 0.25
+  pre_norm: true
+  use_region_gate: true
+  use_boundary_gate: true
+  region_gate_min: 0.2
+  region_gate_max: 0.8
+  boundary_gate_min: 0.0
+  boundary_gate_max: 0.4
+
+decoder:
+  type: adaptive_rf
+  channels: 256
+  dilation_rates: [1, 2, 4, 8]
+  use_boundary_residual: true
+  residual_scale: 0.1
+  use_depthwise: true
+  aux_weight: 0.4
+
+hardware:
+  device: cuda
+  gpu_ids: [0]
+  mixed_precision: true
+
+training:
+  max_iterations: 50000
+  batch_size: 8
+  lr: 5.0e-5
+  optimizer: adamw
+  scheduler: cosine
+  warmup_iterations: 2500
+  validate_every: 5000
+  log_every: 20
+  gradient_clip: 0.5
+  weight_decay: 0.01
+  skip_nan_steps: true
+  nan_diag_every: 50
+
+loss:
+  type: bce_dice
+  final:
+    type: bce_dice
+    bce_weight: 1.0
+    dice_weight: 1.0
+  coarse:
+    enabled: true
+    weight: 0.4
+  boundary:
+    enabled: true
+    weight: 0.1
+    type: bce_dice
+    target_type: sobel
+    edge_width: 3
+
+metrics:
+  allowed: [Pre, Rec, F1, IoU, OA]
+  average_mode: global
+
+eval:
+  threshold: 0.5
+  threshold_sweep:
+    enabled: true
+    values: [0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60]
+  threshold_select_metric: F1_1
+  use_ema: true
+  inference_mode: patch
+  crop_size: 256
+  overlap: 0.0
+  log_mask_debug: true
+  save_debug_outputs: false
+  debug_output_root: debug/dsifn_literature_patch
+  debug_max_samples: 30
+
+ema:
+  enabled: true
+  decay: 0.999
+
+resume:
+  enabled: false
+  checkpoint_path: null
+  strict: true
+
+checkpoint:
+  selection_metric: F1
+  monitor: f1
+  mode: max
