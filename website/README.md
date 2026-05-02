@@ -1,124 +1,57 @@
-# Website README
+# MambaRefine-CD Website
 
-## Preview locally
+A React + Vite + TypeScript + Tailwind CSS project website for the MambaRefine-CD change detection research.
 
-```bash
-cd website
-python -m http.server 8000
-```
-
-Then open `http://localhost:8000`.
-
-## Extract verified results
+## Local Development
 
 ```bash
-python scripts/extract_all_results_for_website.py
-python scripts/extract_mambacd_protocol_results.py
+# Install Node.js via nvm if needed
+curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+export NVM_DIR="$HOME/.nvm" && . "$NVM_DIR/nvm.sh"
+nvm install 20
+
+# Install dependencies
+npm install
+
+# Start dev server
+npm run dev
+# → http://localhost:5173
 ```
 
-Outputs:
-
-- `website/assets/data/ours_results.json`
-- `website/assets/data/ours_results.csv`
-- `website/assets/data/ours_results_all_candidates.json`
-- `website/assets/data/mambacd_protocol_ours.json`
-- `website/assets/data/mambacd_protocol_ours.csv`
-- `website/assets/data/mambacd_protocol_ours_all_candidates.json`
-- `website/assets/data/mambacd_paper_comparison.json`
-- `website/assets/data/mambacd_paper_comparison.csv`
-
-## Reproduce SOTA evaluations
+## Build
 
 ```bash
-python scripts/run_sota_reproduction_pipeline.py
+npm run build
+# Output: dist/
 ```
 
-Outputs:
-
-- `outputs/sota_reproduced_eval/reports/master_status.json`
-- `outputs/sota_reproduced_eval/tables/`
-- `website/assets/data/reproduced_sota_results.json`
-
-## Extract external SOTA results from local sources only
+## Deploy to GitHub Pages
 
 ```bash
-python scripts/extract_external_sota_results.py
+npm run deploy
+# Pushes dist/ to the gh-pages branch of https://github.com/Dineth14/MambaRefine-CD
+# Live at: https://dineth14.github.io/MambaRefine-CD/
 ```
 
-Outputs:
+**First-time setup:** Ensure GitHub Pages is enabled in the repository settings under Settings → Pages → Source: `gh-pages` branch.
 
-- `website/assets/data/external_sota_results.json`
-- `website/assets/data/external_sota_results.csv`
-- `website/assets/data/external_sota_sources.json`
+## Update Results
 
-## Profile model efficiency
+All displayed numbers come from TypeScript data files — no hardcoded strings in components:
 
-```bash
-python scripts/model_efficiency.py
-```
+| File | Purpose |
+|---|---|
+| `src/data/results.ts` | Main quantitative results (DSIFN-CD, WHU-CD) |
+| `src/data/ablations.ts` | Ablation study rows and delta insights |
+| `src/data/comparisons.ts` | Literature comparison tables |
+| `src/data/architecture.ts` | Architecture module descriptions and model stats |
 
-Outputs:
+## Stack
 
-- `website/assets/data/ours_efficiency.json`
-- `outputs/model_efficiency/latest_efficiency.json`
-
-## Collect qualitative images
-
-```bash
-python scripts/collect_website_qualitative.py
-```
-
-Outputs:
-
-- `website/assets/qualitative/manifest.json`
-- copied qualitative images under `website/assets/qualitative/`
-
-## Validate website
-
-```bash
-python scripts/validate_mambacd_protocol_tables.py
-python scripts/validate_website.py
-```
-
-Outputs:
-
-- `outputs/website_validation/mambacd_protocol_validation.json`
-- `outputs/website_validation/mambacd_protocol_validation.md`
-- `outputs/website_validation/website_validation_report.json`
-- `outputs/website_validation/website_validation_report.md`
-
-## Deploy on GitHub Pages
-
-1. Push the repository.
-2. Open the repository settings on GitHub.
-3. Go to **Pages**.
-4. Choose **Deploy from a branch**.
-5. Set the published folder to `/website`.
-
-## Where to edit values manually
-
-- Verified local results: `website/assets/data/ours_results.json`
-- Mamba-CD protocol local results: `website/assets/data/mambacd_protocol_ours.json`
-- Mamba-CD paper comparison rows: `website/assets/data/mambacd_paper_comparison.json`
-- Reproduced comparison rows: `website/assets/data/reproduced_sota_results.json`
-- External local-source results: `website/assets/data/external_sota_results.json`
-- Efficiency values: `website/assets/data/ours_efficiency.json`
-- Qualitative manifest: `website/assets/qualitative/manifest.json`
-- Static content and section text: `website/index.html`
-
-## Mamba-CD protocol note
-
-- The Mamba-CD protocol table has been added to the website.
-- Paper F1 corresponds to change-class `F1_1`, not `mF1`.
-- MambaRefine-CD maps paper metrics to `precision_1`, `recall_1`, `F1_1`, `IoU_1`, and `OA`.
-- Literature values are copied from the Mamba-CD paper tables.
-- Our values are extracted from local evaluation logs and result files.
-
-## SECOND semantic outputs
-
-True semantic SECOND evaluations are emitted under the normal eval directory as:
-
-- `second_metrics.json` / `second_metrics.csv`
-- `second_semantic_metrics.json` / `second_semantic_metrics.csv`
-
-The website should treat `SeK` as valid only when those semantic outputs come from `model.output_mode: semantic_change` with timestamp-wise semantic predictions enabled.
+- React 18 + TypeScript 5
+- Vite 5
+- Tailwind CSS 3
+- Framer Motion 11 (scroll animations)
+- Recharts 2 (bar/scatter charts)
+- react-katex + KaTeX (math equations)
+- gh-pages (deployment)

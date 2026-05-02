@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    background-color: #f8fafc;
+    color: #0f172a;
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer components {
+  .katex {
+    font-size: 1.05em;
+  }
+  .section-eyebrow {
+    @apply text-xs font-semibold tracking-widest text-primary uppercase mb-2;
+  }
+  .section-title {
+    @apply text-3xl md:text-4xl font-bold text-main-text mb-4;
+  }
+  .section-subtitle {
+    @apply text-lg text-muted-text max-w-2xl;
+  }
+  .card {
+    @apply bg-card rounded-xl border border-border shadow-card p-6;
+  }
+  .card-hover {
+    @apply transition-shadow duration-200 hover:shadow-card-hover;
+  }
+  .tag {
+    @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-medium;
+  }
+  .btn-primary {
+    @apply inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-lg font-medium text-sm hover:bg-blue-700 transition-colors;
+  }
+  .btn-secondary {
+    @apply inline-flex items-center gap-2 px-5 py-2.5 bg-white text-main-text border border-border rounded-lg font-medium text-sm hover:bg-slate-50 transition-colors;
+  }
+}
+
+/* Smooth scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #f1f5f9; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* Table base */
+.result-table { @apply w-full text-sm; }
+.result-table th { @apply text-left py-2.5 px-3 text-xs font-semibold text-muted-text bg-slate-50 border-b border-border; }
+.result-table td { @apply py-2.5 px-3 border-b border-border text-main-text; }
+.result-table tr:last-child td { @apply border-b-0; }
+.result-table tr:hover td { @apply bg-slate-50/60; }
