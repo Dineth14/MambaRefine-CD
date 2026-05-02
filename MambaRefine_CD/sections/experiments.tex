@@ -1,0 +1,28 @@
+\section{Experiments}
+\label{sec:experiments}
+
+\subsection{Datasets and Split Protocol}
+\label{sec:datasets}
+We evaluate MambaRefine-CD on DSIFN-CD~\cite{shi2022dsamnet} and WHU-CD~\cite{ji2019whu}. Both datasets are used in binary change detection mode. For DSIFN-CD, we use explicit image-level split files under the dataset split directory and require non-overlapping train, validation, and test lists before training. This avoids the unsafe flat-layout fallback where the test set may contain training or validation images. WHU-CD is also evaluated using its correct train/validation/test protocol. In both datasets, training samples are generated from training images only, while validation and test samples are evaluated in patch mode. The split protocol is summarized in Table~\ref{tab:dataset_protocol}.
+
+%\input{tables/dataset_protocol}
+
+\subsection{Implementation Details}
+\label{sec:implementation}
+All models are trained for 50,000 iterations and results are averaged over three independent runs. We use a batch size of 8, image size $256\times256$, AdamW optimizer, initial learning rate $5\times10^{-5}$, weight decay $0.01$, cosine scheduling, and 2,500 warmup iterations. Validation is performed every 5,000 iterations, and the checkpoint with the best validation F1 is selected. Training uses horizontal and vertical flips as augmentation, mixed precision, gradient clipping with threshold $0.5$, and EMA with decay $0.999$. Experiments are run on a single NVIDIA Quadro GV100 GPU with 32 GB memory.
+
+During validation, we evaluate a fixed threshold of $0.5$ and optionally sweep thresholds in $\{0.30,0.35,0.40,0.45,0.50,0.55,0.60\}$. When a swept threshold is used, it is selected only from validation and then fixed for test evaluation. Test metrics are never used for checkpoint selection or threshold tuning.
+
+\subsection{Evaluation Metrics}
+\label{sec:metrics}
+We report Precision (Pre), Recall (Rec), F1, Intersection-over-Union (IoU), and Overall Accuracy (OA). Precision, recall, F1, and IoU are computed for the changed class using a global confusion matrix over the evaluation set. We do not report macro-F1, mean-F1, semantic change metrics, or SeK.
+
+\subsection{Main Results and Ablations}
+\label{sec:results_and_ablations}
+The main comparison is reported in Table~\ref{tab:main_results}. Since the final values are averaged over three runs, each table entry should report mean and standard deviation where available. The ablation study in Table~\ref{tab:ablation_summary} evaluates the effect of the MambaVision encoder, D-RBI, signed temporal difference, adaptive receptive field decoding, boundary residual refinement, and the full loss configuration. We use these ablations to check whether each component changes the model behavior and contributes beyond the backbone alone.
+
+
+\subsection{Efficiency Analysis}
+\label{sec:efficiency}
+We report model size and runtime cost in Table~\ref{tab:efficiency}. Peak GPU memory is measured using PyTorch CUDA memory counters during training or evaluation. This analysis is included because the full model uses a high-capacity MambaVision backbone, and accuracy should be interpreted together with parameter count and memory cost.
+

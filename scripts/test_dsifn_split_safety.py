@@ -75,9 +75,15 @@ def main() -> None:
         except RuntimeError as exc:
             assert_true("DATA LEAKAGE FOUND" in str(exc), "loader fails when train/test split files overlap")
 
-        write_split(root, names[:7], names[7:8], names)
+        write_split(root, [], [], names)
         all_test = validate_explicit_splits({"root": str(root), "split_dir": str(split_dir)})
-        assert_true(all_test["verdict"] == "FAIL", "test split containing all images is rejected through overlap detection")
+        assert_true(all_test["verdict"] == "FAIL", "test split containing all flat-layout images is rejected")
+        try:
+            ds = try_loader(root, split_dir, "test")
+            if ds is not None:
+                raise AssertionError("Loader accepted test split containing all flat-layout images")
+        except RuntimeError as exc:
+            assert_true("DATA LEAKAGE FOUND" in str(exc), "loader fails when test split contains all flat-layout images")
 
         write_split(root, names[:7], names[7:8], names[8:])
         final = validate_explicit_splits({"root": str(root), "split_dir": str(split_dir)})

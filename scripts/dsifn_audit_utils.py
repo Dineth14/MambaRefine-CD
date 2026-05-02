@@ -145,7 +145,21 @@ def validate_explicit_splits(ds_cfg: dict) -> dict:
             ),
             "missing": missing,
         }
-    ids = {split: {normalise_id(name) for name in read_split_file(path)} for split, path in files.items() if path is not None}
+    names_by_split = {split: read_split_file(path) for split, path in files.items() if path is not None}
+    id_lists = {split: [normalise_id(name) for name in names] for split, names in names_by_split.items()}
+    duplicates = {
+        split: sorted({sample_id for sample_id in ids if ids.count(sample_id) > 1})
+        for split, ids in id_lists.items()
+    }
+    duplicate_bad = {split: values[:50] for split, values in duplicates.items() if values}
+    if duplicate_bad:
+        return {
+            "verdict": "FAIL",
+            "reason": "DATA LEAKAGE FOUND: refusing to train/evaluate.",
+            "duplicates": duplicate_bad,
+            "duplicate_counts": {split: len(values) for split, values in duplicates.items() if values},
+        }
+    ids = {split: set(values) for split, values in id_lists.items()}
     overlaps = {
         "train_val": sorted(ids["train"] & ids["val"]),
         "train_test": sorted(ids["train"] & ids["test"]),
@@ -159,6 +173,19 @@ def validate_explicit_splits(ds_cfg: dict) -> dict:
             "overlaps": {key: values[:50] for key, values in bad.items()},
             "overlap_counts": {key: len(values) for key, values in bad.items()},
         }
+    flat_a_dir = detect_dir(root, A_CANDS)
+    if flat_a_dir is not None:
+        all_flat_ids = {normalise_id(name) for name in list_images(flat_a_dir)}
+        if all_flat_ids and ids["test"] == all_flat_ids:
+            return {
+                "verdict": "FAIL",
+                "reason": (
+                    "DATA LEAKAGE FOUND: refusing to train/evaluate. "
+                    "DSIFN test split contains all flat-layout images."
+                ),
+                "total_flat_images": len(all_flat_ids),
+                "test_images": len(ids["test"]),
+            }
     split_parent = files["train"].parent if files["train"] is not None else repo_path(split_dir or root / "splits")
     return {
         "verdict": "PASS",

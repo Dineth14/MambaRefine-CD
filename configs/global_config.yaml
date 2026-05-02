@@ -44,6 +44,8 @@ optimizer:
 dataset:
   name: DSIFN-CD
   root: /storage2/ChangeDetection/MV/Datasets/DSIFN-CD/DSIFN
+  split_dir: /storage2/ChangeDetection/MV/Datasets/DSIFN-CD/DSIFN/splits
+  require_explicit_splits: true
   mode: binary
   task_type: binary_change
   image_size: 256

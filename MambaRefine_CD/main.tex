@@ -1,0 +1,32 @@
+\documentclass[conference]{IEEEtran}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{cite}
+\usepackage{graphicx}
+\usepackage{array}
+
+\input{macros/macros}
+
+\title{MambaRefine-CD: MambaVision-Based Region-Boundary Temporal Refinement for Remote Sensing Change Detection}
+\author{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Accurate remote-sensing change detection requires both reliable temporal reasoning and precise boundary localization. While CNN-based methods capture local spatial patterns effectively, they often struggle with long-range contextual changes. Transformer-based approaches improve global modeling but introduce considerable computational cost, and recent visual state-space models provide a promising alternative for dense prediction. However, directly applying such backbones to binary change detection can still lead to over-smoothed responses around fine structures, where small boundary errors strongly affect the final change map. We propose \textbf{MambaRefine-CD}, a MambaVision-based change detection framework that addresses this limitation through explicit temporal region-boundary refinement. The model employs a shared MambaVision encoder for aligned bi-temporal feature extraction and constructs change representations using both absolute and signed temporal differences. We further introduce \textbf{Differential Region-Boundary Interaction} (D-RBI), a module that decouples temporal evidence into complementary region-aware and boundary-aware responses. These responses are fused through an adaptive receptive field decoder, enabling the model to capture both compact local changes and larger spatial structures. A bounded residual refinement head then adjusts coarse logits near object boundaries while preserving the global prediction. Together, these components form a unified architecture that makes MambaVision features more suitable for boundary-sensitive remote-sensing change detection.
+\end{abstract}
+
+
+\input{sections/introduction}
+\input{sections/related_work}
+\input{sections/method}
+\input{sections/experiments}
+\input{sections/conclusion}
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}

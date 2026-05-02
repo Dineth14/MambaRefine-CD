@@ -123,7 +123,14 @@ def _assert_disjoint_split_files(root: Path, split_dir: str | Path | None) -> di
                 f"Missing {split}.txt under split_dir/root/splits/root."
             )
         files[split] = path
-        ids_by_split[split] = {_normalise_id(name) for name in _read_split_file(path)}
+        ids = [_normalise_id(name) for name in _read_split_file(path)]
+        duplicates = sorted({sample_id for sample_id in ids if ids.count(sample_id) > 1})
+        if duplicates:
+            raise RuntimeError(
+                "DATA LEAKAGE FOUND: refusing to train/evaluate. "
+                f"DSIFN {split}.txt contains duplicate image IDs: {duplicates[:10]}"
+            )
+        ids_by_split[split] = set(ids)
 
     overlaps = {
         "train_val": ids_by_split["train"] & ids_by_split["val"],
@@ -134,6 +141,14 @@ def _assert_disjoint_split_files(root: Path, split_dir: str | Path | None) -> di
     if bad:
         preview = {k: v[:10] for k, v in bad.items()}
         raise RuntimeError(f"DATA LEAKAGE FOUND: refusing to train/evaluate. DSIFN split overlaps: {preview}")
+    flat_a_dir = _detect_dir(root, _A_CANDS)
+    if flat_a_dir is not None:
+        all_flat_ids = {_normalise_id(name) for name in _list_images(flat_a_dir)}
+        if all_flat_ids and ids_by_split["test"] == all_flat_ids:
+            raise RuntimeError(
+                "DATA LEAKAGE FOUND: refusing to train/evaluate. "
+                "DSIFN test split contains all flat-layout images."
+            )
     return files
 
 

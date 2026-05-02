@@ -1,0 +1,55 @@
+\section{Methodology}
+\label{sec:method}
+
+\subsection{Overview}
+\label{sec:method_overview}
+MambaRefine-CD is a binary change detection framework that predicts a single change map from a bi-temporal image pair $(I_1,I_2)$. The model has five main components: a shared MambaVision encoder, an explicit temporal difference projection, Differential Region-Boundary Interaction (D-RBI), an adaptive receptive field decoder, and a bounded boundary residual refinement head. The design keeps the encoder shared across time so that both images are represented in the same feature space, while the decoder receives temporal features that are explicitly constructed for change prediction.
+
+\subsection{Shared MambaVision Encoding}
+\label{sec:shared_encoder}
+Given the pre-change and post-change images, a shared MambaVision encoder $E(\cdot)$ extracts multi-scale features,
+\begin{equation}
+    \{F_1^s\}_{s=1}^{S} = E(I_1), \qquad
+    \{F_2^s\}_{s=1}^{S} = E(I_2),
+\end{equation}
+where $s$ indexes the encoder stage. Sharing the encoder avoids using different feature spaces for the two timestamps and makes the following temporal comparison more stable. In our implementation, we use the small MambaVision variant with pretrained weights and keep the backbone trainable.
+
+\subsection{Temporal Difference Projection and D-RBI}
+\label{sec:drbi}
+For each scale, we construct a temporal representation by combining the paired features with absolute and signed differences,
+\begin{equation}
+    T^s = \left[F_1^s, F_2^s, |F_2^s - F_1^s|, F_2^s - F_1^s \right].
+\end{equation}
+The absolute difference provides a symmetric change-magnitude cue, while the signed difference keeps the temporal direction. The concatenated representation is projected to a fixed channel width,
+\begin{equation}
+    D^s = \phi_s(T^s),
+\end{equation}
+where $\phi_s$ is a lightweight projection block.
+
+D-RBI separates this temporal feature into region-aware and boundary-aware responses. Specifically, two learned gates are estimated from $D^s$,
+\begin{equation}
+    G_r^s = g_r(D^s), \qquad G_b^s = g_b(D^s),
+\end{equation}
+and applied to the temporal feature,
+\begin{equation}
+    R^s = G_r^s \odot D^s, \qquad B^s = G_b^s \odot D^s.
+\end{equation}
+Here, $R^s$ emphasizes stable region-level change evidence, while $B^s$ keeps a separate pathway for boundary-sensitive evidence. The module is intentionally simple: it does not replace the decoder, but exposes region and boundary responses before multi-scale aggregation.
+
+\subsection{CRAM-Lite and Adaptive Receptive Field Decoding}
+\label{sec:decoder}
+We include a lightweight change-region-aware modulation, denoted CRAM-lite, at selected stages. It follows the motivation of change region-aware attention in Mamba-CD~\cite{peng2026mambacd}, but is used here only as a compact spatial reweighting block rather than the full recursive refinement mechanism. The modulated multi-scale features are decoded using an adaptive receptive field FPN. At each decoder stage, depthwise convolution branches with dilation rates $\{1,2,4,8\}$ are used to aggregate local and wider spatial context. This gives the decoder access to both compact object-level changes and larger changed structures without changing the input resolution.
+
+\subsection{Boundary Residual Refinement and Loss}
+\label{sec:boundary_refinement}
+The decoder first predicts a coarse change logit map $P_c$. A residual boundary head then predicts a bounded correction $\Delta$, and the final logit is computed as
+\begin{equation}
+    P_f = P_c + \lambda_r \tanh(\Delta),
+\end{equation}
+where $\lambda_r=0.1$ in our experiments. This bounded form limits the refinement magnitude, so the boundary head can adjust uncertain edge regions without freely overwriting the coarse prediction.
+
+The training objective combines final binary supervision with optional coarse and boundary terms,
+\begin{equation}
+    \mathcal{L} = \mathcal{L}_{\mathrm{final}} + \lambda_c \mathcal{L}_{\mathrm{coarse}} + \lambda_b \mathcal{L}_{\mathrm{boundary}}.
+\end{equation}
+The final loss is the sum of binary cross-entropy and Dice loss. The coarse term uses the same binary loss form with weight $\lambda_c=0.4$. The boundary target is generated from the binary mask using a Sobel-based edge operator, and its loss weight is $\lambda_b=0.1$. The model outputs one binary logit map and does not use semantic heads.
