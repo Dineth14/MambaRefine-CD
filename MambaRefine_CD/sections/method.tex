@@ -2,54 +2,71 @@
 \label{sec:method}
 
 \subsection{Overview}
-\label{sec:method_overview}
-MambaRefine-CD is a binary change detection framework that predicts a single change map from a bi-temporal image pair $(I_1,I_2)$. The model has five main components: a shared MambaVision encoder, an explicit temporal difference projection, Differential Region-Boundary Interaction (D-RBI), an adaptive receptive field decoder, and a bounded boundary residual refinement head. The design keeps the encoder shared across time so that both images are represented in the same feature space, while the decoder receives temporal features that are explicitly constructed for change prediction.
+\ours{} predicts a binary change map from a bi-temporal image pair $(I_1, I_2)$ through five components: a shared MambaVision encoder, a four-stream temporal feature constructor, \drbi, an adaptive receptive-field FPN decoder with CRAM-lite modulation, and a bounded boundary residual refinement head. Fig.~\ref{fig:pipeline} shows the overall pipeline.
 
 \subsection{Shared MambaVision Encoding}
-\label{sec:shared_encoder}
-Given the pre-change and post-change images, a shared MambaVision encoder $E(\cdot)$ extracts multi-scale features,
+A shared encoder $E(\cdot)$ processes both input images in the same feature space:
 \begin{equation}
-    \{F_1^s\}_{s=1}^{S} = E(I_1), \qquad
-    \{F_2^s\}_{s=1}^{S} = E(I_2),
+    \{F_1^s\}_{s=1}^{S} = E(I_1), \qquad \{F_2^s\}_{s=1}^{S} = E(I_2).
 \end{equation}
-where $s$ indexes the encoder stage. Sharing the encoder avoids using different feature spaces for the two timestamps and makes the following temporal comparison more stable. In our implementation, we use the small MambaVision variant with pretrained weights and keep the backbone trainable.
+Weight sharing ensures that the temporal difference computed downstream reflects genuine change rather than encoder domain mismatch. We use MambaVision-S as the default backbone (channels $[96, 192, 384, 768]$, $S=4$ stages), initialized from pretrained weights and kept trainable. The backbone fuses Mamba layers for long-range modeling and Transformer layers for local attention~\cite{hatamizadeh2025mambavision}.
 
-\subsection{Temporal Difference Projection and D-RBI}
+\subsection{Four-Stream Temporal Feature Construction}
+At each encoder stage $s$, we apply independent GroupNorm to $F_1^s$ and $F_2^s$, then concatenate four streams:
+\begin{equation}
+    T^s = \bigl[F_{1,n}^s,\; F_{2,n}^s,\; |F_{2,n}^s - F_{1,n}^s|,\; F_{2,n}^s - F_{1,n}^s\bigr],
+\end{equation}
+where $F_{i,n}^s$ denotes the normalized feature. Absolute difference provides a symmetric change-magnitude cue; signed difference preserves the temporal direction of change, which conveys whether a structure appeared or disappeared. This four-stream concatenation $T^s$ is projected to a fixed channel width through a lightweight 1$\times$1 convolution followed by a depthwise 3$\times$3 and pointwise 1$\times$1 block, yielding the temporal descriptor $D^s$.
+
+\subsection{Differential Region--Boundary Interaction (\drbi)}
 \label{sec:drbi}
-For each scale, we construct a temporal representation by combining the paired features with absolute and signed differences,
-\begin{equation}
-    T^s = \left[F_1^s, F_2^s, |F_2^s - F_1^s|, F_2^s - F_1^s \right].
-\end{equation}
-The absolute difference provides a symmetric change-magnitude cue, while the signed difference keeps the temporal direction. The concatenated representation is projected to a fixed channel width,
-\begin{equation}
-    D^s = \phi_s(T^s),
-\end{equation}
-where $\phi_s$ is a lightweight projection block.
+\drbi{} applies two separate gating mechanisms to $D^s$ to expose region-level and boundary-level evidence before decoding. Fig.~\ref{fig:drbi} illustrates the module.
 
-D-RBI separates this temporal feature into region-aware and boundary-aware responses. Specifically, two learned gates are estimated from $D^s$,
+\textbf{Region gate.}  
+A spatial attention path processes $D^s$ through a depthwise 3$\times$3 convolution and a pointwise 1$\times$1 convolution to produce unnormalized gate logits, which are clamped to $[-8, 8]$ and passed through sigmoid, then scaled to bound the response:
 \begin{equation}
-    G_r^s = g_r(D^s), \qquad G_b^s = g_b(D^s),
+    G_r^s = 0.6\cdot\sigma\!\bigl(\operatorname{clamp}(g_r(D^s),{-8,8})\bigr) + 0.2,
+    \qquad G_r^s \in [0.2, 0.8].
 \end{equation}
-and applied to the temporal feature,
-\begin{equation}
-    R^s = G_r^s \odot D^s, \qquad B^s = G_b^s \odot D^s.
-\end{equation}
-Here, $R^s$ emphasizes stable region-level change evidence, while $B^s$ keeps a separate pathway for boundary-sensitive evidence. The module is intentionally simple: it does not replace the decoder, but exposes region and boundary responses before multi-scale aggregation.
+The lower bound prevents complete feature suppression; the upper bound prevents unrestricted amplification.
 
-\subsection{CRAM-Lite and Adaptive Receptive Field Decoding}
+\textbf{Boundary gate.}  
+A Sobel-conditioned gate modulates its response using the magnitude of image-level edges computed on $D^s$. Sobel magnitude is clamped to $[0, 10]$ and normalized, providing a spatial prior on likely boundary locations:
+\begin{equation}
+    G_b^s = 0.4\cdot\sigma\!\bigl(S^s \cdot g_b(D^s)\bigr),
+    \qquad G_b^s \in [0.0, 0.4],
+\end{equation}
+where $S^s$ denotes the normalized Sobel magnitude map. The tighter bound keeps the boundary gate from dominating when edge evidence is unreliable.
+
+\textbf{Outputs.} The two gated responses and the original descriptor are returned:
+\begin{equation}
+    R^s = G_r^s \odot D^s, \qquad B^s = G_b^s \odot D^s, \qquad D^s\;\text{(unchanged)}.
+\end{equation}
+These three streams give the decoder access to region evidence, boundary evidence, and unmodulated temporal features.
+
+\subsection{CRAM-Lite Modulation and Adaptive Receptive-Field Decoding}
 \label{sec:decoder}
-We include a lightweight change-region-aware modulation, denoted CRAM-lite, at selected stages. It follows the motivation of change region-aware attention in Mamba-CD~\cite{peng2026mambacd}, but is used here only as a compact spatial reweighting block rather than the full recursive refinement mechanism. The modulated multi-scale features are decoded using an adaptive receptive field FPN. At each decoder stage, depthwise convolution branches with dilation rates $\{1,2,4,8\}$ are used to aggregate local and wider spatial context. This gives the decoder access to both compact object-level changes and larger changed structures without changing the input resolution.
-
-\subsection{Boundary Residual Refinement and Loss}
-\label{sec:boundary_refinement}
-The decoder first predicts a coarse change logit map $P_c$. A residual boundary head then predicts a bounded correction $\Delta$, and the final logit is computed as
+At selected encoder stages ($s \in \{0,1,2\}$), a lightweight CRAM-lite block reweights the region features spatially. Following the motivation of change-region-aware attention in Mamba-CD~\cite{mambacd2026}, each CRAM-lite block estimates a per-location attention map $A \in [0,1]$ via depthwise and pointwise convolutions and applies a residual modulation:
 \begin{equation}
-    P_f = P_c + \lambda_r \tanh(\Delta),
+    F_{\mathrm{out}} = F_{\mathrm{region}} \cdot (1 + \alpha \cdot A), \qquad \alpha \in \mathbb{R}^+\;\text{(learnable, init 0.5)}.
 \end{equation}
-where $\lambda_r=0.1$ in our experiments. This bounded form limits the refinement magnitude, so the boundary head can adjust uncertain edge regions without freely overwriting the coarse prediction.
 
-The training objective combines final binary supervision with optional coarse and boundary terms,
+The modulated multi-scale features are decoded through a top-down FPN with adaptive receptive-field blocks. Each block runs four parallel dilated depthwise convolutions with rates $\{1,2,4,8\}$, weights each branch via per-image softmax attention (estimated through global average pooling and a shared linear layer), and sums the weighted outputs. This gives the decoder access to both compact object-level changes and larger spatial structures without altering the input resolution.
+
+\subsection{Coarse Head and Bounded Boundary Residual Refinement}
+\label{sec:refinement}
+The decoder first produces a coarse logit map $P_c$ through a 3$\times$3 convolution followed by a 1$\times$1 output projection, bilinearly upsampled to the input resolution. A boundary refinement head then computes a bounded correction:
 \begin{equation}
-    \mathcal{L} = \mathcal{L}_{\mathrm{final}} + \lambda_c \mathcal{L}_{\mathrm{coarse}} + \lambda_b \mathcal{L}_{\mathrm{boundary}}.
+    P_f = P_c + 0.1 \cdot \tanh(\Delta),
 \end{equation}
-The final loss is the sum of binary cross-entropy and Dice loss. The coarse term uses the same binary loss form with weight $\lambda_c=0.4$. The boundary target is generated from the binary mask using a Sobel-based edge operator, and its loss weight is $\lambda_b=0.1$. The model outputs one binary logit map and does not use semantic heads.
+where $\Delta$ is estimated from the concatenation of the coarsest boundary feature $B^0$, the coarse logit $P_c$, and Sobel edges of $\sigma(P_c)$. The $\tanh$ bounds the correction magnitude; the scalar $0.1$ limits refinement to uncertain edge regions without freely overwriting the coarse global prediction. The final linear layer of the boundary head is zero-initialized to ensure the model begins training from the coarse prediction alone.
+
+\subsection{Training Objective}
+\label{sec:loss}
+The full training loss is:
+\begin{equation}
+    \mathcal{L} = \mathcal{L}_{\mathrm{BCE}} + \mathcal{L}_{\mathrm{Dice}}
+                + 0.4\,\mathcal{L}_{\mathrm{coarse}}
+                + 0.1\,\mathcal{L}_{\mathrm{boundary}},
+\end{equation}
+where $\mathcal{L}_{\mathrm{BCE}}$ and $\mathcal{L}_{\mathrm{Dice}}$ supervise the final output $P_f$; $\mathcal{L}_{\mathrm{coarse}}$ applies the same binary supervision to $P_c$; and $\mathcal{L}_{\mathrm{boundary}}$ is a Sobel-edge $\ell_1$ loss between predicted and ground-truth boundaries. Ablation variants A0--A5 are trained with only $\mathcal{L}_{\mathrm{BCE}} + \mathcal{L}_{\mathrm{Dice}}$ on the final output (coarse and boundary loss weights set to zero).

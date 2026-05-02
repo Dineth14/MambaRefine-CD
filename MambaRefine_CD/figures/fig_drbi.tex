@@ -1,6 +1,6 @@
 \begin{figure}[t]
 \centering
 \includegraphics[width=0.9\columnwidth]{figures/drbi_placeholder.pdf}
-\caption{\drbi{} module. Input fusion constructs the temporal descriptor, a region gate selects coherent changed-area evidence, and a boundary gate selects contour-sensitive evidence.}
+\caption{\drbi{} module. The four-stream temporal descriptor $D^s$ is passed to two independent gating branches. The region gate applies a depthwise--pointwise path with sigmoid scaling bounded to $[0.2, 0.8]$. The boundary gate uses the same structure but is modulated by a normalized Sobel-magnitude spatial prior and bounded to $[0.0, 0.4]$. Both gated outputs and the original descriptor are forwarded to the decoder. [\textit{Placeholder: replace with final diagram before submission.}]}
 \label{fig:drbi}
 \end{figure}

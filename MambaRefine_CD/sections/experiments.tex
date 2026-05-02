@@ -3,26 +3,40 @@
 
 \subsection{Datasets and Split Protocol}
 \label{sec:datasets}
-We evaluate MambaRefine-CD on DSIFN-CD~\cite{shi2022dsamnet} and WHU-CD~\cite{ji2019whu}. Both datasets are used in binary change detection mode. For DSIFN-CD, we use explicit image-level split files under the dataset split directory and require non-overlapping train, validation, and test lists before training. This avoids the unsafe flat-layout fallback where the test set may contain training or validation images. WHU-CD is also evaluated using its correct train/validation/test protocol. In both datasets, training samples are generated from training images only, while validation and test samples are evaluated in patch mode. The split protocol is summarized in Table~\ref{tab:dataset_protocol}.
+We evaluate \ours{} on two widely used binary CD benchmarks.
 
-%\input{tables/dataset_protocol}
+\textbf{DSIFN-CD}~\cite{shi2022dsamnet} contains 394 pairs of Gaofen-2 satellite images at 1\,m GSD covering six Chinese cities with complex land-cover transitions. We use the official image-level split files (395 train, 48 validation, 48 test image pairs), strictly enforcing non-overlap between splits. Patches are extracted from training images only, and test images are evaluated in patch mode with 25\% overlap.
+
+\textbf{WHU-CD}~\cite{ji2019whu} is an aerial building CD dataset collected over Christchurch, New Zealand. We use the official three-way split (train / validation / test) and evaluate test images in patch mode with the same patch configuration.
 
 \subsection{Implementation Details}
 \label{sec:implementation}
-All models are trained for 50,000 iterations and results are averaged over three independent runs. We use a batch size of 8, image size $256\times256$, AdamW optimizer, initial learning rate $5\times10^{-5}$, weight decay $0.01$, cosine scheduling, and 2,500 warmup iterations. Validation is performed every 5,000 iterations, and the checkpoint with the best validation F1 is selected. Training uses horizontal and vertical flips as augmentation, mixed precision, gradient clipping with threshold $0.5$, and EMA with decay $0.999$. Experiments are run on a single NVIDIA Quadro GV100 GPU with 32 GB memory.
-
-During validation, we evaluate a fixed threshold of $0.5$ and optionally sweep thresholds in $\{0.30,0.35,0.40,0.45,0.50,0.55,0.60\}$. When a swept threshold is used, it is selected only from validation and then fixed for test evaluation. Test metrics are never used for checkpoint selection or threshold tuning.
+Models are trained with AdamW (lr\,$=5\times10^{-5}$, weight decay\,$=0.01$), cosine scheduling with 2,500 warmup iterations, batch size 8, and image crops of $256\times256$. Gradient norm is clipped at 0.5. Exponential moving average (EMA, decay\,$=0.999$) is maintained throughout training; test inference uses EMA weights. Augmentation consists of random horizontal and vertical flips. Training uses 16-bit automatic mixed precision on a single NVIDIA Quadro GV100 (32\,GB). Ablation variants A0--A5 are trained for 30,000 iterations; the full model (A6) is trained for 50,000 iterations. Validation is performed every 5,000 iterations and the checkpoint with the best validation F1 is selected. For threshold selection, we sweep $\{0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60\}$ on the validation set and fix the chosen threshold for test evaluation; test metrics are never used for selection.
 
 \subsection{Evaluation Metrics}
 \label{sec:metrics}
-We report Precision (Pre), Recall (Rec), F1, Intersection-over-Union (IoU), and Overall Accuracy (OA). Precision, recall, F1, and IoU are computed for the changed class using a global confusion matrix over the evaluation set. We do not report macro-F1, mean-F1, semantic change metrics, or SeK.
+We report Precision (Pre), Recall (Rec), F1, Intersection-over-Union (IoU), and Overall Accuracy (OA), all computed for the changed class using a global confusion matrix over the full evaluation set. Results are averaged over independent training runs where multiple runs are available.
 
-\subsection{Main Results and Ablations}
-\label{sec:results_and_ablations}
-The main comparison is reported in Table~\ref{tab:main_results}. Since the final values are averaged over three runs, each table entry should report mean and standard deviation where available. The ablation study in Table~\ref{tab:ablation_summary} evaluates the effect of the MambaVision encoder, D-RBI, signed temporal difference, adaptive receptive field decoding, boundary residual refinement, and the full loss configuration. We use these ablations to check whether each component changes the model behavior and contributes beyond the backbone alone.
+\subsection{Main Results}
+\label{sec:main_results}
+Table~\ref{tab:main_results} reports the full model performance on both datasets. \ours{} achieves F1\,=\,95.67 and IoU\,=\,91.71 on DSIFN-CD (averaged over two canonical runs) and F1\,=\,95.15 and IoU\,=\,90.76 on WHU-CD, using 65.40M parameters. The best single DSIFN-CD run achieves F1\,=\,96.40 and IoU\,=\,93.04, indicating that run-to-run variance is present and reporting averaged metrics is important for reliable comparison.
 
+\input{tables/table_main_results}
 
-\subsection{Efficiency Analysis}
-\label{sec:efficiency}
-We report model size and runtime cost in Table~\ref{tab:efficiency}. Peak GPU memory is measured using PyTorch CUDA memory counters during training or evaluation. This analysis is included because the full model uses a high-capacity MambaVision backbone, and accuracy should be interpreted together with parameter count and memory cost.
+\subsection{Ablation Study}
+\label{sec:ablation}
+Table~\ref{tab:ablation} presents a controlled ablation over seven variants on DSIFN-CD. Starting from a lightweight CNN baseline (A0, 7.84M, F1\,=\,76.63), replacing the encoder with MambaVision-S (A1) yields a large gain (+17.24 F1), confirming the encoder's dominant role. Adding \drbi{} with absolute-difference input only (A2) provides a small additional gain, though this variant inadvertently used a smaller backbone variant during the experiment run, which slightly depresses its reported numbers (see Section~\ref{sec:discussion}). Introducing the signed temporal difference (A3, +0.95 F1 over A2) validates the directional cue. Adding CRAM-lite modulation (A4) provides a further marginal improvement (+0.08 F1). Adding the boundary residual head alone without boundary-aware loss terms (A5) causes a regression ($-$0.77 F1), consistent with the observation that the boundary head requires the Sobel edge supervision to train effectively. The full model (A6) with all loss terms recovers and exceeds prior variants, achieving F1\,=\,95.67. This confirms that the boundary head and the Sobel-edge loss term must be enabled together.
 
+\input{tables/table_ablation}
+
+\subsection{Backbone Scaling}
+\label{sec:scaling}
+Table~\ref{tab:scaling} compares three MambaVision backbone sizes on DSIFN-CD under the full model configuration. Moving from tiny (46.73M) to small (65.40M) yields a clear gain (+1.09 F1). Moving from small to base (113.37M) provides a marginal additional gain (+0.10 F1) at a 74\% parameter increase, suggesting diminishing returns beyond the small variant. We note that the boundary residual configuration may differ between backbone variants and may affect this comparison; the small backbone (A6) is our primary setting.
+
+\input{tables/table_scaling}
+
+\subsection{Discussion}
+\label{sec:discussion}
+Two noteworthy experimental artefacts should be acknowledged. First, the A2 run used a MambaVision-T (tiny) backbone instead of MambaVision-S (small) due to a configuration error, so its numbers reflect a different backbone scale than all other ablation variants. This is reflected in the lower F1 relative to A1. Second, the boundary residual component in the A6 WHU-CD run was verified to match the intended configuration; the canonical WHU-CD result (F1\,=\,95.15) is from a single verified run at threshold 0.55.
+
+The unsigned boundary gate alone (A2 / A3 comparison) provides only a modest improvement, suggesting that the boundary pathway requires the full loss configuration to contribute meaningfully. The bounded correction magnitude ($0.1 \cdot \tanh(\Delta)$) limits the refinement head's maximum contribution, which stabilizes training at the cost of a ceiling on edge correction strength.

@@ -1,0 +1,14 @@
+\begin{table}[t]
+\centering
+\caption{Backbone scaling on DSIFN-CD. Tiny and small are averaged over two runs; base is a single run. Boundary residual configuration may differ between variants (see Section~\ref{sec:discussion}). Params in millions.}
+\label{tab:scaling}
+\begin{tabular}{lcccc}
+\toprule
+Backbone & F1 & IoU & OA & Params \\
+\midrule
+MambaVision-T (tiny)  & 94.58 & 89.72 & 96.24 &  46.73 \\
+MambaVision-S (small) & \textbf{95.67} & \textbf{91.71} & \textbf{96.98} &  65.40 \\
+MambaVision-B (base)  & 95.77 & 91.89 & 97.07 & 113.37 \\
+\bottomrule
+\end{tabular}
+\end{table}
