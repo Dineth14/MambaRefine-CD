@@ -71,7 +71,7 @@ hardware:
   mixed_precision: true
 
 training:
-  max_iterations: 50000
+  max_iterations: 75000
   batch_size: 8
   lr: 5.0e-5
   optimizer: adamw
@@ -122,8 +122,8 @@ ema:
   decay: 0.999
 
 resume:
-  enabled: false
-  checkpoint_path: null
+  enabled: true
+  checkpoint_path: /storage2/ChangeDetection/MV/MambaRefine-CD/outputs/whu/full/run_whu_whu_full_seed42_20260430_114506/checkpoints/best.pth
   strict: true
 
 checkpoint:
