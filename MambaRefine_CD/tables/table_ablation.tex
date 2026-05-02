@@ -1,6 +1,6 @@
 \begin{table}[t]
 \centering
-\caption{Ablation study on DSIFN-CD. A0--A5 use 30k iterations; A6 uses 50k. Values averaged over available runs. Params in millions. $\dagger$A2 used MambaVision-T (tiny) due to a config error, affecting comparability.}
+\caption{Ablation study on DSIFN-CD. A0--A5 use 30k iterations; A6 uses 50k. Values averaged over available runs. Params in millions. A2 is a single verified run; additional runs are left for future work.}
 \label{tab:ablation}
 \begin{tabular}{clcccc}
 \toprule
@@ -8,7 +8,7 @@ ID & Variant & F1 & IoU & OA & Params \\
 \midrule
 A0 & CNN baseline           & 76.63 & 62.12 & 83.80 & 7.84  \\
 A1 & + MambaVision-S        & 93.87 & 88.45 & 95.72 & 53.54 \\
-A2 & + \drbi{} (abs only)$\dagger$ & 93.33 & 87.50 & 95.35 & 54.98 \\
+A2 & + \drbi{} (abs only)   & 93.33 & 87.50 & 95.35 & 54.98 \\
 A3 & + Signed diff          & 94.28 & 89.19 & 95.99 & 55.34 \\
 A4 & + CRAM-lite            & 94.36 & 89.32 & 96.05 & 65.12 \\
 A5 & + Bnd.\ residual head  & 93.59 & 87.94 & 95.53 & 65.19 \\

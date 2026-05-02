@@ -1,6 +1,6 @@
 \begin{figure}[t]
 \centering
-\includegraphics[width=\columnwidth]{figures/pipeline_placeholder.pdf}
-\caption{Overall pipeline of \ours. A shared MambaVision-S encoder extracts multi-scale features from both temporal images. Four-stream temporal descriptors (including signed difference) are passed to \drbi, which produces separate region and boundary pathways. CRAM-lite modulates region features at selected stages. The adaptive receptive-field FPN decoder aggregates multi-scale context, and a bounded boundary residual head refines the coarse prediction near object edges. [\textit{Placeholder: replace with final diagram before submission.}]}
+\includegraphics[width=\columnwidth]{figures/architecture_overview.pdf}
+\caption{Overall pipeline of \ours. A shared MambaVision-S encoder extracts multi-scale features from both temporal images. Four-stream temporal descriptors (including signed difference) are passed to \drbi, which produces separate region and boundary pathways. CRAM-lite modulates region features at selected stages. The adaptive receptive-field FPN decoder aggregates multi-scale context, and a bounded boundary residual head refines the coarse prediction near object edges.}
 \label{fig:pipeline}
 \end{figure}
