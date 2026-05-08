@@ -1,12 +1,12 @@
 experiment:
-  name: dsifn_literature_patch
-  output_root: outputs/dsifn/literature_patch
+  name: dsifn_litpatch_model_new_split_test
+  output_root: outputs/dsifn/litpatch_model_new_split_test
   seed: 42
 
 dataset:
   name: DSIFN-CD
-  root: /storage2/ChangeDetection/MV/Datasets/DSIFN-CD/DSIFN_lit_patch
-  split_dir: /storage2/ChangeDetection/MV/Datasets/DSIFN-CD/DSIFN_lit_patch/splits
+  root: /storage2/ChangeDetection/MV/Datasets/DSIFN-CD/DSIFN
+  split_dir: /storage2/ChangeDetection/MV/Datasets/DSIFN-CD/DSIFN/splits
   require_explicit_splits: true
   mode: binary
   task_type: binary_change
@@ -75,20 +75,6 @@ hardware:
   gpu_ids: [1]
   mixed_precision: true
 
-training:
-  max_iterations: 50000
-  batch_size: 8
-  lr: 5.0e-5
-  optimizer: adamw
-  scheduler: cosine
-  warmup_iterations: 2500
-  validate_every: 5000
-  log_every: 20
-  gradient_clip: 0.5
-  weight_decay: 0.01
-  skip_nan_steps: true
-  nan_diag_every: 50
-
 loss:
   type: bce_dice
   final:
@@ -112,26 +98,15 @@ metrics:
 eval:
   threshold: 0.5
   threshold_sweep:
-    enabled: true
-    values: [0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60]
-  threshold_select_metric: F1_1
+    enabled: false
   use_ema: true
   inference_mode: patch
   crop_size: 256
   overlap: 0.0
-  log_mask_debug: true
-  save_debug_outputs: false
-  debug_output_root: debug/dsifn_literature_patch
-  debug_max_samples: 30
 
 ema:
   enabled: true
   decay: 0.999
-
-resume:
-  enabled: true
-  checkpoint_path: /storage2/ChangeDetection/MV/MambaRefine-CD/outputs/dsifn/literature_patch/run_dsifn_dsifn_literature_patch_seed42_20260503_002011/checkpoints/latest.pth
-  strict: true
 
 checkpoint:
   selection_metric: F1

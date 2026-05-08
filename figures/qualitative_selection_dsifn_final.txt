@@ -1,0 +1,140 @@
+Selected samples for DSIFN-CD qualitative figure
+========================================================================
+Baseline   : A1: MambaVision-S + FPN (no DRBI/CRAM/ARF/boundary)
+Full model : A6: MambaRefine-CD full
+
+Row 1  sample_id = 1467.jpg
+  Crop coordinates     : r0=26, c0=37, r1=133, c1=144  (h=107, w=107)
+  Selection reason      : Fragmented/small changed regions: n_comp=1, GT ratio=3.0%, Δf1=+0.492, n_change=345
+  GT changed-px ratio   : 3.01%  (n_change=345)
+  Connected components  : 1
+  Crop border change    : 0.00%
+  Crop border touch     : 0 side(s)
+  Visual pred-diff      : 7.11%
+  F1   baseline         : 0.0000
+  F1   full             : 0.4918
+  ΔF1                   : +0.4918
+  IoU  baseline         : 0.0000
+  IoU  full             : 0.3261
+  ΔIoU                  : +0.3261
+  Boundary-F1 baseline  : 0.0000
+  Boundary-F1 full      : 0.5577
+  ΔBoundary-F1          : +0.5577
+  Boundary-IoU baseline : 0.0000
+  Boundary-IoU full     : 0.3867
+  ΔBoundary-IoU         : +0.3867
+  FP pixels baseline    : 0
+  FP pixels full        : 529
+  FP reduction          : -529 pixels
+  FN pixels baseline    : 345
+  FN pixels full        : 60
+  FN reduction          : +285 pixels
+  FP-rate baseline      : 0.00000
+  FP-rate full          : 0.04764
+  ΔFP-rate              : -0.04764
+  FN-rate baseline      : 1.00000
+  FN-rate full          : 0.17391
+  ΔFN-rate              : +0.82609
+
+
+Row 2  sample_id = 1246.jpg
+  Crop coordinates     : r0=156, c0=156, r1=256, c1=256  (h=100, w=100)
+  Selection reason      : Clearest boundary improvement: Δbf1=+0.752 (base=0.029→full=0.781), GT ratio=8.8%, n_change=875
+  GT changed-px ratio   : 8.75%  (n_change=875)
+  Connected components  : 1
+  Crop border change    : 0.00%
+  Crop border touch     : 0 side(s)
+  Visual pred-diff      : 7.47%
+  F1   baseline         : 0.0706
+  F1   full             : 0.9274
+  ΔF1                   : +0.8569
+  IoU  baseline         : 0.0366
+  IoU  full             : 0.8647
+  ΔIoU                  : +0.8281
+  Boundary-F1 baseline  : 0.0292
+  Boundary-F1 full      : 0.7814
+  ΔBoundary-F1          : +0.7521
+  Boundary-IoU baseline : 0.0148
+  Boundary-IoU full     : 0.6412
+  ΔBoundary-IoU         : +0.6263
+  FP pixels baseline    : 0
+  FP pixels full        : 12
+  FP reduction          : -12 pixels
+  FN pixels baseline    : 843
+  FN pixels full        : 108
+  FN reduction          : +735 pixels
+  FP-rate baseline      : 0.00000
+  FP-rate full          : 0.00132
+  ΔFP-rate              : -0.00132
+  FN-rate baseline      : 0.96343
+  FN-rate full          : 0.12343
+  ΔFN-rate              : +0.84000
+
+
+Row 3  sample_id = 3430.jpg
+  Crop coordinates     : r0=65, c0=56, r1=241, c1=232  (h=176, w=176)
+  Selection reason      : Clearest FP suppression: FP reduction=+653 px (base fp-rate=0.0286→full=0.0048), GT ratio=11.3%, n_change=3503
+  GT changed-px ratio   : 11.31%  (n_change=3503)
+  Connected components  : 1
+  Crop border change    : 0.00%
+  Crop border touch     : 0 side(s)
+  Visual pred-diff      : 3.17%
+  F1   baseline         : 0.7930
+  F1   full             : 0.9035
+  ΔF1                   : +0.1105
+  IoU  baseline         : 0.6570
+  IoU  full             : 0.8240
+  ΔIoU                  : +0.1670
+  Boundary-F1 baseline  : 0.3401
+  Boundary-F1 full      : 0.5865
+  ΔBoundary-F1          : +0.2464
+  Boundary-IoU baseline : 0.2049
+  Boundary-IoU full     : 0.4150
+  ΔBoundary-IoU         : +0.2101
+  FP pixels baseline    : 786
+  FP pixels full        : 133
+  FP reduction          : +653 pixels
+  FN pixels baseline    : 685
+  FN pixels full        : 507
+  FN reduction          : +178 pixels
+  FP-rate baseline      : 0.02861
+  FP-rate full          : 0.00484
+  ΔFP-rate              : +0.02377
+  FN-rate baseline      : 0.19555
+  FN-rate full          : 0.14473
+  ΔFN-rate              : +0.05081
+
+
+Row 4  sample_id = 1168.jpg
+  Crop coordinates     : r0=80, c0=0, r1=256, c1=176  (h=176, w=176)
+  Selection reason      : Clearest FN reduction: FN reduction=+1199 px (base fn-rate=0.3429→full=0.1016), GT ratio=16.0%, n_change=4970
+  GT changed-px ratio   : 16.04%  (n_change=4970)
+  Connected components  : 3
+  Crop border change    : 0.00%
+  Crop border touch     : 0 side(s)
+  Visual pred-diff      : 10.24%
+  F1   baseline         : 0.7012
+  F1   full             : 0.7900
+  ΔF1                   : +0.0888
+  IoU  baseline         : 0.5398
+  IoU  full             : 0.6529
+  ΔIoU                  : +0.1130
+  Boundary-F1 baseline  : 0.3852
+  Boundary-F1 full      : 0.3096
+  ΔBoundary-F1          : -0.0756
+  Boundary-IoU baseline : 0.2386
+  Boundary-IoU full     : 0.1831
+  ΔBoundary-IoU         : -0.0554
+  FP pixels baseline    : 1080
+  FP pixels full        : 1869
+  FP reduction          : -789 pixels
+  FN pixels baseline    : 1704
+  FN pixels full        : 505
+  FN reduction          : +1199 pixels
+  FP-rate baseline      : 0.04153
+  FP-rate full          : 0.07187
+  ΔFP-rate              : -0.03034
+  FN-rate baseline      : 0.34286
+  FN-rate full          : 0.10161
+  ΔFN-rate              : +0.24125
+

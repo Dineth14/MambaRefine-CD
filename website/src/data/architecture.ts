@@ -28,8 +28,8 @@ export const architectureModules = [
     short: 'CRAMLite',
     description:
       'A lightweight residual spatial attention module applied to the region stream. Uses a (1 + αA) multiplicative gate so initial behavior is close to the identity; attention learns to enhance change-likely regions.',
-    color: 'bg-purple-50 border-purple-200 text-purple-900',
-    accent: '#7c3aed',
+    color: 'bg-cyan-50 border-cyan-200 text-cyan-900',
+    accent: '#0891b2',
   },
   {
     id: 'arf',

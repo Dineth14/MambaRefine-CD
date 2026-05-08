@@ -33,6 +33,33 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 _BINARY_ALLOWED = {"Pre", "Rec", "F1", "IoU", "OA"}
+
+
+def _assert_repo_local_module(module, module_name: str) -> None:
+    """Fail fast if PYTHONPATH resolved a project-local module elsewhere."""
+    module_file = Path(getattr(module, "__file__", "")).resolve()
+    expected_root = (_REPO / "src").resolve()
+    if expected_root not in module_file.parents:
+        raise ImportError(
+            f"Refusing to import {module_name} from {module_file}. "
+            f"Expected this repository's module under {expected_root}. "
+            "Check PYTHONPATH for stale sibling repositories."
+        )
+
+
+def _purge_foreign_training_modules() -> None:
+    """Remove stale sibling-repo training modules before local imports."""
+    expected_root = (_REPO / "src").resolve()
+    for name, module in list(sys.modules.items()):
+        if name != "training" and not name.startswith("training."):
+            continue
+        module_file = getattr(module, "__file__", None)
+        if module_file is None:
+            continue
+        if expected_root not in Path(module_file).resolve().parents:
+            del sys.modules[name]
+
+
 def _get_allowed_metrics(cfg: dict) -> list[str]:
     explicit = cfg.get("metrics", {}).get("allowed", None)
     if explicit is not None:
@@ -160,10 +187,16 @@ def main() -> None:
     logger.info(f"Allowed metrics: {allowed}")
     log_startup_config(logger, cfg, args.config)
 
-    from models.mambarefinecd import build_model
     from data.dataset_builder import build_test_loader
+    _purge_foreign_training_modules()
+    import training.checkpoint as checkpoint_mod
+    import training.evaluator as evaluator_mod
+
+    _assert_repo_local_module(checkpoint_mod, "training.checkpoint")
+    _assert_repo_local_module(evaluator_mod, "training.evaluator")
     from training.checkpoint import load_for_eval, peek as peek_ckpt
     from training.evaluator import Evaluator
+    from models.mambarefinecd import build_model
 
     ckpt_meta = peek_ckpt(args.ckpt, map_location=device)
     ckpt_identity = checkpoint_identity(args.ckpt, ckpt_meta)

@@ -27,7 +27,10 @@ _MV_REPO = _REPO_ROOT.parent / "MambaVisionCD"
 
 for _p in (_MV_EXP_SRC, _MV_REPO):
     if _p.exists() and str(_p) not in sys.path:
-        sys.path.insert(0, str(_p))
+        # Keep MambaRefine-CD/src ahead of sibling repos so project-local
+        # packages such as training.checkpoint do not resolve to older helpers
+        # from MambaVision_experiments.
+        sys.path.append(str(_p))
 
 try:
     from mvcd.model import MambaVisionFeatureExtractor  # noqa: E402

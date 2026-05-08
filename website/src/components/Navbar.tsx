@@ -4,14 +4,14 @@ const NAV_ITEMS = [
   { href: '#overview', label: 'Overview' },
   { href: '#motivation', label: 'Motivation' },
   { href: '#architecture', label: 'Architecture' },
-  { href: '#math', label: 'Math' },
+  { href: '#math', label: 'Math Intuition' },
   { href: '#datasets', label: 'Datasets' },
   { href: '#results', label: 'Results' },
   { href: '#ablation', label: 'Ablation' },
-  { href: '#scaling', label: 'Scaling' },
+  { href: '#scaling', label: 'Backbone' },
   { href: '#comparison', label: 'Comparison' },
-  { href: '#insights', label: 'Insights' },
-  { href: '#limitations', label: 'Limitations' },
+  { href: '#learned', label: 'Learned' },
+  { href: '#limitations', label: 'Next Steps' },
   { href: '#contact', label: 'Repo' },
 ]
 

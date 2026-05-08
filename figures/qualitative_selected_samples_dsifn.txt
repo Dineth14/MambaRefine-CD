@@ -1,0 +1,88 @@
+Selected samples for DSIFN-CD qualitative figure
+========================================================================
+Baseline   : A1: MambaVision-S + FPN (no DRBI/CRAM/ARF/boundary)
+Full model : A6: MambaRefine-CD full
+
+Row 1  sample_id = 1514.jpg
+  Selection reason      : Fragmented/small changed regions: n_comp=8, GT ratio=2.5%, Δf1=+0.699, n_change=1608
+  GT changed-px ratio   : 2.45%  (n_change=1608)
+  Connected components  : 8
+  Visual pred-diff      : 2.25%
+  F1   baseline         : 0.0754
+  F1   full             : 0.7744
+  ΔF1                   : +0.6990
+  IoU  baseline         : 0.0392
+  IoU  full             : 0.6319
+  ΔIoU                  : +0.5927
+  Boundary-F1 baseline  : 0.0598
+  Boundary-F1 full      : 0.6368
+  ΔBoundary-F1          : +0.5770
+  FP-rate baseline      : 0.00000
+  FP-rate full          : 0.00497
+  ΔFP-rate              : -0.00497
+  FN-rate baseline      : 0.96082
+  FN-rate full          : 0.24316
+  ΔFN-rate              : +0.71766
+
+Row 2  sample_id = 114.jpg
+  Selection reason      : Clearest boundary improvement: Δbf1=+0.703 (base=0.089→full=0.792), GT ratio=10.8%, n_change=7048
+  GT changed-px ratio   : 10.75%  (n_change=7048)
+  Connected components  : 1
+  Visual pred-diff      : 6.04%
+  F1   baseline         : 0.6140
+  F1   full             : 0.9816
+  ΔF1                   : +0.3676
+  IoU  baseline         : 0.4430
+  IoU  full             : 0.9639
+  ΔIoU                  : +0.5209
+  Boundary-F1 baseline  : 0.0887
+  Boundary-F1 full      : 0.7915
+  ΔBoundary-F1          : +0.7028
+  FP-rate baseline      : 0.00000
+  FP-rate full          : 0.00250
+  ΔFP-rate              : -0.00250
+  FN-rate baseline      : 0.55704
+  FN-rate full          : 0.01617
+  ΔFN-rate              : +0.54086
+
+Row 3  sample_id = 3192.jpg
+  Selection reason      : Clearest FP suppression: Δfp=+0.1401 (base fp=0.2319→full=0.0917), GT ratio=34.1%, n_change=22352
+  GT changed-px ratio   : 34.11%  (n_change=22352)
+  Connected components  : 3
+  Visual pred-diff      : 12.27%
+  F1   baseline         : 0.7716
+  F1   full             : 0.8631
+  ΔF1                   : +0.0915
+  IoU  baseline         : 0.6281
+  IoU  full             : 0.7591
+  ΔIoU                  : +0.1310
+  Boundary-F1 baseline  : 0.2446
+  Boundary-F1 full      : 0.2783
+  ΔBoundary-F1          : +0.0337
+  FP-rate baseline      : 0.23189
+  FP-rate full          : 0.09175
+  ΔFP-rate              : +0.14014
+  FN-rate baseline      : 0.09051
+  FN-rate full          : 0.10634
+  ΔFN-rate              : -0.01584
+
+Row 4  sample_id = 28.jpg
+  Selection reason      : Clearest FN reduction: Δfn=+0.6000 (base fn=0.9782→full=0.3782), GT ratio=45.3%, n_change=29662
+  GT changed-px ratio   : 45.26%  (n_change=29662)
+  Connected components  : 2
+  Visual pred-diff      : 61.95%
+  F1   baseline         : 0.0410
+  F1   full             : 0.5119
+  ΔF1                   : +0.4709
+  IoU  baseline         : 0.0209
+  IoU  full             : 0.3440
+  ΔIoU                  : +0.3231
+  Boundary-F1 baseline  : 0.0298
+  Boundary-F1 full      : 0.0558
+  ΔBoundary-F1          : +0.0260
+  FP-rate baseline      : 0.03459
+  FP-rate full          : 0.66778
+  ΔFP-rate              : -0.63319
+  FN-rate baseline      : 0.97822
+  FN-rate full          : 0.37819
+  ΔFN-rate              : +0.60003

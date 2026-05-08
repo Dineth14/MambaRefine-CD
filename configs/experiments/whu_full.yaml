@@ -37,7 +37,7 @@ model:
   arf_fpn:
     enabled: true
   boundary_refine:
-    enabled: true
+    enabled: false
 
 difference:
   enabled: true
@@ -67,11 +67,11 @@ decoder:
 
 hardware:
   device: cuda
-  gpu_ids: [1]
+  gpu_ids: [0]
   mixed_precision: true
 
 training:
-  max_iterations: 75000
+  max_iterations: 50000
   batch_size: 8
   lr: 5.0e-5
   optimizer: adamw
@@ -122,8 +122,8 @@ ema:
   decay: 0.999
 
 resume:
-  enabled: true
-  checkpoint_path: /storage2/ChangeDetection/MV/MambaRefine-CD/outputs/whu/full/run_whu_whu_full_seed42_20260430_114506/checkpoints/best.pth
+  enabled: false
+  checkpoint_path: null
   strict: true
 
 checkpoint:

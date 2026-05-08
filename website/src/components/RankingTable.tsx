@@ -59,9 +59,8 @@ function DSIFNTable({ rows }: { rows: ComparisonRow[] }) {
       <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 mb-4 text-sm text-amber-800">
         <AlertTriangle size={16} className="mt-0.5 shrink-0" />
         <span>
-          <strong>Protocol caution:</strong> Different DSIFN-CD papers use different patch protocols
-          (literature uses 14400/1360/192 patch split; our results use a clean 2758/394/789 image-level split
-          with 0.25 overlap tiling at inference). This table is <em>contextual</em>, not a head-to-head ranking.
+          <strong>Different DSIFN protocols exist.</strong> This table is contextual unless all methods are
+          re-evaluated under the same split.
         </span>
       </div>
       <div className="overflow-x-auto rounded-xl border border-border shadow-card">
@@ -82,11 +81,11 @@ function DSIFNTable({ rows }: { rows: ComparisonRow[] }) {
               <tr key={r.method} className={r.isOurs ? 'bg-slate-50 font-semibold' : ''}>
                 <td>
                   {r.method}
-                  {r.isOurs && <span className="ml-1 text-[10px] font-bold text-primary bg-soft-blue rounded px-1">ours</span>}
+                  {r.isOurs && <span className="ml-1 text-[10px] font-bold text-slate-600 bg-slate-200 rounded px-1">ours</span>}
                 </td>
                 <td>{r.pre?.toFixed(2) ?? '—'}</td>
                 <td>{r.rec?.toFixed(2) ?? '—'}</td>
-                <td className={r.isOurs ? 'text-primary' : ''}>{r.f1.toFixed(2)}</td>
+                <td>{r.f1.toFixed(2)}</td>
                 <td>{r.iou.toFixed(2)}</td>
                 <td>{r.oa?.toFixed(2) ?? '—'}</td>
                 <td className="text-xs text-muted-text max-w-[200px]">{r.note ?? ''}</td>

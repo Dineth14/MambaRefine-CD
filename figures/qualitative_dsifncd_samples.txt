@@ -1,0 +1,56 @@
+Selected samples for DSIFN-CD qualitative figure
+============================================================
+Baseline : A1: MambaVision-S + FPN (no DRBI/CRAM/ARF/boundary)
+Full model: A6: MambaRefine-CD full
+
+Row 1  sample_id=114.jpg
+  Selection reason : Highest overall F1 improvement: Δf1=+0.952 (base=0.000 → full=0.952), n_change=1810
+  n_change pixels  : 1810
+  F1  baseline     : 0.0000
+  F1  full         : 0.9518
+  ΔF1              : +0.9518
+  BoundaryF1 base  : 0.0000
+  BoundaryF1 full  : 0.6116
+  ΔBoundaryF1      : +0.6116
+  FP_rate baseline : 0.00000
+  FP_rate full     : 0.00281
+  ΔFP_rate         : -0.00281
+
+Row 2  sample_id=822.jpg
+  Selection reason : Scene diversity + composite improvement: density_bin=1, Δf1=+0.168, Δbf1=+0.630, Δfp=-0.0053, n_change=9623
+  n_change pixels  : 9623
+  F1  baseline     : 0.8017
+  F1  full         : 0.9697
+  ΔF1              : +0.1681
+  BoundaryF1 base  : 0.0721
+  BoundaryF1 full  : 0.7025
+  ΔBoundaryF1      : +0.6304
+  FP_rate baseline : 0.00254
+  FP_rate full     : 0.00789
+  ΔFP_rate         : -0.00535
+
+Row 3  sample_id=2064.jpg
+  Selection reason : Highest FP suppression: Δfp=+0.9093 (base fp_rate=0.9465 → full=0.0373), n_change=57457
+  n_change pixels  : 57457
+  F1  baseline     : 0.9376
+  F1  full         : 0.9932
+  ΔF1              : +0.0556
+  BoundaryF1 base  : 0.0000
+  BoundaryF1 full  : 0.4128
+  ΔBoundaryF1      : +0.4128
+  FP_rate baseline : 0.94653
+  FP_rate full     : 0.03726
+  ΔFP_rate         : +0.90927
+
+Row 4  sample_id=3138.jpg
+  Selection reason : Highest boundary-F1 improvement: Δbf1=+0.785 (base=0.000 → full=0.785), n_change=62371
+  n_change pixels  : 62371
+  F1  baseline     : 0.9753
+  F1  full         : 0.9985
+  ΔF1              : +0.0233
+  BoundaryF1 base  : 0.0000
+  BoundaryF1 full  : 0.7851
+  ΔBoundaryF1      : +0.7851
+  FP_rate baseline : 1.00000
+  FP_rate full     : 0.00979
+  ΔFP_rate         : +0.99021

@@ -1,19 +1,21 @@
 experiment:
-  name: dsifn_literature_patch
-  output_root: outputs/dsifn/literature_patch
+  name: dsifn_mambacd_split
+  output_root: outputs/dsifn/mambacd_split_full
   seed: 42
 
 dataset:
   name: DSIFN-CD
   root: /storage2/ChangeDetection/MV/Datasets/DSIFN-CD/DSIFN_lit_patch
-  split_dir: /storage2/ChangeDetection/MV/Datasets/DSIFN-CD/DSIFN_lit_patch/splits
+  split_dir: /storage2/ChangeDetection/MV/Datasets/DSIFN-CD/DSIFN_lit_patch/splits_mambacd
   require_explicit_splits: true
+  protocol: DSIFN Mamba-CD-style patch protocol
   mode: binary
   task_type: binary_change
   image_size: 256
   batch_size: 8
   num_workers: 8
   augmentation: true
+  augmentation_ops: [horizontal_flip, vertical_flip]
   val_ratio: 0.2
   image_a_dir_candidates: [t1, T1, A, imageA, before, img1]
   image_b_dir_candidates: [t2, T2, B, imageB, after, img2]
@@ -121,7 +123,7 @@ eval:
   overlap: 0.0
   log_mask_debug: true
   save_debug_outputs: false
-  debug_output_root: debug/dsifn_literature_patch
+  debug_output_root: debug/dsifn_mambacd_split
   debug_max_samples: 30
 
 ema:
@@ -129,8 +131,8 @@ ema:
   decay: 0.999
 
 resume:
-  enabled: true
-  checkpoint_path: /storage2/ChangeDetection/MV/MambaRefine-CD/outputs/dsifn/literature_patch/run_dsifn_dsifn_literature_patch_seed42_20260503_002011/checkpoints/latest.pth
+  enabled: false
+  checkpoint_path: null
   strict: true
 
 checkpoint:

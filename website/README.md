@@ -1,21 +1,24 @@
 # MambaRefine-CD Website
 
-A React + Vite + TypeScript + Tailwind CSS project website for the MambaRefine-CD change detection research.
+A polished static project website for **MambaRefine-CD: Region-Boundary Temporal Refinement with MambaVision for Remote Sensing Change Detection**.
+
+The site is built as a research presentation for GitHub Pages. It has no backend; all architecture descriptions, result tables, ablation values, and comparison data are stored locally in TypeScript files.
+
+## Tech Stack
+
+- React + Vite + TypeScript
+- Tailwind CSS
+- Framer Motion
+- Recharts
+- Lucide React
+- KaTeX via `react-katex`
+- `gh-pages` for deployment
 
 ## Local Development
 
 ```bash
-# Install Node.js via nvm if needed
-curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
-export NVM_DIR="$HOME/.nvm" && . "$NVM_DIR/nvm.sh"
-nvm install 20
-
-# Install dependencies
 npm install
-
-# Start dev server
 npm run dev
-# → http://localhost:5173
 ```
 
 ## Build
@@ -29,15 +32,25 @@ npm run build
 
 ```bash
 npm run deploy
-# Pushes dist/ to the gh-pages branch of https://github.com/Dineth14/MambaRefine-CD
-# Live at: https://dineth14.github.io/MambaRefine-CD/
 ```
 
-**First-time setup:** Ensure GitHub Pages is enabled in the repository settings under Settings → Pages → Source: `gh-pages` branch.
+This builds `dist/` and publishes it to the `gh-pages` branch.
+
+First-time setup:
+
+1. Confirm the repository URL in `src/data/architecture.ts`.
+2. Confirm the GitHub Pages base path in `vite.config.ts`.
+3. Enable GitHub Pages in repository settings: Settings -> Pages -> Source: `gh-pages` branch.
+
+If your repository name is not `MambaRefine-CD`, set the base path before building:
+
+```bash
+VITE_BASE_PATH=/REPOSITORY_NAME/ npm run build
+```
 
 ## Update Results
 
-All displayed numbers come from TypeScript data files — no hardcoded strings in components:
+All displayed numbers come from TypeScript data files. Update them only from verified logs.
 
 | File | Purpose |
 |---|---|
@@ -45,13 +58,3 @@ All displayed numbers come from TypeScript data files — no hardcoded strings i
 | `src/data/ablations.ts` | Ablation study rows and delta insights |
 | `src/data/comparisons.ts` | Literature comparison tables |
 | `src/data/architecture.ts` | Architecture module descriptions and model stats |
-
-## Stack
-
-- React 18 + TypeScript 5
-- Vite 5
-- Tailwind CSS 3
-- Framer Motion 11 (scroll animations)
-- Recharts 2 (bar/scatter charts)
-- react-katex + KaTeX (math equations)
-- gh-pages (deployment)

@@ -107,7 +107,7 @@ export default function Hero() {
             <ArrowRight size={16} /> See Results
           </a>
           <a href={REPO_URL} target="_blank" rel="noopener noreferrer" className="btn-secondary">
-            <Github size={16} /> GitHub Repository
+            <Github size={16} /> Open GitHub Repository
           </a>
         </motion.div>
       </div>

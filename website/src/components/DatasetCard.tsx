@@ -1,36 +1,35 @@
 const DATASETS = [
   {
     name: 'DSIFN-CD',
-    subtitle: 'Dataset for Individual Change Detection and Semantic Segmentation',
+    subtitle: 'Clean image-level split used for verified DSIFN-CD evaluation',
     image: null,
     details: [
-      { key: 'Source', value: 'Google Earth imagery, 5 cities' },
-      { key: 'Total pairs', value: '3940 image pairs' },
-      { key: 'Our split', value: '2758 train / 394 val / 789 test' },
-      { key: 'Image size', value: '512 × 512 pixels' },
-      { key: 'Inference tiling', value: '256 × 256, 0.25 overlap' },
-      { key: 'Threshold', value: '0.60 (sweep-optimized)' },
+      { key: 'Split', value: '2758 train / 394 val / 789 test images' },
+      { key: 'Test tiles', value: '3156' },
+      { key: 'Patch size', value: '256x256' },
+      { key: 'Overlap', value: '0.25' },
+      { key: 'Split integrity', value: 'PASS' },
+      { key: 'Leakage check', value: 'Clean split, no train/test leakage' },
     ],
-    tags: ['Google Earth', 'Urban Change', 'Multi-Class'],
+    tags: ['Binary masks', 'Clean split', 'Patch inference'],
     color: 'border-primary bg-soft-blue',
     badge: 'bg-primary/10 text-primary',
-    note: 'Our clean split verifies zero cross-split overlap. Literature patch-level splits (14400/1360/192) are maintained in parallel for Mamba-CD comparison.',
+    note: 'The test threshold is selected from validation, not tuned on the test set.',
   },
   {
     name: 'WHU-CD',
     subtitle: 'WHU Building Change Detection Dataset',
     image: null,
     details: [
-      { key: 'Source', value: 'Aerial imagery, Christchurch, NZ' },
-      { key: 'Total pairs', value: '1 high-res pair tiled to 8189 patches' },
-      { key: 'Standard split', value: '6096 train / 762 val / 1331 test' },
-      { key: 'Image size', value: '256 × 256 pixels' },
-      { key: 'Threshold', value: '0.55 (sweep-optimized)' },
+      { key: 'Split', value: 'Standard train/val/test split' },
+      { key: 'Inference', value: 'Patch-based inference' },
+      { key: 'Use', value: 'Direct comparison with recent literature' },
+      { key: 'Task', value: 'Binary building change detection' },
     ],
-    tags: ['Aerial', 'Building Change', 'Single Scene'],
+    tags: ['WHU-CD', 'Building change', 'Standard split'],
     color: 'border-secondary bg-soft-green',
     badge: 'bg-secondary/10 text-secondary',
-    note: 'Standard WHU-CD split; the full high-resolution aerial image is tiled. Our split follows the commonly used 7.5:1:1.75 ratio.',
+    note: 'The test threshold is selected from validation, not tuned on the test set.',
   },
 ]
 
@@ -53,7 +52,7 @@ export default function DatasetCard() {
 
           {/* Placeholder for qualitative image */}
           <div className="w-full h-32 bg-slate-100 rounded-lg border border-dashed border-slate-300 flex items-center justify-center text-xs text-slate-400 mb-4">
-            Add qualitative result here — T1 / T2 / GT / Prediction grid
+            Add qualitative result here
           </div>
 
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs mb-4">
