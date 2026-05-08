@@ -2,7 +2,9 @@
 \label{sec:method}
 
 \subsection{Overview}
-\ours{} predicts a binary change map from a bi-temporal image pair $(I_1, I_2)$ through five components: a shared MambaVision encoder, a four-stream temporal feature constructor, \drbi, an adaptive receptive-field FPN decoder with CRAM-lite modulation, and a bounded boundary residual refinement head. Fig.~\ref{fig:pipeline} shows the overall pipeline.
+\ours{} predicts a binary change map from a bi-temporal image pair $(I_1, I_2)$ through five components: a shared MambaVision encoder, a four-stream temporal feature constructor, \drbi, an adaptive receptive-field FPN decoder with CRAM-lite modulation, and a bounded boundary residual refinement head. As shown in Fig.~\ref{fig:architecture}, these components form an end-to-end pipeline for binary CD.
+
+\input{figures/fig_pipeline}
 
 \subsection{Shared MambaVision Encoding}
 A shared encoder $E(\cdot)$ processes both input images in the same feature space:
@@ -20,7 +22,7 @@ where $F_{i,n}^s$ denotes the normalized feature. Absolute difference provides a
 
 \subsection{Differential Region--Boundary Interaction (\drbi)}
 \label{sec:drbi}
-\drbi{} applies two separate gating mechanisms to $D^s$ to expose region-level and boundary-level evidence before decoding. Fig.~\ref{fig:drbi} illustrates the module.
+\drbi{} applies two separate gating mechanisms to $D^s$ to expose region-level and boundary-level evidence before decoding. The D-RBI module is detailed in Fig.~\ref{fig:drbi} (right).
 
 \textbf{Region gate.}  
 A spatial attention path processes $D^s$ through a depthwise 3$\times$3 convolution and a pointwise 1$\times$1 convolution to produce unnormalized gate logits, which are clamped to $[-8, 8]$ and passed through sigmoid, then scaled to bound the response:
@@ -46,7 +48,7 @@ These three streams give the decoder access to region evidence, boundary evidenc
 
 \subsection{CRAM-Lite Modulation and Adaptive Receptive-Field Decoding}
 \label{sec:decoder}
-At selected encoder stages ($s \in \{0,1,2\}$), a lightweight CRAM-lite block reweights the region features spatially. Following the motivation of change-region-aware attention in Mamba-CD~\cite{mambacd2026}, each CRAM-lite block estimates a per-location attention map $A \in [0,1]$ via depthwise and pointwise convolutions and applies a residual modulation:
+At selected encoder stages ($s \in \{0,1,2\}$), a lightweight CRAM-lite block reweights the region features spatially. Following the motivation of change-region-aware attention in Mamba-CD~\cite{peng2026mambacd}, each CRAM-lite block estimates a per-location attention map $A \in [0,1]$ via depthwise and pointwise convolutions and applies a residual modulation:
 \begin{equation}
     F_{\mathrm{out}} = F_{\mathrm{region}} \cdot (1 + \alpha \cdot A), \qquad \alpha \in \mathbb{R}^+\;\text{(learnable, init 0.5)}.
 \end{equation}

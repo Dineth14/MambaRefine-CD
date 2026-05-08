@@ -1,6 +1,14 @@
-\begin{figure}[t]
+\begin{figure*}[t]
 \centering
-\includegraphics[width=\columnwidth]{figures/architecture_overview.pdf}
-\caption{Overall pipeline of \ours. A shared MambaVision-S encoder extracts multi-scale features from both temporal images. Four-stream temporal descriptors (including signed difference) are passed to \drbi, which produces separate region and boundary pathways. CRAM-lite modulates region features at selected stages. The adaptive receptive-field FPN decoder aggregates multi-scale context, and a bounded boundary residual head refines the coarse prediction near object edges.}
-\label{fig:pipeline}
-\end{figure}
+\begin{minipage}[b]{0.63\textwidth}
+\centering
+\includegraphics[width=\textwidth]{figures/architecture_overview.pdf}
+\end{minipage}
+\hfill
+\begin{minipage}[b]{0.34\textwidth}
+\centering
+\includegraphics[width=\textwidth]{figures/drbi_module.pdf}
+\end{minipage}
+\caption{(Left) Overall architecture of \ours: a shared MambaVision encoder extracts multi-scale bi-temporal features; per-scale \drbi{} blocks produce region and boundary streams; ARF-FPN with CRAM-lite decodes region features; a bounded residual head refines the coarse prediction. (Right) \drbi{} structure: temporal descriptor $D^s$ (from paired features, absolute difference, and signed difference) is routed through a bounded region gate and a Sobel-conditioned boundary gate.}
+\label{fig:architecture}\label{fig:drbi}
+\end{figure*}

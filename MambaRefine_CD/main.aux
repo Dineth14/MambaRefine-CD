@@ -9,7 +9,7 @@
 \citation{hatamizadeh2025mambavision}
 \citation{chen2024changemamba}
 \citation{li2026hamcd}
-\citation{mambacd2026}
+\citation{peng2026mambacd}
 \citation{mambafcs}
 \citation{wasalathilaka2026controlled}
 \@writefile{toc}{\contentsline {section}{\numberline {I}Introduction}{1}{}\protected@file@percent }
@@ -42,65 +42,62 @@
 \newlabel{sec:method}{{III}{2}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-A}}Overview}{2}{}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-B}}Shared MambaVision Encoding}{2}{}\protected@file@percent }
-\citation{mambacd2026}
-\citation{shi2022dsamnet}
-\citation{ji2019whu}
+\citation{peng2026mambacd}
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces (Left) Overall architecture of MambaRefine-CD: a shared MambaVision encoder extracts multi-scale bi-temporal features; per-scale D-RBI{} blocks produce region and boundary streams; ARF-FPN with CRAM-lite decodes region features; a bounded residual head refines the coarse prediction. (Right) D-RBI{} structure: temporal descriptor $D^s$ (from paired features, absolute difference, and signed difference) is routed through a bounded region gate and a Sobel-conditioned boundary gate.}}{3}{}\protected@file@percent }
+\newlabel{fig:architecture}{{1}{3}}
+\newlabel{fig:drbi}{{1}{3}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-C}}Four-Stream Temporal Feature Construction}{3}{}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-D}}Differential Region--Boundary Interaction (D-RBI)}{3}{}\protected@file@percent }
 \newlabel{sec:drbi}{{\mbox  {III-D}}{3}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-E}}CRAM-Lite Modulation and Adaptive Receptive-Field Decoding}{3}{}\protected@file@percent }
 \newlabel{sec:decoder}{{\mbox  {III-E}}{3}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-F}}Coarse Head and Bounded Boundary Residual Refinement}{3}{}\protected@file@percent }
-\newlabel{sec:refinement}{{\mbox  {III-F}}{3}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-G}}Training Objective}{3}{}\protected@file@percent }
-\newlabel{sec:loss}{{\mbox  {III-G}}{3}}
-\@writefile{toc}{\contentsline {section}{\numberline {IV}Experiments}{3}{}\protected@file@percent }
-\newlabel{sec:experiments}{{IV}{3}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-A}}Datasets and Split Protocol}{3}{}\protected@file@percent }
-\newlabel{sec:datasets}{{\mbox  {IV-A}}{3}}
+\citation{shi2022dsamnet}
+\citation{ji2019whu}
 \citation{peng2026mambacd}
 \citation{peng2026mambacd}
-\citation{daudt2018fully}
-\citation{daudt2018fully}
-\citation{daudt2018fully}
-\citation{fang2022snunet}
+\citation{peng2026mambacd}
 \citation{bandara2022changeformer}
 \citation{peng2026mambacd}
 \citation{peng2026mambacd}
+\citation{bandara2022changeformer}
 \citation{peng2026mambacd}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-F}}Coarse Head and Bounded Boundary Residual Refinement}{4}{}\protected@file@percent }
+\newlabel{sec:refinement}{{\mbox  {III-F}}{4}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-G}}Training Objective}{4}{}\protected@file@percent }
+\newlabel{sec:loss}{{\mbox  {III-G}}{4}}
+\@writefile{toc}{\contentsline {section}{\numberline {IV}Experiments}{4}{}\protected@file@percent }
+\newlabel{sec:experiments}{{IV}{4}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-A}}Datasets and Split Protocol}{4}{}\protected@file@percent }
+\newlabel{sec:datasets}{{\mbox  {IV-A}}{4}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-B}}Implementation Details}{4}{}\protected@file@percent }
 \newlabel{sec:implementation}{{\mbox  {IV-B}}{4}}
+\@writefile{lot}{\contentsline {table}{\numberline {I}{\ignorespaces Comparison on WHU-CD. Literature values from\nobreakspace  {}\cite  {peng2026mambacd}. Params in M; FLOPs not reported for prior methods under comparable settings.}}{4}{}\protected@file@percent }
+\newlabel{tab:sota_whu}{{I}{4}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-C}}Evaluation Metrics}{4}{}\protected@file@percent }
 \newlabel{sec:metrics}{{\mbox  {IV-C}}{4}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-D}}Main Results}{4}{}\protected@file@percent }
 \newlabel{sec:main_results}{{\mbox  {IV-D}}{4}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-E}}Boundary-Specific Evaluation}{4}{}\protected@file@percent }
-\newlabel{sec:boundary_eval}{{\mbox  {IV-E}}{4}}
-\@writefile{lot}{\contentsline {table}{\numberline {I}{\ignorespaces Binary change detection results. DSIFN-CD values are averaged over two canonical runs. WHU-CD is a single verified run at threshold 0.55. The model uses MambaVision-S with 65.40M parameters.}}{4}{}\protected@file@percent }
-\newlabel{tab:main_results}{{I}{4}}
-\@writefile{lot}{\contentsline {table}{\numberline {II}{\ignorespaces Boundary-specific metrics (3-pixel tolerance). BF1\,=\,boundary F1; BIoU\,=\,boundary band IoU; Trimap\nobreakspace  {}F1\,=\,changed-class F1 in the 3-px GT boundary band.}}{4}{}\protected@file@percent }
-\newlabel{tab:boundary_metrics}{{II}{4}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-F}}Qualitative Boundary Analysis}{4}{}\protected@file@percent }
-\newlabel{sec:qualitative}{{\mbox  {IV-F}}{4}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-G}}Comparison with Recent Change Detection Methods}{4}{}\protected@file@percent }
-\newlabel{sec:sota_comparison}{{\mbox  {IV-G}}{4}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-E}}Comparison with Recent Methods}{4}{}\protected@file@percent }
+\newlabel{sec:sota_comparison}{{\mbox  {IV-E}}{4}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-F}}Ablation Study}{4}{}\protected@file@percent }
+\newlabel{sec:ablation}{{\mbox  {IV-F}}{4}}
 \citation{peng2026mambacd}
+\@writefile{lot}{\contentsline {table}{\numberline {II}{\ignorespaces Comparison on DSIFN-CD. Literature values from\nobreakspace  {}\cite  {peng2026mambacd} under the Mamba-CD-style patch split. Params in M.}}{5}{}\protected@file@percent }
+\newlabel{tab:sota_dsifn}{{II}{5}}
+\@writefile{lot}{\contentsline {table}{\numberline {III}{\ignorespaces Ablation on DSIFN-CD. A0--A5 use 30k iters; A6 uses 50k. Values averaged over available runs. $\dagger $ single verified run. Params in millions.}}{5}{}\protected@file@percent }
+\newlabel{tab:ablation}{{III}{5}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-G}}Boundary-Specific Evaluation and Backbone Scaling}{5}{}\protected@file@percent }
+\newlabel{sec:boundary_scaling}{{\mbox  {IV-G}}{5}}
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Qualitative examples on DSIFN-CD (top rows) and WHU-CD (bottom rows). Each row: $I_1$, $I_2$, GT, prediction, error map (white\,=\,TP, black\,=\,TN, \leavevmode {\color  {red}red}\,=\,FP, \leavevmode {\color  [rgb]{0.2,0.7,0.3}green}\,=\,FN), boundary overlay (\leavevmode {\color  [rgb]{1.0,0.87,0.0}yellow}\,=\,GT bnd, \leavevmode {\color  {cyan}cyan}\,=\,pred bnd).}}{5}{}\protected@file@percent }
+\newlabel{fig:qualitative}{{2}{5}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-H}}Qualitative Analysis}{5}{}\protected@file@percent }
+\newlabel{sec:qualitative}{{\mbox  {IV-H}}{5}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-I}}Limitations}{5}{}\protected@file@percent }
+\newlabel{sec:limitations}{{\mbox  {IV-I}}{5}}
+\@writefile{toc}{\contentsline {section}{\numberline {V}Conclusion}{5}{}\protected@file@percent }
 \bibstyle{IEEEtran}
 \bibdata{references}
 \bibcite{daudt2018fully}{1}
-\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Qualitative boundary results on DSIFN-CD (A6 full model). Each row: $I_1$, $I_2$, GT, prediction, error map (white\,=\,TP, black\,=\,TN, \leavevmode {\color  {red}red}\,=\,FP, \leavevmode {\color  [rgb]{0.2,0.7,0.3}green}\,=\,FN), boundary overlay (\leavevmode {\color  [rgb]{1.0,0.87,0.0}yellow}\,=\,GT bnd, \leavevmode {\color  {cyan}cyan}\,=\,pred bnd).}}{5}{}\protected@file@percent }
-\newlabel{fig:visuals}{{1}{5}}
-\@writefile{lot}{\contentsline {table}{\numberline {III}{\ignorespaces Comparison with recent methods on WHU-CD. Literature values are reported by Peng et al.\nobreakspace  {}\cite  {peng2026mambacd}.}}{5}{}\protected@file@percent }
-\newlabel{tab:whu_sota_comparison}{{III}{5}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-H}}Ablation Study}{5}{}\protected@file@percent }
-\newlabel{sec:ablation}{{\mbox  {IV-H}}{5}}
-\@writefile{lot}{\contentsline {table}{\numberline {IV}{\ignorespaces Ablation study on DSIFN-CD. A0--A5 use 30k iterations; A6 uses 50k. Values averaged over available runs. Params in millions. A2 is a single verified run; additional runs are left for future work.}}{5}{}\protected@file@percent }
-\newlabel{tab:ablation}{{IV}{5}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-I}}Backbone Scaling}{5}{}\protected@file@percent }
-\newlabel{sec:scaling}{{\mbox  {IV-I}}{5}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-J}}Limitations}{5}{}\protected@file@percent }
-\newlabel{sec:limitations}{{\mbox  {IV-J}}{5}}
-\@writefile{toc}{\contentsline {section}{\numberline {V}Conclusion}{5}{}\protected@file@percent }
 \bibcite{ronneberger2015unet}{2}
 \bibcite{fang2022snunet}{3}
 \bibcite{chen2021dasnet}{4}
@@ -112,17 +109,16 @@
 \bibcite{hatamizadeh2025mambavision}{10}
 \bibcite{chen2024changemamba}{11}
 \bibcite{li2026hamcd}{12}
-\bibcite{mambacd2026}{13}
+\bibcite{peng2026mambacd}{13}
 \bibcite{mambafcs}{14}
 \bibcite{wasalathilaka2026controlled}{15}
 \bibcite{enhanced_scannet_mercon2025}{16}
-\bibcite{peng2026mambacd}{17}
-\bibcite{kervadec2019boundary}{18}
-\bibcite{takikawa2019gated}{19}
-\bibcite{qin2019basnet}{20}
-\bibcite{wang2021boundary}{21}
-\bibcite{zhou2026bscnet}{22}
-\bibcite{shi2022dsamnet}{23}
-\bibcite{ji2019whu}{24}
+\bibcite{kervadec2019boundary}{17}
+\bibcite{takikawa2019gated}{18}
+\bibcite{qin2019basnet}{19}
+\bibcite{wang2021boundary}{20}
+\bibcite{zhou2026bscnet}{21}
+\bibcite{shi2022dsamnet}{22}
+\bibcite{ji2019whu}{23}
 \@writefile{toc}{\contentsline {section}{References}{6}{}\protected@file@percent }
 \gdef \@abspage@last{6}

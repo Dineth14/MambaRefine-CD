@@ -1,6 +1,6 @@
 \begin{figure}[t]
 \centering
 \includegraphics[width=0.9\columnwidth]{figures/drbi_module.pdf}
-\caption{\drbi{} module. The four-stream temporal descriptor $D^s$ is passed to two independent gating branches. The region gate applies a depthwise--pointwise path with sigmoid scaling bounded to $[0.2, 0.8]$. The boundary gate uses the same structure but is modulated by a normalized Sobel-magnitude spatial prior and bounded to $[0.0, 0.4]$. Both gated outputs and the original descriptor are forwarded to the decoder.}
+\caption{Detailed structure of \drbi. The module constructs a temporal descriptor $D^s$ from normalized paired features, absolute difference, and signed difference, then produces separate region and Sobel-conditioned boundary streams via bounded gating.}
 \label{fig:drbi}
 \end{figure}

@@ -85,11 +85,12 @@ G.~Li, P.~Han, W.~Wang, T.~Mu, Z.~Xiao, and X.~Li, ``Ham-cd: Hybrid attention
   mamba for remote sensing change detection,'' \emph{IEEE Transactions on
   Geoscience and Remote Sensing}, vol.~64, pp. 1--18, 2026.
 
-\bibitem{mambacd2026}
-G.~Peng, Y.~Li, J.~Chen, and Y.~Zhang, ``Mamba-cd: Mamba-based change detection
-  network for remote sensing images with change region-aware attention and
-  recursive context refinement mechanism,'' \emph{IEEE Transactions on
-  Geoscience and Remote Sensing}, 2026.
+\bibitem{peng2026mambacd}
+A.~Peng, L.~Zhuo, L.~Wang, H.~Zhang, and H.~Xu, ``Mamba-cd: Mamba-based change
+  detection network for remote sensing images with change region-aware
+  attention and recursive context refinement mechanism,'' \emph{IEEE Journal of
+  Selected Topics in Applied Earth Observations and Remote Sensing}, vol.~19,
+  pp. 4288--4300, 2026.
 
 \bibitem{mambafcs}
 B.~Wijenayake, A.~Ratnayake, P.~Sumanasekara, R.~Godaliyadda, P.~Ekanayake,
@@ -110,13 +111,6 @@ R.~Ratnayake, W.~Wijenayake, D.~Sumanasekara, G.~Godaliyadda, H.~Herath, and
   M.~Ekanayake, ``Enhanced scannet with cbam and dice loss for semantic change
   detection,'' in \emph{2025 Moratuwa Engineering Research Conference
   (MERCon)}, 2025, pp. 84--89.
-
-\bibitem{peng2026mambacd}
-A.~Peng, L.~Zhuo, L.~Wang, H.~Zhang, and H.~Xu, ``Mamba-cd: Mamba-based change
-  detection network for remote sensing images with change region-aware
-  attention and recursive context refinement mechanism,'' \emph{IEEE Journal of
-  Selected Topics in Applied Earth Observations and Remote Sensing}, vol.~19,
-  pp. 4288--4300, 2026.
 
 \bibitem{kervadec2019boundary}
 H.~Kervadec, J.~Bouchtiba, C.~Desrosiers, E.~Granger, J.~Dolz, and I.~B. Ayed,

@@ -1,0 +1,26 @@
+% Compact WHU-CD SOTA comparison — 6 prior methods + ours.
+% Literature values from Peng et al.~\cite{peng2026mambacd}.
+% Params in millions; FLOPs unavailable for all prior methods under
+% comparable input settings and are omitted.
+\begin{table}[t]
+\centering
+\caption{Comparison on WHU-CD. Literature values from~\cite{peng2026mambacd}.
+         Params in M; FLOPs not reported for prior methods under comparable settings.}
+\label{tab:sota_whu}
+\scriptsize
+\setlength{\tabcolsep}{2.5pt}
+\begin{tabular}{l r c c c c c}
+\toprule
+Method & Params & Pre & Rec & F1 & IoU & OA \\
+\midrule
+ChangeFormer~\cite{bandara2022changeformer}  & -- & 91.83 & 88.02 & 89.88 & 81.63 & 99.12 \\
+BiFA                                         & -- & 95.15 & \third{93.60} & \third{94.37} & \third{89.34} & \second{99.56} \\
+RSM-CD                                       & -- & 93.37 & 90.42 & 91.87 & 84.96 & -- \\
+CDMamba                                      & -- & \third{95.58} & 92.01 & 93.76 & 88.26 & 99.51 \\
+SChanger                                     & -- & 94.62 & 91.83 & 93.20 & 87.27 & -- \\
+Mamba-CD~\cite{peng2026mambacd}              & -- & \best{96.52} & \second{93.91} & \best{95.20} & \best{90.83} & \best{99.62} \\
+\midrule
+\textbf{\ours{} (ours)}                      & 65.40 & \third{95.58} & \best{94.74} & \second{95.15} & \second{90.76} & \third{99.54} \\
+\bottomrule
+\end{tabular}
+\end{table}
