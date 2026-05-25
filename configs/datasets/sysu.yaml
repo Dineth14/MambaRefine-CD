@@ -1,6 +1,6 @@
 data:
-  dataset_name: WHU-CD
-  root: datasets/WHU-CD
+  dataset_name: SYSU-CD
+  root: datasets/SYSU-CD
   a_folder: A
   b_folder: B
   mask_folder: Mask

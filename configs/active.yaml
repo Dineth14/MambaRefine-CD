@@ -1,0 +1,85 @@
+project:
+  name: MambaRefine-CD
+  output_root: outputs
+  seed: 42
+
+data:
+  dataset_name: DSIFN-CD
+  root: datasets/DSIFN-CD
+  image_size: 256
+  train_dir: train
+  val_dir: val
+  test_dir: test
+  a_folder: A
+  b_folder: B
+  mask_folder: Mask
+  binary_threshold: 127
+  check_split_overlap: true
+  check_hash_overlap: true
+
+model:
+  name: MambaRefineCD
+  encoder_family: mambavision
+  encoder_variant: small
+  encoder_pretrained: true
+  freeze_encoder: false
+  unfreeze_after_iters: null
+  decoder_channels: 128
+
+ablation:
+  id: original
+  temporal_input_mode: abs_signed   # abs_only | signed_only | abs_signed
+
+train:
+  device: cuda:0
+  iterations: 50000
+  batch_size: 8
+  num_workers: 8
+  lr: 0.0001
+  weight_decay: 0.01
+  optimizer: adamw
+  scheduler: cosine
+  warmup_iters: 1000
+  amp: true
+  grad_clip_norm: 1.0
+  log_interval: 50
+  val_interval: 5000
+  save_best_only: true
+  best_metric: F1
+  higher_is_better: true
+
+loss:
+  bce_weight: 1.0
+  dice_weight: 1.0
+  aux_weight: 0.2
+  boundary_weight: 0.2
+  residual_reg_weight: 0.02
+
+eval:
+  threshold: 0.5
+  sweep_thresholds_on_val: true
+  use_val_threshold_for_test: true
+  also_report_test_sweep: true
+  threshold_min: 0.05
+  threshold_max: 0.95
+  threshold_step: 0.05
+  save_predictions: true
+  measure_fps: true
+
+checkpoint:
+  path: null
+  auto_find_latest_best: true
+
+resume:
+  enabled: false
+  path: null
+  resume_optimizer: true
+  resume_scheduler: true
+  resume_iteration: true
+
+logging:
+  tensorboard: true
+  print_params: true
+  print_flops: true
+  print_peak_memory: true
+  print_fps: true

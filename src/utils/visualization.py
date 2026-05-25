@@ -1,56 +1,29 @@
-"""Prediction grid visualisation.
-
-Saves a PNG grid of rows: [pre-change | post-change | GT | prediction].
-"""
 from __future__ import annotations
 
 from pathlib import Path
 
 import numpy as np
 import torch
-
-try:
-    from PIL import Image
-    _PIL = True
-except ImportError:
-    _PIL = False
-
-_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
-_STD  = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+from PIL import Image
 
 
-def _to_rgb(t: torch.Tensor) -> np.ndarray:
-    x = t.detach().cpu().float().permute(1, 2, 0).numpy()
-    x = np.clip(x * _STD + _MEAN, 0.0, 1.0)
-    return (x * 255).astype(np.uint8)
+def _denorm(x: torch.Tensor) -> np.ndarray:
+    mean = torch.tensor([0.485, 0.456, 0.406], device=x.device).view(3, 1, 1)
+    std = torch.tensor([0.229, 0.224, 0.225], device=x.device).view(3, 1, 1)
+    arr = (x.float() * std + mean).clamp(0, 1).permute(1, 2, 0).cpu().numpy()
+    return (arr * 255).astype(np.uint8)
 
 
-def _mask_rgb(t: torch.Tensor) -> np.ndarray:
-    m = t.detach().cpu().float()
-    if m.dim() == 3:
-        m = m.squeeze(0)
-    if m.min() < 0 or m.max() > 1:
-        m = torch.sigmoid(m)
-    m = (m > 0.5).numpy().astype(np.uint8) * 255
-    return np.stack([m, m, m], axis=-1)
+def _gray(x: torch.Tensor) -> np.ndarray:
+    arr = x.detach().float().squeeze().cpu().numpy()
+    return (arr.clip(0, 1) * 255).astype(np.uint8)
 
 
-def save_prediction_grid(
-    img_a: torch.Tensor,
-    img_b: torch.Tensor,
-    label: torch.Tensor,
-    pred: torch.Tensor,
-    save_path: Path,
-    count: int = 4,
-) -> None:
-    if not _PIL:
-        return
-    save_path = Path(save_path)
-    save_path.parent.mkdir(parents=True, exist_ok=True)
-    n = min(count, img_a.shape[0])
-    rows = [
-        np.concatenate([_to_rgb(img_a[i]), _to_rgb(img_b[i]),
-                        _mask_rgb(label[i]), _mask_rgb(pred[i])], axis=1)
-        for i in range(n)
-    ]
-    Image.fromarray(np.concatenate(rows, axis=0)).save(save_path)
+def save_side_by_side(image_a, image_b, mask, pred, path: str | Path) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    a = _denorm(image_a)
+    b = _denorm(image_b)
+    gt = np.repeat(_gray(mask)[:, :, None], 3, axis=2)
+    pr = np.repeat(_gray(pred)[:, :, None], 3, axis=2)
+    Image.fromarray(np.concatenate([a, b, gt, pr], axis=1)).save(path)

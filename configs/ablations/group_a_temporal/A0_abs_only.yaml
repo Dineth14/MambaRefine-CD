@@ -1,0 +1,3 @@
+ablation:
+  id: A0_abs_only
+  temporal_input_mode: abs_only

@@ -1,0 +1,3 @@
+ablation:
+  id: A1_signed_only
+  temporal_input_mode: signed_only

@@ -1,0 +1,4 @@
+model:
+  encoder_family: mambavision
+  encoder_variant: small
+  encoder_pretrained: true
