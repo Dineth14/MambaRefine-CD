@@ -50,7 +50,7 @@ The result is a +10.58 BF1 improvement over a MambaVision-FPN baseline (61.36 �
 ## 🧠 Architecture
 
 <p align="center">
-  <img src="/storage2/ChangeDetection/MV/MambaRefine-CD/figures/Architecture.jpg" alt="MambaRefine-CD Architecture" width="100%">
+  <img src="figures/Architecture.jpg" alt="MambaRefine-CD Architecture" width="100%">
 </p>
 <p align="center"><i>Overall architecture of MambaRefine-CD. Two bi-temporal images pass through a shared MambaVision encoder. Same-scale features are fused by D-RBI modules. Region features are decoded by ARF-FPN. The finest boundary stream guides a bounded residual refinement of the coarse prediction.</i></p>
 
@@ -314,7 +314,7 @@ model:
 ### DSIFN-CD
 
 <p align="center">
-  <img src="/storage2/ChangeDetection/MV/MambaRefine-CD/figures/qualitative_dsifn_final.png" alt="DSIFN-CD Qualitative Results" width="90%">
+  <img src="figures/qualitative_dsifn_final.png" alt="DSIFN-CD Qualitative Results" width="90%">
 </p>
 <p align="center"><i>Qualitative results on DSIFN-CD. Each column shows the bi-temporal input pair (I₁, I₂), ground truth, a baseline prediction, MambaRefine-CD prediction, error map, and boundary overlay. White = TP, black = TN, red = FP, green = FN.</i></p>
 
@@ -334,7 +334,7 @@ model:
 ### WHU-CD
 
 <p align="center">
-  <img src="/storage2/ChangeDetection/MV/MambaRefine-CD/figures/qualitative_whu_refined.png" alt="WHU-CD Qualitative Results" width="90%">
+  <img src="figures/qualitative_whu_refined.png" alt="WHU-CD Qualitative Results" width="90%">
 </p>
 <p align="center"><i>Qualitative results on WHU-CD. Building boundaries are preserved with high precision. The D-RBI boundary gate suppresses false positives in shadow and road regions adjacent to buildings.</i></p>
 
