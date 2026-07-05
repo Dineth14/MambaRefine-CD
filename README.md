@@ -134,7 +134,6 @@ scratch or initializing a new run.
 |---|---|---|
 | MambaVision-S *(default)* | [NVIDIA MambaVision](https://github.com/NVlabs/MambaVision) | `pretrained_weights/mambavision_small_1k.pth` |
 | MambaVision-T / B | NVIDIA MambaVision | `pretrained_weights/` |
-| VMamba-S | [VMamba](https://github.com/MzeroMiko/VMamba) | `pretrained_weights/vmamba_small_e238.pth` |
 
 Set `encoder_pretrained: true` in `configs/active.yaml` and weights are loaded automatically.
 
