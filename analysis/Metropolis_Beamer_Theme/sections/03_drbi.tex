@@ -1,0 +1,185 @@
+% =============================================================================
+\section{Differential Region-Boundary Interaction (D-RBI)}
+% =============================================================================
+
+\begin{frame}{D-RBI 2.1: Difference Input and 1x1 Projection}
+    \centering
+    \begin{adjustbox}{max width=\textwidth,max height=0.56\textheight}
+    \begin{tikzpicture}[node distance=7mm and 8mm]
+        \node[tensor] (fa) {\(F_a^s\)\\\(B\times C_s\times H_s\times W_s\)};
+        \node[tensor, below=8mm of fa] (fb) {\(F_b^s\)\\\(B\times C_s\times H_s\times W_s\)};
+        \node[op, right=15mm of $(fa)!0.5!(fb)$] (diff) {\(\Delta^s=F_b^s-F_a^s\)};
+        \node[op, right=of diff, yshift=5mm] (abs) {absolute\\\(|\Delta^s|\)};
+        \node[op, right=of diff, yshift=-5mm] (signed) {signed\\\(\Delta^s\)};
+        \node[op, right=22mm of diff] (concat) {Concat\\channel dim};
+        \node[op, right=of concat, text width=21mm] (proj) {\(1{\times}1\) Conv\\GN\\GELU};
+        \node[op, right=of proj, text width=23mm] (spatial) {Depthwise \(3{\times}3\)\\Pointwise \(1{\times}1\)\\GN, GELU};
+        \node[tensor, right=of spatial] (d) {\(D^s\)\\\(B\times C_s\times H_s\times W_s\)};
+
+        \draw[flowarrow] (fa) -| (diff);
+        \draw[flowarrow] (fb) -| (diff);
+        \draw[flowarrow] (diff) -- (abs);
+        \draw[flowarrow] (diff) -- (signed);
+        \draw[flowarrow] (abs) -| (concat);
+        \draw[flowarrow] (signed) -| (concat);
+        \draw[flowarrow] (concat) -- (proj);
+        \draw[flowarrow] (proj) -- (spatial);
+        \draw[flowarrow] (spatial) -- (d);
+    \end{tikzpicture}
+    \end{adjustbox}
+
+    \vspace{0.2em}
+    \scriptsize
+    \begin{align*}
+    \Delta^s &= F_b^s-F_a^s,\qquad
+    D_{\mathrm{in}}^s=[|\Delta^s|;\Delta^s]\quad \text{for default \texttt{abs\_signed}},\\
+    \hat{D}^s &= \operatorname{GELU}(\operatorname{GN}(W_p^{1\times1}*D_{\mathrm{in}}^s)),\\
+    D^s &= \operatorname{GELU}(\operatorname{GN}(W_{\mathrm{pw}}^{1\times1}*(W_{\mathrm{dw}}^{3\times3}*\hat{D}^s))).
+    \end{align*}
+\end{frame}
+
+\begin{frame}{D-RBI 2.2: Regional Feature Path}
+    \centering
+    \begin{adjustbox}{max width=\textwidth,max height=0.40\textheight}
+    \begin{tikzpicture}[node distance=7mm and 8mm]
+        \node[tensor] (d) {\(D^s\)};
+        \node[region, right=of d, text width=22mm] (phi) {\(\phi_r\) MLP\\\(1{\times}1\) Conv\\GELU\\\(1{\times}1\) Conv};
+        \node[op, right=of phi] (clip) {clip\\\([-8,8]\)};
+        \node[op, right=of clip] (sig) {sigmoid};
+        \node[region, right=of sig, text width=23mm] (gate) {region gate\\\(G_r^s\in[0.2,0.8]\)};
+        \node[op, right=of gate] (mul) {\(\odot\)};
+        \node[region, right=of mul] (r) {\(R^s\)};
+
+        \draw[flowarrow] (d) -- (phi);
+        \draw[flowarrow] (phi) -- (clip);
+        \draw[flowarrow] (clip) -- (sig);
+        \draw[flowarrow] (sig) -- (gate);
+        \draw[flowarrow] (gate) -- (mul);
+        \draw[skiparrow] (d.south) -- ++(0,-8mm) -| (mul.south);
+        \draw[flowarrow] (mul) -- (r);
+    \end{tikzpicture}
+    \end{adjustbox}
+
+    \vspace{0.2em}
+    \scriptsize
+    \begin{align*}
+    H_r^s &= \operatorname{GELU}(W_{r,1}^{1\times1}*D^s+b_{r,1}),\\
+    \phi_r(D^s) &= W_{r,2}^{1\times1}*H_r^s+b_{r,2},\\
+    G_r^s &= 0.2+0.6\,\sigma(\operatorname{clip}(\phi_r(D^s),-8,8)),\qquad
+    R^s=D^s\odot G_r^s.
+    \end{align*}
+\end{frame}
+
+\begin{frame}{D-RBI 2.3: Boundary Feature Path}
+    \centering
+    \begin{adjustbox}{max width=\textwidth,max height=0.42\textheight}
+    \begin{tikzpicture}[node distance=7mm and 8mm]
+        \node[tensor] (d) {\(D^s\)};
+        \node[boundary, right=of d] (sob) {SobelGradient};
+        \node[tensor, right=of sob] (edge) {\(E^s\)};
+        \node[boundary, right=of edge, text width=22mm] (phi) {\(\phi_b\) MLP\\\(1{\times}1\) Conv\\GELU\\\(1{\times}1\) Conv};
+        \node[op, right=of phi] (clip) {clip\\\([-8,8]\)};
+        \node[op, right=of clip] (sig) {sigmoid};
+        \node[boundary, right=of sig, text width=23mm] (gate) {boundary gate\\\(G_b^s\in[0,0.4]\)};
+        \node[op, below=9mm of sig] (mul) {\(\odot\)};
+        \node[boundary, right=of mul] (b) {\(B^s\)};
+
+        \draw[flowarrow] (d) -- (sob);
+        \draw[flowarrow] (sob) -- (edge);
+        \draw[flowarrow] (edge) -- (phi);
+        \draw[flowarrow] (phi) -- (clip);
+        \draw[flowarrow] (clip) -- (sig);
+        \draw[flowarrow] (sig) -- (gate);
+        \draw[flowarrow] (gate.south) |- (mul);
+        \draw[skiparrow] (d.south) -- ++(0,-14mm) -| (mul.west);
+        \draw[flowarrow] (mul) -- (b);
+    \end{tikzpicture}
+    \end{adjustbox}
+
+    \vspace{0.15em}
+    \scriptsize
+    \begin{align*}
+    E^s &= \operatorname{SobelGradient}(D^s),\qquad
+    H_b^s=\operatorname{GELU}(W_{b,1}^{1\times1}*E^s+b_{b,1}),\\
+    \phi_b(E^s) &= W_{b,2}^{1\times1}*H_b^s+b_{b,2},\\
+    G_b^s &= 0.4\,\sigma(\operatorname{clip}(\phi_b(E^s),-8,8)),\qquad
+    B^s=D^s\odot G_b^s.
+    \end{align*}
+\end{frame}
+
+\begin{frame}{D-RBI 2.4: Sobel Block}
+    \begin{columns}[T,onlytextwidth]
+        \begin{column}{0.49\textwidth}
+            \centering
+            \begin{adjustbox}{max width=\textwidth,max height=0.56\textheight}
+            \begin{tikzpicture}[node distance=7mm and 8mm]
+                \node[tensor] (x) {\(x\)\\\(B\times C\times H\times W\)};
+                \node[boundary, right=of x, yshift=7mm] (kx) {Grouped Conv2d\\\(K_x\)};
+                \node[boundary, right=of x, yshift=-7mm] (ky) {Grouped Conv2d\\\(K_y\)};
+                \node[tensor, right=of kx] (gx) {\(G_x\)};
+                \node[tensor, right=of ky] (gy) {\(G_y\)};
+                \node[op, right=12mm of $(gx)!0.5!(gy)$, text width=24mm] (mag) {\(\sqrt{G_x^2+G_y^2+\epsilon}\)};
+                \node[boundary, right=of mag] (out) {clamp\\\([0,10]\)};
+
+                \draw[flowarrow] (x) |- (kx);
+                \draw[flowarrow] (x) |- (ky);
+                \draw[flowarrow] (kx) -- (gx);
+                \draw[flowarrow] (ky) -- (gy);
+                \draw[flowarrow] (gx) -| (mag);
+                \draw[flowarrow] (gy) -| (mag);
+                \draw[flowarrow] (mag) -- (out);
+            \end{tikzpicture}
+            \end{adjustbox}
+        \end{column}
+        \begin{column}{0.48\textwidth}
+            \scriptsize
+            \[
+            K_x=\begin{bmatrix}-1&0&1\\-2&0&2\\-1&0&1\end{bmatrix},
+            \qquad
+            K_y=\begin{bmatrix}-1&-2&-1\\0&0&0\\1&2&1\end{bmatrix}
+            \]
+            \[
+            G_x=x*K_x,\qquad G_y=x*K_y
+            \]
+            \[
+            \operatorname{SobelGradient}(x)=
+            \operatorname{clip}\left(\sqrt{G_x^2+G_y^2+10^{-6}},0,10\right).
+            \]
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{D-RBI 2.5: \(\phi_r\) and \(\phi_b\) Gate Blocks}
+    \centering
+    \begin{adjustbox}{max width=\textwidth,max height=0.52\textheight}
+    \begin{tikzpicture}[node distance=7mm and 8mm]
+        \node[tensor] (x) {Input \(X\)\\\(D^s\) for region\\\(E^s\) for boundary};
+        \node[op, right=of x] (c1) {\(1{\times}1\) Conv\\\(C\to h\)};
+        \node[op, right=of c1] (gelu) {GELU};
+        \node[op, right=of gelu] (c2) {\(1{\times}1\) Conv\\\(h\to C\)};
+        \node[op, right=of c2] (clip) {clip\\\([-8,8]\)};
+        \node[op, right=of clip] (sig) {sigmoid};
+        \node[region, above right=5mm and 8mm of sig, text width=23mm] (rg) {Region affine\\\(0.2+0.6\sigma\)};
+        \node[boundary, below right=5mm and 8mm of sig, text width=23mm] (bg) {Boundary affine\\\(0.4\sigma\)};
+
+        \draw[flowarrow] (x) -- (c1);
+        \draw[flowarrow] (c1) -- (gelu);
+        \draw[flowarrow] (gelu) -- (c2);
+        \draw[flowarrow] (c2) -- (clip);
+        \draw[flowarrow] (clip) -- (sig);
+        \draw[flowarrow] (sig) |- (rg);
+        \draw[flowarrow] (sig) |- (bg);
+    \end{tikzpicture}
+    \end{adjustbox}
+
+    \vspace{0.2em}
+    \small
+    \[
+    h=\max(\lfloor 0.25C\rfloor,1),\quad
+    \phi(X)=W_2^{1\times1}*\operatorname{GELU}(W_1^{1\times1}*X+b_1)+b_2.
+    \]
+    \[
+    G_r=0.2+0.6\sigma(\operatorname{clip}(\phi_r,-8,8)),\qquad
+    G_b=0.4\sigma(\operatorname{clip}(\phi_b,-8,8)).
+    \]
+\end{frame}

@@ -1,0 +1,26 @@
+% =============================================================================
+\section{Introduction \& Motivation}
+% =============================================================================
+
+\begin{frame}{The Challenge of Binary Change Detection}
+    Binary Change Detection (CD) in remote sensing aims to identify changed regions between bi-temporal images.
+    
+    \vspace{0.5em}
+    \textbf{Core Challenges:}
+    \begin{itemize}
+        \item \textbf{Nuisance Variation:} Must be invariant to illumination shifts, seasonal changes, and shadows.
+        \item \textbf{Boundary Degradation:} Errors are most visible near object boundaries, resulting in shifted, fragmented, or over-smoothed masks.
+        \item \textbf{Temporal Polarity Loss:} Standard absolute differencing captures magnitude but loses direction (appearance vs. disappearance).
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{MambaRefine-CD: The Core Idea}
+    Our architecture frames the problem as a three-question system:
+    
+    \vspace{0.5em}
+    \begin{enumerate}
+        \item \textbf{What changed?} Handled by constructing rich temporal feature differences.
+        \item \textbf{Where is the changed region?} Handled by the Region Stream and an Adaptive Receptive-Field (ARF) Decoder.
+        \item \textbf{Where exactly is the boundary?} Handled by the Boundary Stream and bounded residual refinement.
+    \end{enumerate}
+\end{frame}

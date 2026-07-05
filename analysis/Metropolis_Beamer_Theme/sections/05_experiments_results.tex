@@ -1,0 +1,106 @@
+% =============================================================================
+\section{Main Results}
+% =============================================================================
+
+\begin{frame}{Main Test Results}
+    \centering
+    \scriptsize
+    \begin{tabular}{llrrrrr}
+        \toprule
+        \textbf{Dataset} & \textbf{Model} & \textbf{Pre.} & \textbf{Rec.} & \textbf{F1} & \textbf{IoU} & \textbf{OA} \\
+        \midrule
+        DSIFN-CD & MambaRefine-CD & 95.47 & 95.87 & \textbf{95.67} & \textbf{91.71} & 96.98 \\
+        WHU-CD & MambaRefine-CD & 95.79 & 94.90 & \textbf{95.34} & \textbf{91.10} & 99.56 \\
+        WHU-CD & MambaRefine-CD VMamba & 96.32 & 94.68 & \textbf{95.49} & \textbf{91.37} & 99.57 \\
+        \bottomrule
+    \end{tabular}
+
+    \vspace{0.8em}
+    \begin{columns}[T,onlytextwidth]
+        \begin{column}{0.48\textwidth}
+            \small
+            \textbf{What this says}
+            \begin{itemize}
+                \item DSIFN reaches 95.67 F1 and 91.71 IoU on the clean split.
+                \item WHU reaches 95.34 F1 / 91.10 IoU with the MambaRefine-CD result summary.
+                \item The VMamba variant gives the best WHU score: 95.49 F1 / 91.37 IoU.
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.49\textwidth}
+            \small
+            \textbf{Evaluation rule}
+            \begin{itemize}
+                \item Test metrics use the EMA/best checkpoint selected by validation F1.
+                \item The threshold is selected from \(\{0.30,0.35,\ldots,0.60\}\).
+                \item DSIFN split integrity was verified as PASS; no train/test overlap.
+            \end{itemize}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Dataset and Training Protocol}
+    \begin{columns}[T,onlytextwidth]
+        \begin{column}{0.48\textwidth}
+            \small
+            \textbf{Data}
+            \begin{itemize}
+                \item DSIFN-CD: 2758 train, 394 val, 789 test images.
+                \item DSIFN test: 3156 tiles at \(256\times256\), overlap \(0.25\).
+                \item WHU-CD: standard train/val/test split.
+            \end{itemize}
+
+            \vspace{0.4em}
+            \textbf{Inference}
+            \begin{itemize}
+                \item Patch-based inference with crop \(256\).
+                \item Validation every 5000 iterations.
+                \item Final mask: \(\hat{Y}=\mathbb{1}[\sigma(P_f)>\tau^\star]\).
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.49\textwidth}
+            \scriptsize
+            \begin{tabular}{ll}
+                \toprule
+                \textbf{Setting} & \textbf{Value} \\
+                \midrule
+                Optimizer & AdamW \\
+                Learning rate & \(5\times10^{-5}\) \\
+                LR schedule & cosine decay \\
+                Warmup & 2500 iters \\
+                Weight decay & 0.01 \\
+                Grad clip & 0.5 \\
+                Batch / image & 8 / \(256\times256\) \\
+                Precision & AMP BF16/FP16 \\
+                EMA decay & 0.999 \\
+                Augmentation & horizontal + vertical flip \\
+                \bottomrule
+            \end{tabular}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Metric Equations}
+    \small
+    Let changed pixels be the positive class after thresholding
+    \(\hat{Y}=\mathbb{1}[\sigma(P_f)>\tau]\). With \(\epsilon=10^{-6}\):
+
+    \vspace{-0.2em}
+    \begin{align*}
+    \mathrm{Precision} &= \frac{TP}{TP+FP+\epsilon}\times100, &
+    \mathrm{Recall} &= \frac{TP}{TP+FN+\epsilon}\times100,\\
+    \mathrm{F1} &= \frac{2\,\mathrm{Precision}\,\mathrm{Recall}}
+    {\mathrm{Precision}+\mathrm{Recall}+\epsilon}, &
+    \mathrm{IoU} &= \frac{TP}{TP+FP+FN+\epsilon}\times100,\\
+    \mathrm{OA} &= \frac{TP+TN}{TP+TN+FP+FN+\epsilon}\times100.
+    \end{align*}
+
+    \vspace{0.3em}
+    \textbf{Boundary metrics}
+    \[
+    \mathrm{BF1}=\frac{2P_bR_b}{P_b+R_b+\epsilon},\qquad
+    \mathrm{BIoU}=\frac{|B_{\mathrm{pred}}\cap B_{\mathrm{gt}}|}
+    {|B_{\mathrm{pred}}\cup B_{\mathrm{gt}}|+\epsilon}\times100.
+    \]
+    \scriptsize
+    \(BF1\), \(BIoU\), and Trimap F1 are computed on edge/trimap regions, so they measure contour alignment rather than only changed-area overlap.
+\end{frame}

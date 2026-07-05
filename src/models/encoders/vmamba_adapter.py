@@ -13,8 +13,14 @@ class VMambaAdapter(nn.Module):
     def __init__(self, variant: str = "small", pretrained: bool = True) -> None:
         super().__init__()
         root = Path(__file__).resolve().parents[3]
-        vmamba_dir = root / "third_party" / "VMamba"
-        candidates = [vmamba_dir / "classification", vmamba_dir]
+        local_vmamba = root / "third_party" / "VMamba"
+        sibling_vmamba = root.parent / "Mamba-CD" / "third_party" / "VMamba"
+        candidates = [
+            local_vmamba / "classification",
+            local_vmamba,
+            sibling_vmamba / "classification",
+            sibling_vmamba,
+        ]
         for candidate in candidates:
             if (candidate / "models").is_dir():
                 sys.path.insert(0, str(candidate))

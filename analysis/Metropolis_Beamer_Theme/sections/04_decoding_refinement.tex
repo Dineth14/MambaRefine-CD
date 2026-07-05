@@ -1,0 +1,270 @@
+% =============================================================================
+\section{Decoding \& Refinement}
+% =============================================================================
+
+\begin{frame}{Multi-Scale ARF-FPN Decoder}
+    \begin{columns}[T,onlytextwidth]
+        \begin{column}{0.58\textwidth}
+            \centering
+            \begin{adjustbox}{max width=\textwidth,max height=0.64\textheight}
+            \begin{tikzpicture}[node distance=6mm and 8mm]
+                \node[region] (r3) {\(R^3\)};
+                \node[region, below=7mm of r3] (r2) {\(R^2\)};
+                \node[region, below=7mm of r2] (r1) {\(R^1\)};
+                \node[region, below=7mm of r1] (r0) {\(R^0\)};
+
+                \node[fpn, right=of r3, text width=25mm] (p3) {Proj \(1{\times}1\)\\ARF rates\\1,2,4,8};
+                \node[fpn, right=of r2, text width=25mm] (p2) {Proj \(1{\times}1\)\\ARF rates\\1,2,4,8};
+                \node[fpn, right=of r1, text width=25mm] (p1) {Proj \(1{\times}1\)\\ARF rates\\1,2,4,8};
+                \node[fpn, right=of r0, text width=25mm] (p0) {Proj \(1{\times}1\)\\ARF rates\\1,2,4,8};
+
+                \node[op, right=of p3] (t3) {Smooth\\\(T^3\)};
+                \node[op, right=of p2] (t2) {Add+Smooth\\\(T^2\)};
+                \node[op, right=of p1] (t1) {Add+Smooth\\\(T^1\)};
+                \node[op, right=of p0] (t0) {Add+Smooth\\\(T^0\)};
+                \node[tensor, right=of t0] (pc) {\(P_c\)\\coarse logits};
+
+                \foreach \a/\b in {r3/p3,r2/p2,r1/p1,r0/p0,p3/t3,p2/t2,p1/t1,p0/t0,t0/pc}
+                    \draw[flowarrow] (\a) -- (\b);
+                \draw[flowarrow] (t3) -- node[smallnote, right] {up} (t2);
+                \draw[flowarrow] (t2) -- node[smallnote, right] {up} (t1);
+                \draw[flowarrow] (t1) -- node[smallnote, right] {up} (t0);
+            \end{tikzpicture}
+            \end{adjustbox}
+        \end{column}
+        \begin{column}{0.39\textwidth}
+            \scriptsize
+            \begin{align*}
+            \tilde{R}^s &= \operatorname{Proj}_{s}^{1\times1}(R^s),\\
+            Z_{s,r} &= \operatorname{ConvNormGELU}_{3\times3,d=r}(\tilde{R}^s),\\
+            \alpha_s &= \operatorname{softmax}(\operatorname{MLP}(\operatorname{GAP}(\tilde{R}^s))),\\
+            P^s &= \sum_{r\in\{1,2,4,8\}}\alpha_{s,r}Z_{s,r},\\
+            T^3 &= \operatorname{Smooth}_3(P^3),\\
+            T^s &= \operatorname{Smooth}_s(P^s+\operatorname{Up}(T^{s+1})),\\
+            P_c &= \operatorname{Up}(\operatorname{Head}(T^0)).
+            \end{align*}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Coarse Prediction Head}
+    \centering
+    \begin{adjustbox}{max width=\textwidth,max height=0.42\textheight}
+    \begin{tikzpicture}[node distance=8mm and 10mm]
+        \node[tensor] (t0) {\(T^0\)\\\(B\times D\times H_0\times W_0\)};
+        \node[op, right=of t0, text width=24mm] (conv) {ConvNormGELU\\\(3{\times}3\)\\\(D\to D/2\)};
+        \node[op, right=of conv] (c1) {\(1{\times}1\) Conv\\\(D/2\to1\)};
+        \node[op, right=of c1] (up) {Bilinear\\upsample};
+        \node[tensor, right=of up] (pc) {\(P_c\)\\\(B\times1\times H\times W\)};
+        \draw[flowarrow] (t0) -- (conv);
+        \draw[flowarrow] (conv) -- (c1);
+        \draw[flowarrow] (c1) -- (up);
+        \draw[flowarrow] (up) -- (pc);
+    \end{tikzpicture}
+    \end{adjustbox}
+
+    \vspace{0.4em}
+    \small
+    \[
+    H_c=\operatorname{GELU}(\operatorname{GN}(W_h^{3\times3}*T^0)),\quad
+    \ell_c=W_o^{1\times1}*H_c+b_o,\quad
+    P_c=\operatorname{Up}(\ell_c;H,W).
+    \]
+\end{frame}
+
+\begin{frame}{Boundary Residual Refinement: Full Block}
+    \centering
+    \begin{adjustbox}{max width=\textwidth,max height=0.61\textheight}
+    \begin{tikzpicture}[node distance=7mm and 8mm]
+        \node[boundary] (bs) {\(\{B^0,B^1,B^2,B^3\}\)};
+        \node[boundary, right=of bs, text width=25mm] (agg) {Boundary\\aggregation};
+        \node[tensor, right=of agg] (bf) {\(F_b\)};
+        \node[boundary, above right=5mm and 9mm of bf] (bh) {Boundary head};
+        \node[tensor, right=of bh] (blog) {\(P_b\)};
+
+        \node[tensor, below=12mm of bs] (pc) {\(P_c\)};
+        \node[op, right=of pc] (sig) {sigmoid};
+        \node[boundary, right=of sig] (sob) {SobelEdge};
+        \node[tensor, right=of sob] (edge) {\(E_c\)};
+        \node[op, right=16mm of edge] (cat) {Concat};
+        \node[boundary, right=of cat, text width=23mm] (rh) {Refinement\\head};
+        \node[op, right=of rh] (res) {\(0.1\tanh\)};
+        \node[op, right=of res] (add) {Add};
+        \node[tensor, right=of add] (pf) {\(P_f\)};
+
+        \draw[flowarrow] (bs) -- (agg);
+        \draw[flowarrow] (agg) -- (bf);
+        \draw[flowarrow] (bf) |- (bh);
+        \draw[flowarrow] (bh) -- (blog);
+        \draw[flowarrow] (pc) -- (sig);
+        \draw[flowarrow] (sig) -- (sob);
+        \draw[flowarrow] (sob) -- (edge);
+        \draw[flowarrow] (bf.south) |- (cat.north);
+        \draw[flowarrow] (pc.south) |- (cat.south);
+        \draw[flowarrow] (edge) -- (cat);
+        \draw[flowarrow] (cat) -- (rh);
+        \draw[flowarrow] (rh) -- (res);
+        \draw[flowarrow] (res) -- (add);
+        \draw[flowarrow] (pc.south) |- (add.south);
+        \draw[flowarrow] (add) -- (pf);
+    \end{tikzpicture}
+    \end{adjustbox}
+
+    \vspace{0.15em}
+    \scriptsize
+    \[
+    P_b=\operatorname{BoundaryHead}(F_b),\quad
+    E_c=\operatorname{SobelEdge}(\sigma(P_c)),\quad
+    P_f=P_c+0.1\tanh(\operatorname{RefineHead}([F_b;P_c;E_c])).
+    \]
+\end{frame}
+
+\begin{frame}{5.1 Boundary Aggregation Block}
+    \centering
+    \begin{adjustbox}{max width=\textwidth,max height=0.55\textheight}
+    \begin{tikzpicture}[node distance=5mm and 8mm]
+        \node[boundary] (b0) {\(B^0\)};
+        \node[boundary, below=5mm of b0] (b1) {\(B^1\)};
+        \node[boundary, below=5mm of b1] (b2) {\(B^2\)};
+        \node[boundary, below=5mm of b2] (b3) {\(B^3\)};
+
+        \node[op, right=of b0] (p0) {\(1{\times}1\) Proj};
+        \node[op, right=of b1] (p1) {\(1{\times}1\) Proj};
+        \node[op, right=of b2] (p2) {\(1{\times}1\) Proj};
+        \node[op, right=of b3] (p3) {\(1{\times}1\) Proj};
+
+        \node[op, right=of p0] (u0) {Upsample};
+        \node[op, right=of p1] (u1) {Upsample};
+        \node[op, right=of p2] (u2) {Upsample};
+        \node[op, right=of p3] (u3) {Upsample};
+
+        \node[op, right=20mm of $(u1)!0.5!(u2)$] (avg) {Average};
+        \node[boundary, right=of avg] (smooth) {Smooth\\\(3{\times}3\)};
+        \node[tensor, right=of smooth] (bf) {\(F_b\)};
+
+        \foreach \a/\b in {b0/p0,b1/p1,b2/p2,b3/p3,p0/u0,p1/u1,p2/u2,p3/u3}
+            \draw[flowarrow] (\a) -- (\b);
+        \foreach \u in {u0,u1,u2,u3}
+            \draw[flowarrow] (\u) -- (avg);
+        \draw[flowarrow] (avg) -- (smooth);
+        \draw[flowarrow] (smooth) -- (bf);
+    \end{tikzpicture}
+    \end{adjustbox}
+
+    \vspace{0.2em}
+    \small
+    \[
+    Q^s=\operatorname{Up}(\operatorname{Proj}_{b,s}^{1\times1}(B^s);H,W),\qquad
+    F_b=\operatorname{Smooth}\left(\frac{1}{4}\sum_{s=0}^{3}Q^s\right).
+    \]
+\end{frame}
+
+\begin{frame}{5.2 Sobel Operator for Coarse Probability}
+    \begin{columns}[T,onlytextwidth]
+        \begin{column}{0.50\textwidth}
+            \centering
+            \begin{adjustbox}{max width=\textwidth,max height=0.50\textheight}
+            \begin{tikzpicture}[node distance=7mm and 8mm]
+                \node[tensor] (pc) {\(P_c\)};
+                \node[op, right=of pc] (sig) {\(\sigma(P_c)\)};
+                \node[boundary, right=of sig, yshift=7mm] (kx) {Conv \(K_x\)};
+                \node[boundary, right=of sig, yshift=-7mm] (ky) {Conv \(K_y\)};
+                \node[op, right=16mm of sig] (mag) {gradient\\magnitude};
+                \node[tensor, right=of mag] (edge) {\(E_c\)};
+                \draw[flowarrow] (pc) -- (sig);
+                \draw[flowarrow] (sig) |- (kx);
+                \draw[flowarrow] (sig) |- (ky);
+                \draw[flowarrow] (kx) -| (mag);
+                \draw[flowarrow] (ky) -| (mag);
+                \draw[flowarrow] (mag) -- (edge);
+            \end{tikzpicture}
+            \end{adjustbox}
+        \end{column}
+        \begin{column}{0.47\textwidth}
+            \small
+            \[
+            P=\sigma(P_c),\qquad
+            G_x=P*K_x,\qquad
+            G_y=P*K_y.
+            \]
+            \[
+            E_c=\sqrt{G_x^2+G_y^2+10^{-6}}.
+            \]
+            \scriptsize This Sobel block is single-channel and is applied to the coarse change probability, not to the RGB image.
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{5.3 Refinement Head}
+    \centering
+    \begin{adjustbox}{max width=\textwidth,max height=0.49\textheight}
+    \begin{tikzpicture}[node distance=7mm and 8mm]
+        \node[boundary] (bf) {\(F_b\)};
+        \node[tensor, below=6mm of bf] (pc) {\(P_c\)};
+        \node[tensor, below=6mm of pc] (edge) {\(E_c\)};
+        \node[op, right=18mm of pc] (cat) {Concat\\channels};
+        \node[boundary, right=of cat, text width=27mm] (dw) {Depthwise \(3{\times}3\)\\Pointwise \(1{\times}1\)\\GN, GELU};
+        \node[op, right=of dw] (c1) {\(1{\times}1\) Conv\\\(D\to1\)};
+        \node[tensor, right=of c1] (raw) {\(\Delta P_{\mathrm{raw}}\)};
+
+        \draw[flowarrow] (bf) -| (cat);
+        \draw[flowarrow] (pc) -- (cat);
+        \draw[flowarrow] (edge) -| (cat);
+        \draw[flowarrow] (cat) -- (dw);
+        \draw[flowarrow] (dw) -- (c1);
+        \draw[flowarrow] (c1) -- (raw);
+    \end{tikzpicture}
+    \end{adjustbox}
+
+    \vspace{0.25em}
+    \small
+    \[
+    X_r=[F_b;P_c;E_c]\in\mathbb{R}^{B\times(D+2)\times H\times W},
+    \]
+    \[
+    H_r=\operatorname{GELU}(\operatorname{GN}(W_{\mathrm{pw}}^{1\times1}*(W_{\mathrm{dw}}^{3\times3}*X_r))),\qquad
+    \Delta P_{\mathrm{raw}}=W_\Delta^{1\times1}*H_r+b_\Delta.
+    \]
+\end{frame}
+
+\begin{frame}{5.4 Elementwise Addition Block}
+    \centering
+    \begin{adjustbox}{max width=\textwidth,max height=0.42\textheight}
+    \begin{tikzpicture}[node distance=8mm and 10mm]
+        \node[tensor] (raw) {\(\Delta P_{\mathrm{raw}}\)};
+        \node[op, right=of raw] (tanh) {\(\tanh\)};
+        \node[op, right=of tanh] (scale) {scale\\0.1};
+        \node[boundary, right=of scale] (res) {residual\\\(\Delta P\)};
+        \node[tensor, below=10mm of scale] (pc) {\(P_c\)};
+        \node[op, right=of res] (add) {elementwise\\addition};
+        \node[tensor, right=of add] (pf) {\(P_f\)};
+
+        \draw[flowarrow] (raw) -- (tanh);
+        \draw[flowarrow] (tanh) -- (scale);
+        \draw[flowarrow] (scale) -- (res);
+        \draw[flowarrow] (res) -- (add);
+        \draw[flowarrow] (pc) -| (add);
+        \draw[flowarrow] (add) -- (pf);
+    \end{tikzpicture}
+    \end{adjustbox}
+
+    \vspace{0.4em}
+    \small
+    \[
+    \Delta P=0.1\tanh(\Delta P_{\mathrm{raw}}),\qquad
+    P_f=P_c+\Delta P.
+    \]
+    \scriptsize The residual is bounded in logit space, so refinement can sharpen boundaries without rewriting the coarse region prediction.
+\end{frame}
+
+\begin{frame}{Loss Functions}
+    The model is supervised at multiple stages:
+    
+    $$ \mathcal{L} = \mathcal{L}_{\text{BCE}} + \mathcal{L}_{\text{Dice}} + 0.4\mathcal{L}_{\text{coarse}} + 0.1\mathcal{L}_{\text{boundary}} $$
+    
+    \begin{itemize}
+        \item \textbf{Main Loss:} BCE and Dice supervise the final prediction $z_f$.
+        \item \textbf{Coarse Loss:} Stabilizes the main region decoder.
+        \item \textbf{Boundary Loss:} Uses a Sobel-edge $l_1$ loss to force contour consistency.
+    \end{itemize}
+\end{frame}

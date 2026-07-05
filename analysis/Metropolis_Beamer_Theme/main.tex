@@ -1,0 +1,68 @@
+\documentclass[10pt]{beamer}
+
+% -----------------------------------------------------------------------------
+% THEME AND PACKAGES
+% -----------------------------------------------------------------------------
+\usetheme[progressbar=frametitle]{metropolis}
+\usepackage{appendixnumberbeamer}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{bm}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usepackage{adjustbox}
+\usepackage{array}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,backgrounds,shapes.geometric}
+
+\definecolor{mvblue}{HTML}{2F6BFF}
+\definecolor{mvcyan}{HTML}{00A6A6}
+\definecolor{mvgreen}{HTML}{2E9D57}
+\definecolor{mvorange}{HTML}{D97706}
+\definecolor{mvred}{HTML}{C2410C}
+\definecolor{mvgray}{HTML}{F4F6F8}
+
+\tikzset{
+  flowarrow/.style={-{Latex[length=2.0mm]}, thick, draw=black!70},
+  skiparrow/.style={-{Latex[length=2.0mm]}, thick, dashed, draw=black!55},
+  tensor/.style={draw=black!55, rounded corners=2pt, thick, fill=mvgray,
+    align=center, inner sep=3.5pt, minimum height=7mm, font=\scriptsize},
+  op/.style={draw=mvblue!70!black, rounded corners=2pt, thick, fill=mvblue!8,
+    align=center, inner sep=3.5pt, minimum height=8mm, font=\scriptsize},
+  region/.style={draw=mvgreen!70!black, rounded corners=2pt, thick, fill=mvgreen!10,
+    align=center, inner sep=3.5pt, minimum height=8mm, font=\scriptsize},
+  boundary/.style={draw=mvred!75!black, rounded corners=2pt, thick, fill=mvred!9,
+    align=center, inner sep=3.5pt, minimum height=8mm, font=\scriptsize},
+  fpn/.style={draw=mvorange!80!black, rounded corners=2pt, thick, fill=mvorange!10,
+    align=center, inner sep=3.5pt, minimum height=8mm, font=\scriptsize},
+  stagebox/.style={draw=black!60, rounded corners=3pt, thick, fill=white,
+    align=center, inner sep=5pt, minimum height=16mm, font=\scriptsize},
+  smallnote/.style={font=\scriptsize, fill=white, inner sep=1.2pt, text=black!80}
+}
+
+% -----------------------------------------------------------------------------
+% METADATA
+% -----------------------------------------------------------------------------
+\title{MambaRefine-CD}
+\subtitle{Mamba Vision with Region-Boundary Temporal Refinement}
+\author{Remote Sensing Research Group}
+\institute{Multidisciplinary AI Research Center (MARC) \\ University of Peradeniya}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{frame}{Table of Contents}
+  \setbeamertemplate{section in toc}[sections numbered]
+  \tableofcontents[hideallsubsections]
+\end{frame}
+
+\input{sections/01_introduction.tex}
+\input{sections/02_architecture_overview.tex}
+\input{sections/03_drbi.tex}
+\input{sections/04_decoding_refinement.tex}
+\input{sections/05_experiments_results.tex}
+\input{sections/06_conclusion.tex}
+
+\end{document}

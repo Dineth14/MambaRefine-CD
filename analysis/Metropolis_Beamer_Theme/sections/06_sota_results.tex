@@ -1,0 +1,83 @@
+% =============================================================================
+\section{SOTA Model Results}
+% =============================================================================
+
+\begin{frame}{SOTA Results on DSIFN-CD}
+    \centering
+    \scriptsize
+    \begin{adjustbox}{max width=\textwidth}
+    \begin{tabular}{lrrrrr}
+        \toprule
+        \textbf{Model} & \textbf{Pre.} & \textbf{Rec.} & \textbf{F1} & \textbf{IoU} & \textbf{OA} \\
+        \midrule
+        FC-Siam-Conc & 66.45 & 54.21 & 59.71 & 42.56 & 87.57 \\
+        SNUNet & 60.60 & 72.89 & 66.18 & 49.45 & 87.34 \\
+        ChangeFormer & 88.48 & 84.94 & 86.67 & 76.48 & 95.56 \\
+        BiFA & 73.99 & 68.87 & 71.34 & 55.45 & 90.80 \\
+        FTAN & 90.54 & 88.61 & 89.56 & 81.10 & -- \\
+        ADSFNet & 94.79 & 95.24 & 95.01 & 90.50 & 98.30 \\
+        Mamba-CD & 95.60 & 95.61 & 95.61 & 91.69 & 98.51 \\
+        \textbf{MambaRefine-CD} & \textbf{95.47} & \textbf{95.87} & \textbf{95.67} & \textbf{91.71} & 96.98 \\
+        \bottomrule
+    \end{tabular}
+    \end{adjustbox}
+
+    \vspace{0.8em}
+    \small
+    \begin{itemize}
+        \item MambaRefine-CD gives the highest DSIFN F1 and IoU in the provided result summary.
+        \item The gain over Mamba-CD is small in changed-region metrics, so boundary quality and ablation evidence are important for the method claim.
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{SOTA Results on WHU-CD}
+    \centering
+    \scriptsize
+    \begin{adjustbox}{max width=\textwidth}
+    \begin{tabular}{lrrrrr}
+        \toprule
+        \textbf{Method} & \textbf{Pre.} & \textbf{Rec.} & \textbf{F1} & \textbf{IoU} & \textbf{OA} \\
+        \midrule
+        FC-EF & 71.63 & 67.25 & 69.37 & 53.11 & 97.61 \\
+        STANet & 79.37 & 85.50 & 82.32 & 69.95 & 98.52 \\
+        SNUNet & 85.60 & 81.49 & 83.50 & 71.67 & 98.71 \\
+        IFNet & 96.91 & 73.19 & 83.40 & 71.52 & 98.83 \\
+        ChangeFormer & 91.83 & 88.02 & 89.88 & 81.63 & 99.12 \\
+        BiFA & 95.15 & 93.60 & 94.37 & 89.34 & 99.56 \\
+        RSM-CD & 93.37 & 90.42 & 91.87 & 84.96 & -- \\
+        SChanger & 94.62 & 91.83 & 93.20 & 87.27 & -- \\
+        CDMamba & 95.58 & 92.01 & 93.76 & 88.26 & 99.51 \\
+        Mamba-CD & 96.52 & 93.91 & 95.20 & 90.83 & 99.62 \\
+        \textbf{MambaRefine-CD} & 95.79 & \textbf{94.90} & 95.34 & 91.10 & 99.56 \\
+        \textbf{MambaRefine-CD VMamba} & 96.32 & 94.68 & \textbf{95.49} & \textbf{91.37} & 99.57 \\
+        \bottomrule
+    \end{tabular}
+    \end{adjustbox}
+
+    \vspace{0.6em}
+    \small
+    The VMamba variant is the strongest WHU result in this summary; the MambaVision result has the highest recall among the top group.
+\end{frame}
+
+\begin{frame}{SOTA Takeaway}
+    \begin{columns}[T,onlytextwidth]
+        \begin{column}{0.50\textwidth}
+            \small
+            \textbf{Changed-region accuracy}
+            \begin{itemize}
+                \item DSIFN: ours improves over Mamba-CD by \(+0.06\) F1 and \(+0.02\) IoU.
+                \item WHU: MambaRefine-CD improves over Mamba-CD by \(+0.14\) F1 and \(+0.27\) IoU.
+                \item WHU VMamba improves over Mamba-CD by \(+0.29\) F1 and \(+0.54\) IoU.
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.47\textwidth}
+            \small
+            \textbf{Why still useful}
+            \begin{itemize}
+                \item D-RBI explicitly separates region and boundary evidence.
+                \item ARF-FPN adapts receptive field per scale instead of using one fixed context size.
+                \item Boundary residual correction is bounded in logit space, so it sharpens edges without rewriting the whole mask.
+            \end{itemize}
+        \end{column}
+    \end{columns}
+\end{frame}

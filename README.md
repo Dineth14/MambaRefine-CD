@@ -4,7 +4,7 @@
 
 ### 🔬 Separate the Region. Preserve the Boundary. Don't Let One Ruin the Other. 🔬
 
-[![📄 Paper](https://img.shields.io/badge/📄_MERCon_2026-Under_Review-orange)](#citation)
+[![📄 Paper](https://img.shields.io/badge/📄_MERCon-Accepted-brightgreen)](#citation)
 [![🏛️ Venue](https://img.shields.io/badge/🏛️_MERCon_2026-University_of_Moratuwa-blue)](#citation)
 [![🐍 Python](https://img.shields.io/badge/🐍_Python-3.9+-3776AB)](https://www.python.org/)
 [![🔥 PyTorch](https://img.shields.io/badge/🔥_PyTorch-2.0+-EE4C2C)](https://pytorch.org/)
@@ -23,9 +23,10 @@ One shared MambaVision encoder. Four scales of D-RBI decomposition. Signed and a
 
 | Date | Update |
 |---|---|
-| **2026** | Paper submitted to MERCon 2026 — under review |
+| **2026** | MambaRefine-CD has been accepted at MERCon |
 | **2026** | Codebase released — full config-driven pipeline, zero CLI arguments |
-| **2026** | Ablation results released: signed temporal evidence, ARF-FPN, and boundary refinement contributions |
+
+**Status:** Accepted at MERCon.
 
 ---
 
@@ -50,7 +51,7 @@ The result is a +10.58 BF1 improvement over a MambaVision-FPN baseline (61.36 �
 ## 🧠 Architecture
 
 <p align="center">
-  <img src="figures/Architecture.jpg" alt="MambaRefine-CD Architecture" width="100%">
+  <img src="/storage2/ChangeDetection/MV/MambaRefine-CD/figures/Architecture.png" alt="MambaRefine-CD Architecture" width="100%">
 </p>
 <p align="center"><i>Overall architecture of MambaRefine-CD. Two bi-temporal images pass through a shared MambaVision encoder. Same-scale features are fused by D-RBI modules. Region features are decoded by ARF-FPN. The finest boundary stream guides a bounded residual refinement of the coarse prediction.</i></p>
 
@@ -314,7 +315,7 @@ model:
 ### DSIFN-CD
 
 <p align="center">
-  <img src="figures/qualitative_dsifn_final.png" alt="DSIFN-CD Qualitative Results" width="90%">
+  <img src="/storage2/ChangeDetection/MV/MambaRefine-CD/figures/qualitative_dsifn_final.png" alt="DSIFN-CD Qualitative Results" width="90%">
 </p>
 <p align="center"><i>Qualitative results on DSIFN-CD. Each column shows the bi-temporal input pair (I₁, I₂), ground truth, a baseline prediction, MambaRefine-CD prediction, error map, and boundary overlay. White = TP, black = TN, red = FP, green = FN.</i></p>
 
@@ -334,7 +335,7 @@ model:
 ### WHU-CD
 
 <p align="center">
-  <img src="figures/qualitative_whu_refined.png" alt="WHU-CD Qualitative Results" width="90%">
+  <img src="/storage2/ChangeDetection/MV/MambaRefine-CD/figures/qualitative_whu_refined.png" alt="WHU-CD Qualitative Results" width="90%">
 </p>
 <p align="center"><i>Qualitative results on WHU-CD. Building boundaries are preserved with high precision. The D-RBI boundary gate suppresses false positives in shadow and road regions adjacent to buildings.</i></p>
 
@@ -604,9 +605,9 @@ If MambaRefine-CD is useful for your research, please cite:
   title     = {{MambaRefine-CD}: {MambaVision} with Region-Boundary Temporal
                Refinement for Binary Remote-Sensing Change Detection},
   author    = {Perera, Dineth and others},
-  booktitle = {Proceedings of MERCon 2026},
+  booktitle = {MERCon},
   year      = {2026},
-  note      = {Under Review}
+  note      = {Accepted. Official proceedings citation will be added after publication.}
 }
 ```
 

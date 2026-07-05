@@ -1,0 +1,150 @@
+% =============================================================================
+\section{Ablation Study Results}
+% =============================================================================
+
+\begin{frame}{Component Ablation on DSIFN-CD}
+    \centering
+    \scriptsize
+    \begin{adjustbox}{max width=\textwidth}
+    \begin{tabular}{lllrrrr}
+        \toprule
+        \textbf{ID} & \textbf{Variant} & \textbf{Main added component} & \textbf{Params (M)} & \textbf{F1} & \textbf{IoU} & \textbf{OA} \\
+        \midrule
+        A0 & FPN Baseline & SimpleCNN encoder & 7.84 & 76.63 & 62.12 & 83.80 \\
+        A1 & MambaVision-S + FPN & MambaVision encoder & 53.54 & 93.21 & 87.28 & 95.72 \\
+        A2 & + D-RBI unsigned & Absolute-diff D-RBI & 54.98 & 93.33 & 87.50 & 95.35 \\
+        A3 & + Signed Diff & Signed temporal stream & 55.34 & 94.28 & 89.19 & 95.99 \\
+        A4 & + ARF-FPN & Adaptive RF decoder & 65.12 & \textbf{94.36} & \textbf{89.32} & \textbf{96.05} \\
+        A5 & + Boundary Residual & Bounded residual head & 65.19 & 93.59 & 87.94 & 95.53 \\
+        \bottomrule
+    \end{tabular}
+    \end{adjustbox}
+
+    \vspace{0.5em}
+    \scriptsize
+    This table isolates architectural additions before the final full-loss configuration. The final DSIFN result is reported separately as 95.67 F1 / 91.71 IoU.
+\end{frame}
+
+\begin{frame}{Ablation Deltas: What Actually Moved the Score}
+    \begin{columns}[T,onlytextwidth]
+        \begin{column}{0.53\textwidth}
+            \centering
+            \scriptsize
+            \begin{tabular}{lrr}
+                \toprule
+                \textbf{Change} & \(\Delta\)\textbf{F1} & \(\Delta\)\textbf{IoU} \\
+                \midrule
+                A0 \(\rightarrow\) A1: MambaVision backbone & +16.58 & +25.16 \\
+                A1 \(\rightarrow\) A2: unsigned D-RBI & +0.12 & +0.22 \\
+                A2 \(\rightarrow\) A3: signed difference & +0.95 & +1.69 \\
+                A3 \(\rightarrow\) A4: ARF-FPN & +0.08 & +0.13 \\
+                A4 \(\rightarrow\) A5: BRR only & -0.77 & -1.38 \\
+                \bottomrule
+            \end{tabular}
+        \end{column}
+        \begin{column}{0.44\textwidth}
+            \small
+            \begin{itemize}
+                \item The backbone is the dominant region-accuracy gain.
+                \item D-RBI gives a small unsigned gain; signed temporal evidence gives the larger D-RBI gain.
+                \item ARF-FPN gives a small region-score gain but improves boundary metrics later.
+                \item Boundary residual refinement is harmful when it is added without the final supervision schedule.
+            \end{itemize}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Boundary-Aware Ablation}
+    \centering
+    \scriptsize
+    \begin{tabular}{lrrrrr}
+        \toprule
+        \textbf{Variant} & \textbf{F1} & \textbf{IoU} & \textbf{BF1} & \textbf{BIoU} & \textbf{Trimap F1 3px} \\
+        \midrule
+        A1 MambaVision-FPN & 93.21 & 87.28 & 61.36 & 38.41 & 68.02 \\
+        A4 + ARF-FPN & 93.71 & 88.16 & 65.94 & 42.06 & 70.27 \\
+        A5 + Boundary residual & 93.59 & 87.94 & 65.14 & 41.37 & 69.98 \\
+        A6 Full model & \textbf{94.58} & \textbf{89.72} & \textbf{71.94} & \textbf{47.39} & \textbf{72.93} \\
+        WHU Full model & 95.15 & 90.76 & 89.49 & 71.37 & 87.01 \\
+        \bottomrule
+    \end{tabular}
+
+    \vspace{0.7em}
+    \small
+    A1 \(\rightarrow\) A6 improves BF1 by \(+10.58\) and BIoU by \(+8.98\) on the boundary-eval set.
+    A5 shows the key bottleneck: adding a boundary residual head without boundary supervision does not guarantee better contours.
+\end{frame}
+
+\begin{frame}{Backbone Scaling and Efficiency}
+    \centering
+    \scriptsize
+    \begin{tabular}{lrrrrr}
+        \toprule
+        \textbf{Backbone} & \textbf{Params (M)} & \textbf{GFLOPs} & \textbf{F1} & \textbf{IoU} & \textbf{OA} \\
+        \midrule
+        MambaVision-T & 46.73 & 50.05 & 94.58 & 89.72 & 96.24 \\
+        \textbf{MambaVision-S} & \textbf{65.40} & \textbf{64.08} & \textbf{95.67} & \textbf{91.71} & \textbf{96.98} \\
+        MambaVision-B & 113.37 & 109.15 & 95.77 & 91.89 & 97.07 \\
+        MambaVision-L & 244.76 & 222.95 & -- & -- & -- \\
+        \bottomrule
+    \end{tabular}
+
+    \vspace{0.8em}
+    \small
+    Small \(\rightarrow\) Base gives only \(+0.10\) F1 for \(1.73\times\) parameters.
+    MambaVision-S is therefore the best accuracy/complexity point in the completed runs.
+
+    \vspace{0.3em}
+    \scriptsize
+    GFLOPs are an fvcore relative profile; selective scan and attention operators were reported as unsupported, so the profile is best used for relative scaling, not exact hardware throughput.
+\end{frame}
+
+\begin{frame}{Temporal Input Ablation: WHU-CD VMamba-Tiny}
+    \centering
+    \scriptsize
+    \begin{adjustbox}{max width=\textwidth}
+    \begin{tabular}{llrrrrr}
+        \toprule
+        \textbf{ID} & \textbf{Temporal input} & \textbf{Pre.} & \textbf{Rec.} & \textbf{F1} & \textbf{IoU} & \textbf{OA} \\
+        \midrule
+        T0 & features only & 96.44 & 94.43 & 95.43 & 91.25 & 99.56 \\
+        T1 & signed only & 96.43 & 94.24 & 95.32 & 91.07 & 99.55 \\
+        T2 & abs only & 95.99 & 94.67 & 95.32 & 91.06 & 99.55 \\
+        T3 & features signed & 96.14 & 94.62 & 95.37 & 91.15 & 99.56 \\
+        T4 & features abs & \textbf{96.99} & 94.78 & \textbf{95.87} & \textbf{92.07} & \textbf{99.61} \\
+        T5 & signed abs & 96.02 & 94.75 & 95.38 & 91.17 & 99.56 \\
+        T6 & full & 95.59 & \textbf{95.29} & 95.44 & 91.27 & 99.56 \\
+        \bottomrule
+    \end{tabular}
+    \end{adjustbox}
+
+    \vspace{0.5em}
+    \small
+    On WHU with VMamba-Tiny, the best temporal construction is \emph{features + abs}. The full input has the highest recall but not the best F1/IoU.
+\end{frame}
+
+\begin{frame}{Temporal Difference Ablation: DSIFN-CD Group A}
+    \begin{columns}[T,onlytextwidth]
+        \begin{column}{0.46\textwidth}
+            \centering
+            \scriptsize
+            \begin{tabular}{lrrr}
+                \toprule
+                \textbf{Mode} & \textbf{F1} & \textbf{IoU} & \textbf{OA} \\
+                \midrule
+                Absolute only & 94.655 & 89.853 & 96.291 \\
+                Signed only & \textbf{94.718} & \textbf{89.966} & \textbf{96.322} \\
+                Absolute + signed & 94.587 & 89.731 & 96.237 \\
+                \bottomrule
+            \end{tabular}
+        \end{column}
+        \begin{column}{0.51\textwidth}
+            \small
+            \begin{itemize}
+                \item Signed-only is \(+0.13\) F1 and \(+0.24\) IoU above abs+signed in this DSIFN Group-A test.
+                \item The modes are close, so temporal mode alone is not the dominant bottleneck.
+                \item The model is more sensitive to how temporal evidence is gated, decoded, and supervised.
+            \end{itemize}
+        \end{column}
+    \end{columns}
+\end{frame}
