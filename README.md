@@ -94,7 +94,41 @@ For VMamba encoder support:
 python tools/setup_vmamba.py    # prints install instructions and checks import
 ```
 
-### 2. Place Pretrained Encoder Weights
+### 2. Download Released MambaRefine-CD Weights
+
+Released model checkpoints are hosted on Hugging Face:
+[dineth18/MambaRefine-CD](https://huggingface.co/dineth18/MambaRefine-CD).
+
+| Dataset | Checkpoint | Config | Threshold | Pre (%) | Rec (%) | F1 (%) | IoU (%) | OA (%) | Iter | Size | SHA256 |
+|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| WHU-CD | [mambarefine_cd_whu_cd_best.pth](https://huggingface.co/dineth18/MambaRefine-CD/resolve/main/checkpoints/mambarefine_cd_whu_cd_best.pth) | [whu_cd_run_config.yaml](https://huggingface.co/dineth18/MambaRefine-CD/blob/main/configs/whu_cd_run_config.yaml) | 0.55 | 96.0072 | 95.0623 | 95.5324 | 91.4469 | 99.5715 | 45k | 986.65 MiB | `cd3b176a483d5311c02251d2a72ac399de4aecec89ad2808df02805c89d33758` |
+| DSIFN-CD | [mambarefine_cd_dsifn_cd_best.pth](https://huggingface.co/dineth18/MambaRefine-CD/resolve/main/checkpoints/mambarefine_cd_dsifn_cd_best.pth) | [dsifn_cd_run_config.yaml](https://huggingface.co/dineth18/MambaRefine-CD/blob/main/configs/dsifn_cd_run_config.yaml) | 0.60 | 96.2591 | 96.5340 | 96.3963 | 93.0434 | 97.4721 | 50k | 987.97 MiB | `6b56becbba10ad6e67e772db939339f9040de61c73dc049e3c752d04eb0bdf6f` |
+
+Download with `huggingface_hub`:
+
+```bash
+pip install huggingface_hub
+```
+
+```python
+from huggingface_hub import hf_hub_download
+
+whu_ckpt = hf_hub_download(
+    repo_id="dineth18/MambaRefine-CD",
+    filename="checkpoints/mambarefine_cd_whu_cd_best.pth",
+)
+
+dsifn_ckpt = hf_hub_download(
+    repo_id="dineth18/MambaRefine-CD",
+    filename="checkpoints/mambarefine_cd_dsifn_cd_best.pth",
+)
+```
+
+These are trained MambaRefine-CD model checkpoints. The ImageNet-pretrained
+encoder weights below are separate and are only needed when training from
+scratch or initializing a new run.
+
+### 3. Place Pretrained Encoder Weights
 
 | Encoder | Source | Default path |
 |---|---|---|
@@ -104,7 +138,7 @@ python tools/setup_vmamba.py    # prints install instructions and checks import
 
 Set `encoder_pretrained: true` in `configs/active.yaml` and weights are loaded automatically.
 
-### 3. Prepare Your Dataset
+### 4. Prepare Your Dataset
 
 ```
 datasets/
@@ -121,7 +155,7 @@ datasets/
 
 Files are matched by **filename stem** — `A/00123.png` pairs with `B/00123.png` and `Mask/00123.png`.
 
-### 4. Verify, Check, Train
+### 5. Verify, Check, Train
 
 ```bash
 python tools/verify_dataset.py       # check A/B/Mask consistency, counts, overlap
