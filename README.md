@@ -348,7 +348,7 @@ model:
 ### DSIFN-CD
 
 <p align="center">
-  <img src="/MambaRefine-CD/figures/qualitative_dsifn_final.png" alt="DSIFN-CD Qualitative Results" width="90%">
+  <img src="/figures/qualitative_dsifn_final.png" alt="DSIFN-CD Qualitative Results" width="90%">
 </p>
 <p align="center"><i>Qualitative results on DSIFN-CD. Each column shows the bi-temporal input pair (I₁, I₂), ground truth, a baseline prediction, MambaRefine-CD prediction, error map, and boundary overlay. White = TP, black = TN, red = FP, green = FN.</i></p>
 
@@ -368,7 +368,7 @@ model:
 ### WHU-CD
 
 <p align="center">
-  <img src="/MambaRefine-CD/figures/qualitative_whu_refined.png" alt="WHU-CD Qualitative Results" width="90%">
+  <img src="/figures/qualitative_whu_refined.png" alt="WHU-CD Qualitative Results" width="90%">
 </p>
 <p align="center"><i>Qualitative results on WHU-CD. Building boundaries are preserved with high precision. The D-RBI boundary gate suppresses false positives in shadow and road regions adjacent to buildings.</i></p>
 
