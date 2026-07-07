@@ -51,7 +51,7 @@ The result is a +10.58 BF1 improvement over a MambaVision-FPN baseline (61.36 â†
 ## ðŸ§  Architecture
 
 <p align="center">
-  <img src="/MambaRefine-CD/figures/Architecture.png" alt="MambaRefine-CD Architecture" width="100%">
+  <img src="/figures/Architecture.png" alt="MambaRefine-CD Architecture" width="100%">
 </p>
 <p align="center"><i>Overall architecture of MambaRefine-CD. Two bi-temporal images pass through a shared MambaVision encoder. Same-scale features are fused by D-RBI modules. Region features are decoded by ARF-FPN. The finest boundary stream guides a bounded residual refinement of the coarse prediction.</i></p>
 
