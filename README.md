@@ -634,13 +634,14 @@ This work builds on the following:
 If MambaRefine-CD is useful for your research, please cite:
 
 ```bibtex
-@inproceedings{perera2026mambarefinecd,
-  title     = {{MambaRefine-CD}: {MambaVision} with Region-Boundary Temporal
-               Refinement for Binary Remote-Sensing Change Detection},
-  author    = {Perera, Dineth and others},
-  booktitle = {MERCon},
-  year      = {2026},
-  note      = {Accepted. Official proceedings citation will be added after publication.}
+@misc{perera2026mambarefinecdmambavisionregionboundarytemporal,
+      title={MambaRefine-CD: MambaVision with Region-Boundary Temporal Refinement}, 
+      author={Dineth Perera and Thaariq Firdous and Oshadha Samarakoon and Roshan Godaliyadda and Parakrama Ekanayake and Vijitha Herath},
+      year={2026},
+      eprint={2607.04403},
+      archivePrefix={arXiv},
+      primaryClass={eess.IV},
+      url={https://arxiv.org/abs/2607.04403}, 
 }
 ```
 
