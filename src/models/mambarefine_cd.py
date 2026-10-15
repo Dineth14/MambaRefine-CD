@@ -10,6 +10,7 @@ import torch.nn as nn
 
 from src.models.modules.temporal_difference import TemporalDifference
 from src.models.modules.drbi import DRBI
+from src.models.modules.cram import CRAMBank
 from src.models.modules.arf_fpn import ARFFPN
 from src.models.modules.boundary_refinement import BoundaryRefinement
 
@@ -21,16 +22,30 @@ class MambaRefineCD(nn.Module):
         enc_channels = list(encoder.out_channels)
         dec_ch = int(cfg.model.decoder_channels)
         mode = str(cfg.ablation.temporal_input_mode)
+        self.disable_cross_attn = bool(getattr(cfg.model, "disable_cross_attn", False))
+        self.single_scale_fusion = bool(getattr(cfg.model, "single_scale_fusion", False))
 
         self.temporal_diff = TemporalDifference(mode=mode)
         mult = self.temporal_diff.channel_multiplier
         self.drbi_input_channels = [c * mult for c in enc_channels]
+        self.cross_attn = None
+        if not self.disable_cross_attn:
+            self.cross_attn = CRAMBank(
+                channels=enc_channels,
+                num_heads=int(getattr(cfg.model, "cram_heads", 4)),
+                max_kv_tokens=int(getattr(cfg.model, "cram_max_kv_tokens", 256)),
+                dropout=float(getattr(cfg.model, "cram_dropout", 0.0)),
+            )
 
         self.drbi_blocks = nn.ModuleList([
             DRBI(in_channels=enc_channels[s] * mult, out_channels=enc_channels[s])
             for s in range(4)
         ])
-        self.decoder = ARFFPN(in_channels=enc_channels, decoder_channels=dec_ch)
+        self.decoder = ARFFPN(
+            in_channels=enc_channels,
+            decoder_channels=dec_ch,
+            single_scale_fusion=self.single_scale_fusion,
+        )
         self.boundary_refinement = BoundaryRefinement(
             boundary_channels=enc_channels,
             decoder_channels=dec_ch,
@@ -44,6 +59,8 @@ class MambaRefineCD(nn.Module):
         out_size = image_a.shape[-2:]
         feats_a = self.encoder(image_a)
         feats_b = self.encoder(image_b)
+        if self.cross_attn is not None:
+            feats_a, feats_b = self.cross_attn(feats_a, feats_b)
 
         region_feats = []
         boundary_feats = []

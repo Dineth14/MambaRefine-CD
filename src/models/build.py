@@ -10,6 +10,8 @@ def build_model(cfg) -> MambaRefineCD:
     print(f"Encoder : {cfg.model.encoder_family}/{cfg.model.encoder_variant}")
     print(f"Channels: {encoder.out_channels}")
     print(f"Temporal: {cfg.ablation.temporal_input_mode}")
+    print(f"CRAM enabled: {not bool(getattr(cfg.model, 'disable_cross_attn', False))}")
+    print(f"Single-scale fusion: {bool(getattr(cfg.model, 'single_scale_fusion', False))}")
     model = MambaRefineCD(encoder=encoder, cfg=cfg)
     print(f"D-RBI input channels: {model.drbi_input_channels}")
     return model

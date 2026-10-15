@@ -32,9 +32,16 @@ class _AdaptiveDilationBlock(nn.Module):
 
 
 class ARFFPN(nn.Module):
-    def __init__(self, in_channels: List[int], decoder_channels: int = 128, dilation_rates: List[int] | None = None) -> None:
+    def __init__(
+        self,
+        in_channels: List[int],
+        decoder_channels: int = 128,
+        dilation_rates: List[int] | None = None,
+        single_scale_fusion: bool = False,
+    ) -> None:
         super().__init__()
         rates = dilation_rates or [1, 2, 4, 8]
+        self.single_scale_fusion = bool(single_scale_fusion)
         self.proj = nn.ModuleList([ConvNormGELU(c, decoder_channels, k=1) for c in in_channels])
         self.arf = nn.ModuleList([_AdaptiveDilationBlock(decoder_channels, decoder_channels, rates) for _ in in_channels])
         self.smooth = nn.ModuleList([ConvNormGELU(decoder_channels, decoder_channels, k=3) for _ in in_channels])
@@ -54,5 +61,5 @@ class ARFFPN(nn.Module):
 
     def forward(self, region_feats: list[torch.Tensor], out_size: tuple[int, int]) -> torch.Tensor:
         fused = [arf(proj(feat)) for feat, proj, arf in zip(region_feats, self.proj, self.arf)]
-        top = self._fpn(fused)
+        top = self.smooth[0](fused[0]) if self.single_scale_fusion else self._fpn(fused)
         return F.interpolate(self.head(top), size=out_size, mode="bilinear", align_corners=False)
