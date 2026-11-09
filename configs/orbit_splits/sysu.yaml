@@ -1,0 +1,70 @@
+project:
+  name: MambaRefine-CD
+  output_root: outputs/orbit_aligned/sysu/seed_123
+  seed: 123
+data:
+  dataset_name: SYSU-CD
+  root: /storage2/ChangeDetection/MV/Datasets/SYSU-CD
+  image_size: 256
+  train_dir: train
+  val_dir: val
+  test_dir: test
+  a_folder: A
+  b_folder: B
+  mask_folder: Mask
+  binary_threshold: 127
+  expected_counts: {train: 12000, val: 4000, test: 4000}
+  check_split_overlap: false
+  check_hash_overlap: true
+  val_is_test: false
+model:
+  name: MambaRefineCD
+  encoder_family: mambavision
+  encoder_variant: small
+  encoder_pretrained: true
+  encoder_pretrained_path: pretrained_weights/mambavision_small_1k.pth.tar
+  freeze_encoder: false
+  unfreeze_after_iters: null
+  decoder_channels: 128
+ablation:
+  id: orbit_sysu
+  temporal_input_mode: abs_signed
+train:
+  device: cuda:0
+  iterations: 30000
+  batch_size: 8
+  num_workers: 8
+  lr: 0.0001
+  weight_decay: 0.01
+  optimizer: adamw
+  scheduler: cosine
+  warmup_iters: 1000
+  amp: false
+  grad_clip_norm: 1.0
+  log_interval: 50
+  val_interval: 5000
+  save_best_only: true
+  best_metric: F1
+  higher_is_better: true
+  early_stopping_patience: 10
+  early_stopping_min_delta: 0.0
+loss:
+  bce_weight: 1.0
+  dice_weight: 1.0
+  aux_weight: 0.2
+  boundary_weight: 0.2
+  residual_reg_weight: 0.02
+eval:
+  threshold: 0.5
+  boundary_tolerance: 2
+  sweep_thresholds_on_val: true
+  use_val_threshold_for_test: true
+  also_report_test_sweep: false
+  threshold_min: 0.05
+  threshold_max: 0.95
+  threshold_step: 0.05
+  save_predictions: true
+  measure_fps: true
+checkpoint: {path: null, auto_find_latest_best: true}
+resume: {enabled: false, path: null, resume_optimizer: true, resume_scheduler: true, resume_iteration: true}
+logging: {tensorboard: true, print_params: true, print_flops: false, print_peak_memory: true, print_fps: true}

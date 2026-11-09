@@ -20,7 +20,9 @@ def _thresholds(cfg) -> list[float]:
 
 @torch.no_grad()
 def _run_once(model, dataloader, cfg, threshold: float, device, save_dir: Path | None = None) -> dict:
-    acc = BinaryMetricAccumulator()
+    acc = BinaryMetricAccumulator(
+        boundary_tolerance=int(cfg.eval.get("boundary_tolerance", 2))
+    )
     model.eval()
     for batch in dataloader:
         image_a = batch["image_a"].to(device, non_blocking=True)
@@ -44,21 +46,49 @@ def _run_once(model, dataloader, cfg, threshold: float, device, save_dir: Path |
     return metrics
 
 
+@torch.no_grad()
+def _run_sweep(model, dataloader, cfg, device) -> dict:
+    thresholds = _thresholds(cfg)
+    # Threshold selection is semantic-F1-only. Avoid doing 19 expensive
+    # boundary evaluations during the validation threshold sweep.
+    accumulators = {
+        threshold: BinaryMetricAccumulator(compute_boundary=False)
+        for threshold in thresholds
+    }
+    model.eval()
+    for batch in dataloader:
+        image_a = batch["image_a"].to(device, non_blocking=True)
+        image_b = batch["image_b"].to(device, non_blocking=True)
+        mask = batch["mask"].to(device, non_blocking=True)
+        with torch.amp.autocast("cuda", enabled=bool(cfg.train.amp) and torch.device(device).type == "cuda"):
+            outputs = model(image_a, image_b)
+        logits = outputs["logits"]
+        if logits.shape[-2:] != mask.shape[-2:]:
+            logits = torch.nn.functional.interpolate(
+                logits, size=mask.shape[-2:], mode="bilinear", align_corners=False
+            )
+        probs = torch.sigmoid(logits.detach().float())
+        for threshold, accumulator in accumulators.items():
+            accumulator.update_probs(probs, mask, threshold)
+    sweep = {}
+    best = None
+    for threshold, accumulator in accumulators.items():
+        metrics = accumulator.compute()
+        metrics["threshold"] = float(threshold)
+        sweep[f"{threshold:.2f}"] = metrics
+        if best is None or metrics["F1"] > best["F1"]:
+            best = metrics
+    best = dict(best)
+    best["best_threshold"] = best["threshold"]
+    best["sweep"] = sweep
+    return best
+
+
 def evaluate(model, dataloader, cfg, split: str, threshold=None, sweep_thresholds: bool = False, device=None, save_dir=None):
     if device is None:
         device = next(model.parameters()).device
     if sweep_thresholds:
-        best = None
-        sweep = {}
-        for thr in _thresholds(cfg):
-            metrics = _run_once(model, dataloader, cfg, thr, device)
-            sweep[f"{thr:.2f}"] = metrics
-            if best is None or metrics["F1"] > best["F1"]:
-                best = metrics
-        best = dict(best)
-        best["best_threshold"] = best["threshold"]
-        best["sweep"] = sweep
-        return best
+        return _run_sweep(model, dataloader, cfg, device)
     thr = float(cfg.eval.threshold if threshold is None else threshold)
     pred_dir = Path(save_dir) / "predictions" / split if save_dir is not None and bool(cfg.eval.save_predictions) else None
     return _run_once(model, dataloader, cfg, thr, device, save_dir=pred_dir)

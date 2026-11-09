@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -17,7 +18,7 @@ from src.engine.evaluator import evaluate
 from src.engine.logger import get_logger, make_writer
 from src.engine.losses import build_loss
 from src.models.build import build_model
-from src.utils.config import load_config, save_config, to_plain_dict
+from src.utils.config import CONFIG_PATH, load_config, save_config, to_plain_dict
 from src.utils.device import get_device
 from src.utils.flops import measure_flops
 from src.utils.fps import measure_fps
@@ -82,11 +83,11 @@ def _save_json(path: Path, payload) -> None:
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
-def train():
-    cfg = load_config()
+def train(config_path=CONFIG_PATH):
+    cfg = load_config(config_path)
     set_seed(int(cfg.project.seed))
     run_dir = _run_dir(cfg)
-    save_config(cfg, str(run_dir))
+    save_config(cfg, str(run_dir), source_path=config_path)
     logger = get_logger(cfg.project.name, run_dir, "train.log")
     (run_dir / "val.log").touch()
     (run_dir / "test.log").touch()
@@ -123,20 +124,27 @@ def train():
     scaler = torch.amp.GradScaler("cuda", enabled=bool(cfg.train.amp) and device.type == "cuda")
 
     start_iter = 0
-    best_metric = float("-inf")
+    higher_is_better = bool(cfg.train.higher_is_better)
+    best_metric = float("-inf") if higher_is_better else float("inf")
     best_iteration = 0
     best_threshold = float(cfg.eval.threshold)
+    validations_without_improvement = 0
+    patience = int(cfg.train.get("early_stopping_patience", 10))
+    min_delta = float(cfg.train.get("early_stopping_min_delta", 0.0))
+    stopping_reason = "MAX_ITERATIONS_COMPLETED"
     if bool(cfg.resume.enabled):
         ckpt = load_checkpoint(cfg.resume.path, model, optimizer if cfg.resume.resume_optimizer else None, scheduler if cfg.resume.resume_scheduler else None)
         start_iter = int(ckpt.get("iteration", 0)) if cfg.resume.resume_iteration else 0
         best_metric = float(ckpt.get("best_metric", best_metric))
         best_iteration = int(ckpt.get("best_iteration", best_iteration))
         best_threshold = float(ckpt.get("best_threshold", best_threshold))
+        validations_without_improvement = int(ckpt.get("validations_without_improvement", 0))
 
     train_history = []
     val_history = []
     loader_iter = iter(train_loader)
     reset_peak_memory(device)
+    training_started = time.perf_counter()
     model.train()
     pbar = tqdm(range(start_iter, int(cfg.train.iterations)), desc="Training", dynamic_ncols=True)
     for iteration in pbar:
@@ -157,6 +165,10 @@ def train():
         with torch.amp.autocast("cuda", enabled=bool(cfg.train.amp) and device.type == "cuda"):
             outputs = model(image_a, image_b)
             loss, loss_dict = loss_fn(outputs, mask)
+        if not torch.isfinite(loss):
+            raise FloatingPointError(
+                f"Non-finite training loss at iteration {iteration + 1}: {loss_dict}"
+            )
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
         torch.nn.utils.clip_grad_norm_(model.parameters(), float(cfg.train.grad_clip_norm))
@@ -185,42 +197,92 @@ def train():
                     if isinstance(value, (int, float)):
                         writer.add_scalar(f"val/{key}", value, step)
             logger.info(f"[VAL {step:06d}] {format_metrics(metrics)} threshold={threshold:.2f}")
-            is_better = current > best_metric if bool(cfg.train.higher_is_better) else current < best_metric
+            is_better = (
+                current > best_metric + min_delta
+                if higher_is_better
+                else current < best_metric - min_delta
+            )
             if is_better:
                 best_metric = current
                 best_iteration = step
                 best_threshold = threshold
-                ckpt_state = {
-                    "iteration": step,
-                    "model": model.state_dict(),
-                    "optimizer": optimizer.state_dict(),
-                    "scheduler": scheduler.state_dict(),
-                    "best_metric": best_metric,
-                    "best_iteration": best_iteration,
-                    "best_threshold": best_threshold,
-                    "config": to_plain_dict(cfg),
-                }
+                validations_without_improvement = 0
+            else:
+                validations_without_improvement += 1
+            ckpt_state = {
+                "iteration": step,
+                "model": model.state_dict(),
+                "optimizer": optimizer.state_dict(),
+                "scheduler": scheduler.state_dict(),
+                "best_metric": best_metric,
+                "best_iteration": best_iteration,
+                "best_threshold": best_threshold,
+                "validations_without_improvement": validations_without_improvement,
+                "early_stopping_patience": patience,
+                "early_stopping_min_delta": min_delta,
+                "monitor_metric": "validation_changed_class_F1",
+                "config": to_plain_dict(cfg),
+            }
+            if is_better:
                 path = save_checkpoint(ckpt_state, run_dir / "checkpoints", step, best_metric, "F1")
                 logger.info(f"Saved best checkpoint: {path}")
+            torch.save(ckpt_state, run_dir / "checkpoints" / "latest.pth")
             model.train()
             _save_json(run_dir / "metrics" / "train_history.json", train_history)
             _save_json(run_dir / "metrics" / "val_history.json", val_history)
+            if patience > 0 and validations_without_improvement >= patience:
+                stopping_reason = "EARLY_STOPPED"
+                logger.info(
+                    f"Early stopping after {validations_without_improvement} validation checks "
+                    f"without improvement (patience={patience})."
+                )
+                break
 
     logger.info(f"Training complete. Best F1={best_metric:.4f} iter={best_iteration} threshold={best_threshold:.2f}")
     best_ckpt = sorted((run_dir / "checkpoints").glob("best_iter_*_F1_*.pth"))
     if best_ckpt:
         load_checkpoint(best_ckpt[-1], model)
-    final_val = evaluate(model, val_loader, cfg, "val", threshold=best_threshold, device=device)
-    test_metrics = evaluate(model, test_loader, cfg, "test", threshold=best_threshold, device=device, save_dir=run_dir)
-    test_metrics["best_val_threshold"] = best_threshold
-    test_metrics["test_threshold_used"] = best_threshold
+    if bool(cfg.data.get("val_is_test", False)):
+        final_val = evaluate(
+            model, val_loader, cfg, "val", threshold=best_threshold, device=device, save_dir=run_dir
+        )
+        reported_metrics = dict(final_val)
+        reported_metrics["evaluation_split"] = "validation"
+        reported_metrics["independent_test_available"] = False
+        reported_metrics["best_val_threshold"] = best_threshold
+        logger.info(f"[REPORTED VALIDATION] {format_metrics(reported_metrics)}")
+    else:
+        final_val = evaluate(model, val_loader, cfg, "val", threshold=best_threshold, device=device)
+        reported_metrics = evaluate(
+            model, test_loader, cfg, "test", threshold=best_threshold, device=device, save_dir=run_dir
+        )
+        reported_metrics["evaluation_split"] = "test"
+        reported_metrics["independent_test_available"] = True
+        reported_metrics["best_val_threshold"] = best_threshold
+        reported_metrics["test_threshold_used"] = best_threshold
+        logger.info(f"[TEST] {format_metrics(reported_metrics)}")
     _save_json(run_dir / "metrics" / "final_val_metrics.json", final_val)
-    _save_json(run_dir / "metrics" / "test_metrics.json", test_metrics)
+    _save_json(run_dir / "metrics" / "reported_metrics.json", reported_metrics)
     if bool(cfg.eval.measure_fps):
         fps = measure_fps(model, int(cfg.data.image_size), device)
         _save_json(run_dir / "metrics" / "efficiency.json", {"FPS": fps, "peak_memory_mb": peak_memory_mb(device)})
         logger.info(f"FPS: {fps:.2f}")
-    logger.info(f"[TEST] {format_metrics(test_metrics)}")
+    training_seconds = time.perf_counter() - training_started
+    _save_json(
+        run_dir / "metrics" / "training_status.json",
+        {
+            "best_iteration": best_iteration,
+            "best_validation_f1": best_metric,
+            "validations_without_improvement": validations_without_improvement,
+            "last_completed_iteration": step,
+            "early_stopping_patience": patience,
+            "early_stopping_min_delta": min_delta,
+            "monitor_metric": "validation_changed_class_F1",
+            "stopping_reason": stopping_reason,
+            "gpu_training_seconds": training_seconds,
+            "seed": int(cfg.project.seed),
+        },
+    )
     if writer:
         writer.close()
-    return {"run_dir": str(run_dir), "best_metric": best_metric, "test_metrics": test_metrics}
+    return {"run_dir": str(run_dir), "best_metric": best_metric, "reported_metrics": reported_metrics}

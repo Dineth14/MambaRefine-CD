@@ -51,14 +51,14 @@ def load_config(path=CONFIG_PATH) -> EasyDict:
         raise ValueError(f"{path} is empty")
     for key in REQUIRED_KEYS:
         if key not in raw:
-            raise ValueError(f"configs/active.yaml is missing required key: '{key}'")
+            raise ValueError(f"{path} is missing required key: '{key}'")
     return EasyDict(raw)
 
 
-def save_config(cfg: EasyDict, output_dir: str):
+def save_config(cfg: EasyDict, output_dir: str, source_path=CONFIG_PATH):
     os.makedirs(output_dir, exist_ok=True)
     dst = os.path.join(output_dir, "config.yaml")
-    shutil.copy(CONFIG_PATH, dst)
+    shutil.copy(source_path, dst)
     print(f"Config saved to: {dst}")
 
 

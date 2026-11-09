@@ -5,6 +5,7 @@ Usage: python tools/verify_dataset.py
 """
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -15,12 +16,18 @@ from src.utils.config import load_config
 
 
 def main() -> None:
-    cfg = load_config()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", default="configs/active.yaml")
+    args = parser.parse_args()
+    cfg = load_config(args.config)
     verify_dataset(cfg)
-    report = getattr(cfg, "_dataset_verification", {})
+    report = getattr(cfg, "_dataset_verification", [])
     print("Dataset verification: PASS")
-    for split, info in report.items():
-        print(f"{split}: {info['count']} samples")
+    for info in report:
+        print(
+            f"{info['logical_split']} ({info['split']}): {info['count']} samples, "
+            f"positive ratio={info['gt_positive_ratio']:.6f}"
+        )
 
 
 if __name__ == "__main__":

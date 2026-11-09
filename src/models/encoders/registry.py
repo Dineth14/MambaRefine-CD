@@ -9,7 +9,11 @@ def build_encoder(cfg):
 
     if family == "mambavision":
         from src.models.encoders.mambavision_adapter import MambaVisionAdapter
-        return MambaVisionAdapter(variant=variant, pretrained=pretrained)
+        return MambaVisionAdapter(
+            variant=variant,
+            pretrained=pretrained,
+            pretrained_path=cfg.model.get("encoder_pretrained_path"),
+        )
     if family == "vmamba":
         from src.models.encoders.vmamba_adapter import VMambaAdapter
         return VMambaAdapter(variant=variant, pretrained=pretrained)

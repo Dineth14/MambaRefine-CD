@@ -1,8 +1,6 @@
-"""MambaVision encoder adapter."""
+"""Four-stage feature adapter for the official NVIDIA MambaVision package."""
 from __future__ import annotations
 
-import sys
-import importlib.util
 from pathlib import Path
 
 import torch
@@ -11,53 +9,47 @@ from src.utils.torchvision_compat import patch_register_fake
 
 
 class MambaVisionAdapter(nn.Module):
-    def __init__(self, variant: str = "small", pretrained: bool = True) -> None:
+    def __init__(
+        self,
+        variant: str = "small",
+        pretrained: bool = True,
+        pretrained_path: str | None = None,
+    ) -> None:
         super().__init__()
         patch_register_fake()
         root = Path(__file__).resolve().parents[3]
-        mv_src_candidates = (
-            root.parent / "MambaVision_experiments" / "src",
-            root.parent / "MambaVisionCD" / "MambaVision_experiments" / "src",
-        )
-        mv_repo = root.parent / "MambaVisionCD"
-        for path in (*mv_src_candidates, mv_repo):
-            if path.exists() and str(path) not in sys.path:
-                sys.path.append(str(path))
         try:
-            from mvcd.model import MambaVisionFeatureExtractor
-        except Exception:
-            model_path = next(
-                (path / "mvcd" / "model.py" for path in mv_src_candidates if (path / "mvcd" / "model.py").exists()),
-                mv_src_candidates[0] / "mvcd" / "model.py",
-            )
-            if not model_path.exists():
-                raise ImportError(
-                    "Could not import MambaVisionFeatureExtractor. "
-                    "Expected MambaVision_experiments/src or MambaVisionCD/MambaVision_experiments/src."
-                )
-            spec = importlib.util.spec_from_file_location("mvcd_model_direct", model_path)
-            if spec is None or spec.loader is None:
-                raise ImportError(f"Could not load MambaVision module from {model_path}")
-            module = importlib.util.module_from_spec(spec)
-            sys.modules.setdefault("mvcd_model_direct", module)
-            try:
-                spec.loader.exec_module(module)
-            except ModuleNotFoundError as exc:
-                missing = exc.name or "required dependency"
-                raise ImportError(
-                    f"MambaVision dependency is missing: {missing}. "
-                    "Install the MambaVision/Mamba SSM dependencies before training with encoder_family=mambavision."
-                ) from exc
-            MambaVisionFeatureExtractor = module.MambaVisionFeatureExtractor
-        except ModuleNotFoundError as exc:
+            from mambavision import create_model
+        except ImportError as exc:
             raise ImportError(
-                "Could not import MambaVisionFeatureExtractor. "
-                "Expected sibling dependency MambaVision_experiments/src."
+                "The official NVIDIA mambavision package is required. Install "
+                "mambavision==1.2.0 in the training environment."
             ) from exc
 
         self.model_name = self._resolve_name(variant)
-        self.backbone = MambaVisionFeatureExtractor(model_name=self.model_name, pretrained=pretrained)
-        self.out_channels = list(getattr(self.backbone, "channels"))
+        default_path = root / "pretrained_weights" / f"mambavision_{variant}_1k.pth.tar"
+        weight_path = Path(pretrained_path).expanduser() if pretrained_path else default_path
+        if not weight_path.is_absolute():
+            weight_path = root / weight_path
+        if pretrained:
+            weight_path.parent.mkdir(parents=True, exist_ok=True)
+        self.pretrained_path = weight_path
+        self.backbone = create_model(
+            self.model_name,
+            pretrained=pretrained,
+            model_path=str(weight_path),
+            num_classes=0,
+        )
+        channel_map = {
+            "mamba_vision_T": [80, 160, 320, 640],
+            "mamba_vision_T2": [80, 160, 320, 640],
+            "mamba_vision_S": [96, 192, 384, 768],
+            "mamba_vision_B": [128, 256, 512, 1024],
+            "mamba_vision_L": [196, 392, 784, 1568],
+        }
+        if self.model_name not in channel_map:
+            raise ValueError(f"Unsupported MambaVision feature variant: {self.model_name}")
+        self.out_channels = channel_map[self.model_name]
 
     @staticmethod
     def _resolve_name(variant: str) -> str:
@@ -75,4 +67,26 @@ class MambaVisionAdapter(nn.Module):
         return aliases.get(str(variant).lower(), variant)
 
     def forward(self, x: torch.Tensor) -> list[torch.Tensor]:
-        return self.backbone(x)
+        x = self.backbone.patch_embed(x)
+        features = []
+        for level in self.backbone.levels:
+            if level.downsample is None:
+                x = level(x)
+                features.append(x)
+                continue
+            captured = []
+
+            def capture_before_downsample(_module, inputs):
+                captured.append(inputs[0])
+
+            handle = level.downsample.register_forward_pre_hook(capture_before_downsample)
+            try:
+                x = level(x)
+            finally:
+                handle.remove()
+            if len(captured) != 1:
+                raise RuntimeError("Failed to capture a MambaVision stage feature")
+            features.append(captured[0])
+        if len(features) != 4:
+            raise RuntimeError(f"Expected four MambaVision stages, got {len(features)}")
+        return features

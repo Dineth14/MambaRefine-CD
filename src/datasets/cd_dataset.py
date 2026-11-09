@@ -74,6 +74,11 @@ class ChangeDetectionDataset(Dataset):
             mask = TF.to_tensor(TF.resize(mask, [self.image_size, self.image_size],
                                           interpolation=TF.InterpolationMode.NEAREST))
 
-        mask = (mask > (self.threshold / 255.0)).float()
+        # PIL/torchvision maps raw {0, 1} masks to {0, 1/255}, while the more
+        # common {0, 255} encoding maps to {0, 1}. Support both encodings.
+        tensor_threshold = self.threshold / 255.0
+        if float(mask.max()) <= (1.0 / 255.0 + 1e-8) and self.threshold > 1:
+            tensor_threshold = 0.0
+        mask = (mask > tensor_threshold).float()
 
         return {"image_a": image_a, "image_b": image_b, "mask": mask, "name": name}

@@ -27,7 +27,7 @@ def _split_dirs(cfg, split: str) -> tuple[Path, Path, Path]:
     return root / cfg.data.a_folder, root / cfg.data.b_folder, root / cfg.data.mask_folder
 
 
-def _verify_split(cfg, split: str) -> dict:
+def _verify_split(cfg, logical_split: str, split: str) -> dict:
     a_dir, b_dir, mask_dir = _split_dirs(cfg, split)
     for directory in (a_dir, b_dir, mask_dir):
         if not directory.exists():
@@ -43,6 +43,13 @@ def _verify_split(cfg, split: str) -> dict:
         )
     if not a:
         raise ValueError(f"Split '{split}' contains no samples")
+    expected_counts = cfg.data.get("expected_counts", {})
+    expected = expected_counts.get(logical_split)
+    if expected is not None and len(a) != int(expected):
+        raise ValueError(
+            f"Unexpected sample count for {logical_split} ('{split}'): "
+            f"found {len(a)}, expected {int(expected)}"
+        )
 
     positives = 0
     total = 0
@@ -55,12 +62,18 @@ def _verify_split(cfg, split: str) -> dict:
             unique = set(np.unique(mask).tolist())
             if len(unique) > 2 and not all(v in {0, 1, 255} for v in unique):
                 raise ValueError(f"Mask is not binary-like for {split}/{stem}: values={sorted(unique)[:10]}")
-            bin_mask = mask > int(cfg.data.binary_threshold)
+            raw_threshold = int(cfg.data.binary_threshold)
+            if int(mask.max()) <= 1 and raw_threshold > 1:
+                raw_threshold = 0
+            bin_mask = mask > raw_threshold
             positives += int(bin_mask.sum())
             total += int(bin_mask.size)
             if bool(cfg.data.get("check_hash_overlap", True)):
-                hashes.add(_sha256(a[stem]))
+                # A reused filename or a repeated single-date image is not by
+                # itself leakage. Compare the complete (A, B, mask) sample.
+                hashes.add((_sha256(a[stem]), _sha256(b[stem]), _sha256(m[stem])))
     return {
+        "logical_split": logical_split,
         "split": split,
         "count": len(a),
         "stems": set(a),
@@ -70,18 +83,27 @@ def _verify_split(cfg, split: str) -> dict:
 
 
 def verify_dataset(cfg) -> bool:
-    summaries = [_verify_split(cfg, split) for split in (cfg.data.train_dir, cfg.data.val_dir, cfg.data.test_dir)]
+    split_map = {
+        "train": cfg.data.train_dir,
+        "val": cfg.data.val_dir,
+        "test": cfg.data.test_dir,
+    }
+    summaries = [_verify_split(cfg, logical, split) for logical, split in split_map.items()]
     if bool(cfg.data.get("check_split_overlap", True)):
-        names = [(item["split"], item["stems"]) for item in summaries]
-        for i, (a_name, a_stems) in enumerate(names):
-            for b_name, b_stems in names[i + 1:]:
+        names = [(item["logical_split"], item["split"], item["stems"]) for item in summaries]
+        for i, (a_logical, a_name, a_stems) in enumerate(names):
+            for b_logical, b_name, b_stems in names[i + 1:]:
+                if bool(cfg.data.get(f"allow_{a_logical}_{b_logical}_overlap", False)):
+                    continue
                 overlap = a_stems & b_stems
                 if overlap:
                     raise ValueError(f"Filename overlap between {a_name} and {b_name}: {sorted(overlap)[:5]}")
     if bool(cfg.data.get("check_hash_overlap", True)):
-        names = [(item["split"], item["hashes"]) for item in summaries]
-        for i, (a_name, a_hashes) in enumerate(names):
-            for b_name, b_hashes in names[i + 1:]:
+        names = [(item["logical_split"], item["split"], item["hashes"]) for item in summaries]
+        for i, (a_logical, a_name, a_hashes) in enumerate(names):
+            for b_logical, b_name, b_hashes in names[i + 1:]:
+                if bool(cfg.data.get(f"allow_{a_logical}_{b_logical}_overlap", False)):
+                    continue
                 overlap = a_hashes & b_hashes
                 if overlap:
                     raise ValueError(f"Image hash overlap between {a_name} and {b_name}: {len(overlap)} duplicate image(s)")

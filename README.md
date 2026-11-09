@@ -643,6 +643,17 @@ If MambaRefine-CD is useful for your research, please cite:
       primaryClass={eess.IV},
       url={https://arxiv.org/abs/2607.04403}, 
 }
+
+@INPROCEEDINGS{11691356,
+  author={Perera, Dineth and Firdous, Thaariq and Samarakoon, Oshadha and Godaliyadda, Roshan and Ekanayake, Parakrama and Herath, Vijitha},
+  booktitle={2026 Moratuwa Engineering Research Conference (MERCon)}, 
+  title={MambaRefine-CD: MambaVision with Region-Boundary Temporal Refinement}, 
+  year={2026},
+  volume={},
+  number={},
+  pages={646-651},
+  keywords={Modeling;Color;Equations;Printing;Remote sensing;Decoding;Signal detection;Streams;Tagging;Conferences;Remote sensing;change detection;MambaVision;state-space models;temporal feature fusion},
+  doi={10.1109/MERCon71835.2026.11691356}}
 ```
 
 If you use the Mamba-Segmentation benchmark findings that motivate this work:
